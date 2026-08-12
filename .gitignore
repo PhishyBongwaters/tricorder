@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+.repomap.tags.cache.v1
+.env
+.venv/
+venv/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
