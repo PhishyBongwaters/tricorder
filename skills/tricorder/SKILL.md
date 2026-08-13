@@ -39,6 +39,7 @@ All MCP tools require `project_root` (absolute path) — they route against that
 - `project_root` (required), `token_limit` (default 8192), `tier`: `0` = definitions only (default) or `1` = + context lines
 - `output_format`: `text` or `mermaid`; `chat_files`, `other_files`, `mentioned_files`, `mentioned_idents`
 - `exclude_unranked`, `exclude_untagged`, `force_refresh`, `dry_run`, `max_files`
+- `exclude_globs`: list of glob patterns (relative, POSIX) to drop from the auto-scan before ranking. Use for vendored/third-party subtrees, e.g. `["vendor/**"]`, `["third_party/**"]`. Ignored when `other_files` is explicitly provided.
 
 ## CLI reference
 
@@ -57,3 +58,4 @@ Tier tokens: T0 ≈ 14 tokens/tag (definitions), T1 ≈ 350 tokens/tag (with con
 - **Cache is per-project**: it lives in the scanned project's root, not tricorder's — don't ship or commit it.
 - `project_root` must be absolute; relative paths are not trusted.
 - `tricorder_detect` is case-insensitive and token-cheap — prefer it over a full scan to find an identifier.
+- **Arg names are exact** — the tools use strict MCP names, so a wrong guess costs a rejected call before the schema comes back. The ones that bite: `tricorder_scan` takes `project_root` (not `files`/`path`), `tricorder_detect` takes `query` (not `identifier`), `tricorder_detail` takes `name`+`file`+`line` (not `symbol`). Coping them correctly up front skips the round-trip.
