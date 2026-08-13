@@ -1,0 +1,14 @@
+name: tricorder
+version: 0.1.0
+description: >-
+  Auto-maps the active project and feeds the compact repo map (symbols,
+  callers/callees, signatures) into the agent's context via lifecycle hooks —
+  the agent never has to choose to scan. Control, not assume. Slash commands
+  /tricorder scan|find|detail|root|status for on-demand access. Delegates to
+  the tricorder CLI/MCP binaries in D:/Projects/tricorder/.venv.
+author: Hermes Assistant
+kind: standalone
+provides_hooks:
+  - on_session_start
+  - pre_llm_call
+provides_tools: []
