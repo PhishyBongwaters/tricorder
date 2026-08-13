@@ -2,7 +2,7 @@
 Utility functions for Tricorder.
 """
 
-import os
+import os, fnmatch
 import sys
 from pathlib import Path
 from typing import Optional, List
@@ -92,11 +92,15 @@ _SKIP_EXTS = {'.frag', '.vert', '.inc', '.icns', '.plist', '.entitlements',
 _BUILTIN_SKIP_DIRS = {'node_modules', '__pycache__', 'venv', 'env', 'build', 'dist', '.tox', '.eggs'}
 
 
-def discover_src_files(directory: str, use_gitignore: bool = True) -> List[str]:
+def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs: Optional[List[str]] = None) -> List[str]:
     """Walk a directory and return source files, skipping noise.
 
     Shared by tricorder_server.find_src_files and Tricorder._discover_files.
     ponytail: one implementation, two callers — no drift.
+
+    exclude_globs: optional list of glob patterns matched against the path
+    (as POSIX-normalized, relative to `directory`). Excludes third-party/
+    vendored subtrees from ranking, e.g. exclude_globs=["vendor/**"].
     """
     if not os.path.isdir(directory):
         return [directory] if os.path.isfile(directory) else []
@@ -120,7 +124,12 @@ def discover_src_files(directory: str, use_gitignore: bool = True) -> List[str]:
                 continue
             if any(f.endswith(ext) for ext in _SKIP_EXTS):
                 continue
-            src_files.append(os.path.join(r, f))
+            full = os.path.join(r, f)
+            if exclude_globs:
+                rel = os.path.relpath(full, directory).replace(os.sep, '/')
+                if any(fnmatch.fnmatch(rel, pat) for pat in exclude_globs):
+                    continue
+            src_files.append(full)
     return src_files
 
 

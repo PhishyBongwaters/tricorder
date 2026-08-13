@@ -53,7 +53,8 @@ class Tricorder:
         refresh: str = "auto",
         exclude_unranked: bool = False,
         context_lines: int = 0,
-        exclude_untagged: bool = False
+        exclude_untagged: bool = False,
+        exclude_globs: Optional[List[str]] = None
     ):
         """Initialize Tricorder instance."""
         self.map_tokens = map_tokens
@@ -69,6 +70,7 @@ class Tricorder:
         self.exclude_unranked = exclude_unranked
         self.context_lines = context_lines
         self.exclude_untagged = exclude_untagged
+        self.exclude_globs = exclude_globs
         
         # Set up output handlers
         if output_handler_funcs is None:
@@ -608,7 +610,7 @@ class Tricorder:
 
     def _discover_files(self) -> List[str]:
         """Discover source files under self.root. Uses shared skip logic."""
-        return discover_src_files(str(self.root), use_gitignore=True)
+        return discover_src_files(str(self.root), use_gitignore=True, exclude_globs=self.exclude_globs)
 
     _import_index_cache: Dict[str, Dict] = None  # type: ignore[assignment]
 

@@ -13,8 +13,8 @@ from scm import get_scm_fname
 from importance import filter_important_files
 
 # Thin wrapper kept for backward compat (tests import this name).
-def find_src_files(directory: str) -> List[str]:
-    return discover_src_files(directory, use_gitignore=True)
+def find_src_files(directory: str, exclude_globs: Optional[List[str]] = None) -> List[str]:
+    return discover_src_files(directory, use_gitignore=True, exclude_globs=exclude_globs)
 
 # Configure logging - only show errors
 root_logger = logging.getLogger()
@@ -64,6 +64,7 @@ async def tricorder_scan(
     max_files: int = 1000,
     output_file: Optional[str] = None,
     dry_run: bool = False,
+    exclude_globs: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Generate a repository map for the specified files, providing a list of function prototypes and variables for files as well as relevant related
     files. Provide filenames relative to the project_root. In addition to the files provided, relevant related files will also be included with a
@@ -85,6 +86,7 @@ async def tricorder_scan(
     :param tier: 0 for definitions only (T0, cheapest), 1 for definitions + context lines (T1, expensive). Stop at the lowest tier that answers the question.
     :param context_lines: Lines of context around each definition when tier=1.
     :param dry_run: If True, estimate token budget without generating the map. Returns tag count, tokens per tag, tags at budget, and full repo estimate.
+    :param exclude_globs: Optional list of glob patterns (POSIX, relative to project_root) to exclude from auto-scan, e.g. ["vendor/**", "third_party/**"]. Filters vendored/third-party subtrees before ranking so first-party code dominates the map. Ignored when other_files is explicitly provided.
     :returns: A dictionary containing:
         - If dry_run: 'tags', 'tokens_per_tag', 'tags_at_budget', 'full_repo_estimate'.
         - If output_file is set: 'map_file' (path), 'token_estimate' (int), 'tier' (int), 'format' (str), 'report' (dict), and optionally 'tier_hint' (advisory).
@@ -116,7 +118,7 @@ async def tricorder_scan(
         effective_other_files = other_files
     else:
         log.info("No other_files provided, scanning root directory for context...")
-        effective_other_files = find_src_files(project_root)
+        effective_other_files = find_src_files(project_root, exclude_globs=exclude_globs)
         if len(effective_other_files) > max_files:
             log.warning(f"Auto-scanned {len(effective_other_files)} files, capping to {max_files}")
             effective_other_files = effective_other_files[:max_files]
@@ -150,7 +152,8 @@ async def tricorder_scan(
             verbose=verbose,
             exclude_unranked=exclude_unranked,
             max_context_window=max_context_window,
-            context_lines=context_lines if tier > 0 else 0
+            context_lines=context_lines if tier > 0 else 0,
+            exclude_globs=exclude_globs
         )
     except Exception as e:
         log.exception(f"Failed to initialize Tricorder for project '{project_root}': {e}")
