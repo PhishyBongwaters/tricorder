@@ -174,7 +174,29 @@ Languages with tree-sitter grammars (via `queries/tree-sitter-language-pack/`): 
 
 ### MCP Setup
 
-Tricorder runs as an MCP server over **STDIO**. For a client like Cline/Roo, add to `cline_mcp_settings.json`:
+Tricorder runs as an MCP server over **STDIO**.
+
+### Hermes Agent (primary integration)
+
+Register it under `mcp_servers:` in `~/.hermes/config.yaml`, then restart Hermes (no
+hot-reload — a restart is required). The 4 tools appear in every conversation as
+`mcp_tricorder_scan`, `mcp_tricorder_detect`, `mcp_tricorder_symbols`,
+`mcp_tricorder_detail`.
+
+```yaml
+mcp_servers:
+  tricorder:
+    command: "C:/absolute/path/to/tricorder/.venv/Scripts/tricorder-mcp.exe"
+    args: []
+```
+
+Requires the `mcp` Python package in the Hermes host (`pip install mcp`). A bundled skill
+(`skills/tricorder/SKILL.md`) teaches the agent the scan → detect/symbols → detail workflow.
+No plugin code is required — native MCP client is the supported path.
+
+### Other clients (Cline/Roo)
+
+For a client like Cline/Roo, add to `cline_mcp_settings.json`:
 
 ```json
 {
