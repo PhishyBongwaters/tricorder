@@ -1,0 +1,56 @@
+USER REVIEW — Tricorder MCP tools
+(in the context of saving agent context)
+Reviewed against: tricorder MCP server on D:\Projects\projectm (8 tools)
+
+TL;DR — 4.5/5. It's a context-starvation diet in tool form.
+
+What I actually did
+- tricorder_scan (tier 0, defs only, dumped to file) over a 844-file C++ codebase
+- 7 targeted tricorder_detect probes (audio pipeline, dead-API check, render spine, eval engine)
+
+Context that would have been burned without it
+Total repo mass: 6868 defs + 39,561 references. Full-token estimate: 169,639 tokens if
+you dumped the whole thing into context. The map gave me the entire symbol skeleton of
+the repo (every class, method, namespace, sorted by importance) in ~16.5K tokens, and I
+only pulled the top ~400 lines into context — call it ~6-7K tokens. Roughly 20x savings
+on the way in, and that's before the detect probes let me answer questions without
+opening a single header by hand.
+
+The kicker: the tools found things I would NOT have found without opening files one by one.
+  - projectm_write_debug_image_on_next_frame: exported in the public C API (@since 4.0.0)
+    but the wrapper body is literally "// UNIMPLEMENTED". A dead public export. That's a
+    15-minute manual rabbit hunt that detect nailed in one call.
+  - eval mutex: lock/unlock are EMPTY NO-OPs in libprojectM (EvalLibMutex.cpp) but the same
+    symbols DO lock via NSEEL in the ns-eel2 shim. Concurrent preset eval landmine.
+  - audio input: triple-path (SDL / WASAPI loopback / fake PCM) gated by #if macros — exactly
+    the kind of conditional branching cross-references make miserable by hand.
+
+The good
+- detect (identifier search) is surgical: defs + refs with 2-line context, kind-tagged,
+  cross-referenced. Answers "where does this get called and is it implemented" in one call.
+- scan can write to output_file — dumps the map without flooding the conversation. This is
+  THE context saver. Point at the file, pull only what you need.
+- Mermaid output mode exists for dependency-graph work.
+- Honest: tier 0 (defs only) is enough for most questions; the tier knob stops over-context.
+
+The not-so-good (why not 5/5)
+1. The scan default token budget (8192) still yields ~331 tags, and the map is NOT sorted
+   purely by "what matters to you" — vendor code (glm, stb_image, hlslparser) ranked near
+   the top simply because it's heavily cross-referenced. I had to eyeball-past a LOT of GLM
+   noise to get to projectM's own core. exclude_unranked=0.0 exists but vendor files aren't
+   rank-0, so it doesn't filter them. Add a "skip vendor/" affordance.
+2. Argument-name foot-guns: tricorder_scan wants project_root (not files), detect wants query
+   (not identifier), plus a whole wall of optional args. First-time ergonomics are rough —
+   each wrong guess costs a rejected tool call.
+3. No text/DM reply — only "detect/scan/symbols/detail", all repo-scoped. You can't ask it
+   "why" something is the way it is; it returns occurrences, not reasoning. Fine for a map,
+   but it's a lookup engine, not an analyst.
+4. References explode: 39.5K refs vs 6.8K defs. If you ever flip on references by default
+   it'll eat your budget. Keep the context_lines=2 default and resist the urge.
+
+Bottom line
+For the specific job "understand a large codebase without spending your whole context window
+on it" — this is a genuine win. The dead-API and no-op-mutex finds alone prove it isn't just
+token math; it surfaces architecture facts you'd normally have to grind for. Honest rating:
+4.5/5. It won't reason about the code for you, but it can keep a 170K-token repo down to
+a ~7K-token reading list, and that's the whole game.
