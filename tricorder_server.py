@@ -7,7 +7,7 @@ from typing import List, Optional, Dict, Any, Set
 import dataclasses
 
 from fastmcp import FastMCP, settings
-from repomap_class import RepoMap
+from core import Tricorder
 from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord
 from scm import get_scm_fname
 from importance import filter_important_files
@@ -40,14 +40,14 @@ log = logging.getLogger(__name__)
 settings.stateless_http = True
 
 # Create MCP server
-mcp = FastMCP("RepoMapServer")
+mcp = FastMCP("tricorder")
 
 # ponytail: advisory tier tracker — survives across calls within a server process.
 # Can't enforce agent behavior (MCP is stateless per call) but can warn in the response.
 _tier_history: Dict[str, dict] = {}  # {project_root: {"last_tier": int, "last_format": str, "map_file": str}}
 
 @mcp.tool()
-async def repo_map(
+async def tricorder_scan(
     project_root: str,
     chat_files: Optional[List[str]] = None,
     other_files: Optional[List[str]] = None,
@@ -77,7 +77,7 @@ async def repo_map(
     :param force_refresh: If True, forces a refresh of the repository map cache. Defaults to False.
     :param mentioned_files: Optional list of file paths explicitly mentioned in the conversation and receive a mid-level ranking boost.
     :param mentioned_idents: Optional list of identifiers explicitly mentioned in the conversation, to boost their ranking.
-    :param verbose: If True, enables verbose logging for the RepoMap generation process. Defaults to False.
+    :param verbose: If True, enables verbose logging for the Tricorder generation process. Defaults to False.
     :param max_context_window: Optional maximum context window size for token calculation, used to adjust map token limit when no chat files are provided.
     :param max_files: Maximum number of files to auto-scan when other_files is not provided. Prevents full-scan bloat on large repos. Defaults to 1000.
     :param output_file: If provided, write the map to this file path instead of returning it in the response. The response will contain only the file path and a token estimate — use this to avoid flooding the agent's context with large maps. Recommended for repos > 50 files.
@@ -139,9 +139,9 @@ async def repo_map(
     abs_chat_files_set = set(abs_chat_files)
     abs_other_files = [f for f in abs_other_files if f not in abs_chat_files_set]
 
-    # 4. Instantiate and run RepoMap
+    # 4. Instantiate and run Tricorder
     try:
-        repo_mapper = RepoMap(
+        repo_mapper = Tricorder(
             map_tokens=token_limit,
             root=str(root_path),
             token_counter_func=lambda text: count_tokens(text, "gpt-4"),
@@ -153,8 +153,8 @@ async def repo_map(
             context_lines=context_lines if tier > 0 else 0
         )
     except Exception as e:
-        log.exception(f"Failed to initialize RepoMap for project '{project_root}': {e}")
-        return {"error": f"Failed to initialize RepoMap: {str(e)}"}
+        log.exception(f"Failed to initialize Tricorder for project '{project_root}': {e}")
+        return {"error": f"Failed to initialize Tricorder: {str(e)}"}
 
     # 5. Dry run / output_file — estimate + map to disk
     # ponytail: when output_file is set, the map goes to disk anyway — no need to
@@ -295,7 +295,7 @@ async def repo_map(
         return {"error": f"Error generating repository map: {str(e)}"}
     
 @mcp.tool()
-async def search_identifiers(
+async def tricorder_detect(
     project_root: str,
     query: str,
     max_results: int = 50,
@@ -324,8 +324,8 @@ async def search_identifiers(
     project_root = str(Path(project_root).resolve())
 
     try:
-        # Initialize RepoMap with search-specific settings
-        repo_map = RepoMap(
+        # Initialize Tricorder with search-specific settings
+        repo_map = Tricorder(
             root=project_root,
             token_counter_func=lambda text: count_tokens(text, "gpt-4"),
             file_reader_func=read_text,
@@ -392,7 +392,7 @@ async def search_identifiers(
         return {"error": f"Error searching identifiers: {str(e)}"}    
 
 @mcp.tool()
-async def search_symbols(
+async def tricorder_symbols(
     project_root: str,
     query: str = "",
     type: Optional[str] = None,
@@ -420,7 +420,7 @@ async def search_symbols(
     limit = min(max(limit, 1), 200)
 
     try:
-        repo_map = RepoMap(
+        repo_map = Tricorder(
             root=project_root,
             token_counter_func=lambda text: count_tokens(text, "gpt-4"),
             file_reader_func=read_text,
@@ -469,7 +469,7 @@ async def search_symbols(
         return {"error": f"Error searching symbols: {str(e)}"}
 
 @mcp.tool()
-async def get_symbol_details(
+async def tricorder_detail(
     project_root: str,
     file: str,
     name: str,
@@ -512,7 +512,7 @@ async def get_symbol_details(
         return {"error": "not found"}
 
     try:
-        repo_map = RepoMap(
+        repo_map = Tricorder(
             root=project_root,
             token_counter_func=lambda text: count_tokens(text, "gpt-4"),
             file_reader_func=read_text,

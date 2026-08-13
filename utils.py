@@ -1,5 +1,5 @@
 """
-Utility functions for RepoMap.
+Utility functions for Tricorder.
 """
 
 import os
@@ -95,7 +95,7 @@ _BUILTIN_SKIP_DIRS = {'node_modules', '__pycache__', 'venv', 'env', 'build', 'di
 def discover_src_files(directory: str, use_gitignore: bool = True) -> List[str]:
     """Walk a directory and return source files, skipping noise.
 
-    Shared by repomap_server.find_src_files and RepoMap._discover_files.
+    Shared by tricorder_server.find_src_files and Tricorder._discover_files.
     ponytail: one implementation, two callers — no drift.
     """
     if not os.path.isdir(directory):

@@ -1,5 +1,5 @@
 """
-SCM file handling for RepoMap.
+SCM file handling for Tricorder.
 """
 
 from pathlib import Path

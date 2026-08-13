@@ -3,8 +3,9 @@ requires = ["setuptools>=69.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "repomapper"
+name = "tricorder"
 version = "0.1.0"
+description = "Tricorder — Star Trek-inspired code intelligence. Scans codebases for symbols, signatures, references, and call graphs; generates compressed repo maps (tree-sitter + PageRank) for humans and LLMs."
 requires-python = ">=3.11"
 dependencies = [
     "diskcache>=5.6.0",
@@ -14,13 +15,17 @@ dependencies = [
     "pygments>=2.14.0",
     "tiktoken>=0.5.0",
     "tree-sitter>=0.20.0",
+    "tree-sitter-javascript>=0.21.0",
+    "tree-sitter-typescript>=0.20.0",
+    "tree-sitter-language-pack>=0.9.0",
 ]
-
-[project.scripts]
-repomap-mcp = "repomap_server:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
 
+[project.scripts]
+tricorder = "tricorder:main"
+tricorder-mcp = "tricorder_server:main"
+
 [tool.setuptools]
-py-modules = ["repomap_server", "repomap", "repomap_class", "utils", "importance", "scm"]
+py-modules = ["tricorder", "tricorder_server", "core", "utils", "importance", "scm", "name_resolver", "import_parser"]

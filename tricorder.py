@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Standalone RepoMap Tool
+Standalone Tricorder Tool
 
 A command-line tool that generates a "map" of a software repository,
 highlighting important files and definitions based on their relevance.
@@ -16,7 +16,7 @@ from typing import List, Optional
 from utils import count_tokens, read_text, Tag, parse_gitignore
 from scm import get_scm_fname
 from importance import filter_important_files
-from repomap_class import RepoMap
+from core import Tricorder
 
 
 def find_git_root(base: str) -> Optional[str]:
@@ -287,9 +287,9 @@ Examples:
             p = root_path / path_spec_str
         effective_other_files_unresolved.extend(find_src_files(str(p)))
     
-    # chat_files for RepoMap are from --chat-files argument, resolved.
+    # chat_files for Tricorder are from --chat-files argument, resolved.
     chat_files = [str(Path(f).resolve()) for f in chat_files_from_args]
-    # other_files for RepoMap are the effective_other_files, resolved after expansion.
+    # other_files for Tricorder are the effective_other_files, resolved after expansion.
     other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
 
     # chat files resolved above
@@ -298,8 +298,8 @@ Examples:
     mentioned_fnames = set(args.mentioned_files) if args.mentioned_files else None
     mentioned_idents = set(args.mentioned_idents) if args.mentioned_idents else None
     
-    # Create RepoMap instance
-    repo_map = RepoMap(
+    # Create Tricorder instance
+    repo_map = Tricorder(
         map_tokens=args.map_tokens,
         root=str(root_path),
         token_counter_func=token_counter,

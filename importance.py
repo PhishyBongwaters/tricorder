@@ -1,5 +1,5 @@
 """
-Important file filtering for RepoMap.
+Important file filtering for Tricorder.
 """
 
 import os

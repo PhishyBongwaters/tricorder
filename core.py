@@ -1,5 +1,5 @@
 """
-RepoMap class for generating repository maps.
+Tricorder class for generating repository maps.
 """
 
 import os
@@ -36,7 +36,7 @@ SQLITE_ERRORS = (sqlite3.OperationalError, sqlite3.DatabaseError)
 
 
 
-class RepoMap:
+class Tricorder:
     """Main class for generating repository maps."""
     
     def __init__(
@@ -55,7 +55,7 @@ class RepoMap:
         context_lines: int = 0,
         exclude_untagged: bool = False
     ):
-        """Initialize RepoMap instance."""
+        """Initialize Tricorder instance."""
         self.map_tokens = map_tokens
         self.max_map_tokens = map_tokens
         self.root = Path(root or os.getcwd()).resolve()
@@ -618,7 +618,7 @@ class RepoMap:
         Returns a dict with:
           - 'resolver': NameResolver instance
           - 'file_imports': {file_path: [ImportBinding, ...]}
-        ponytail: one pass over all files, cached on the instance — RepoMap is
+        ponytail: one pass over all files, cached on the instance — Tricorder is
         per-call in the MCP server, so no cross-project stale-cache risk.
         """
         if self._import_index_cache is not None:

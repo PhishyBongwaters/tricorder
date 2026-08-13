@@ -35,9 +35,9 @@ class TestMCPTokenLimit(unittest.TestCase):
 
     def test_excluded_capped_by_budget(self):
         """Excluded dict entries fit within remaining token budget."""
-        from repomap_class import RepoMap, FileReport
-        repo_map = RepoMap(root=self.project_root, map_tokens=500)
-        class_path = str(Path(self.project_root) / 'repomap_class.py')
+        from core import Tricorder, FileReport
+        repo_map = Tricorder(root=self.project_root, map_tokens=500)
+        class_path = str(Path(self.project_root) / 'core.py')
         map_content, file_report = repo_map.get_repo_map(
             chat_files=[class_path],
             other_files=[class_path]
@@ -51,7 +51,7 @@ class TestMCPTokenLimit(unittest.TestCase):
 
     def test_max_files_cap(self):
         """Auto-scan respects max_files limit."""
-        from repomap_server import find_src_files
+        from tricorder_server import find_src_files
         all_files = find_src_files(self.project_root)
         max_files = 10
         if len(all_files) > max_files:
@@ -67,10 +67,10 @@ class TestMCPTierContext(unittest.TestCase):
 
     def test_tier_context_lines(self):
         """tier=1, context_lines=5 produces more context than tier=1, context_lines=2."""
-        from repomap_class import RepoMap
-        class_path = str(Path(self.project_root) / 'repomap_class.py')
-        rm_small = RepoMap(root=self.project_root, context_lines=2)
-        rm_large = RepoMap(root=self.project_root, context_lines=5)
+        from core import Tricorder
+        class_path = str(Path(self.project_root) / 'core.py')
+        rm_small = Tricorder(root=self.project_root, context_lines=2)
+        rm_large = Tricorder(root=self.project_root, context_lines=5)
         ranked_tags, _ = rm_small.get_ranked_tags([class_path], [])
         if ranked_tags:
             tree_small = rm_small.to_tree(ranked_tags[:3], set())
@@ -91,11 +91,11 @@ class TestMCPOutputFile(unittest.TestCase):
     def test_output_file_writes_map_and_returns_metadata(self):
         """repo_map with output_file writes map to disk and returns no 'map' key."""
         import asyncio
-        from repomap_server import repo_map, _tier_history
+        from tricorder_server import tricorder_scan, _tier_history
         _tier_history.clear()  # fresh state
 
         out_file = str(Path(self.tmpdir) / "T0.txt")
-        result = asyncio.run(repo_map(
+        result = asyncio.run(tricorder_scan(
             project_root=self.project_root,
             token_limit=2048,
             tier=0,
@@ -117,14 +117,14 @@ class TestMCPOutputFile(unittest.TestCase):
     def test_output_file_tier_hint_on_upgrade(self):
         """Calling T0 then T1 with output_file produces a tier_hint advisory."""
         import asyncio
-        from repomap_server import repo_map, _tier_history
+        from tricorder_server import tricorder_scan, _tier_history
         _tier_history.clear()
 
         t0_file = str(Path(self.tmpdir) / "T0.txt")
         t1_file = str(Path(self.tmpdir) / "T1.txt")
 
         # First call: T0
-        asyncio.run(repo_map(
+        asyncio.run(tricorder_scan(
             project_root=self.project_root,
             token_limit=2048,
             tier=0,
@@ -132,7 +132,7 @@ class TestMCPOutputFile(unittest.TestCase):
         ))
 
         # Second call: T1 — should get tier_hint
-        result = asyncio.run(repo_map(
+        result = asyncio.run(tricorder_scan(
             project_root=self.project_root,
             token_limit=4096,
             tier=1,
@@ -146,10 +146,10 @@ class TestMCPOutputFile(unittest.TestCase):
     def test_stdout_path_still_returns_map(self):
         """Without output_file, the response still contains the full 'map' string (backward compat)."""
         import asyncio
-        from repomap_server import repo_map, _tier_history
+        from tricorder_server import tricorder_scan, _tier_history
         _tier_history.clear()
 
-        result = asyncio.run(repo_map(
+        result = asyncio.run(tricorder_scan(
             project_root=self.project_root,
             token_limit=1024,
             tier=0,
@@ -169,9 +169,9 @@ class TestMCPDryRun(unittest.TestCase):
     def test_dry_run_returns_estimate(self):
         """dry_run returns tags, tokens_per_tag, tags_at_budget, full_repo_estimate."""
         import asyncio
-        from repomap_server import repo_map
+        from tricorder_server import tricorder_scan
 
-        result = asyncio.run(repo_map(
+        result = asyncio.run(tricorder_scan(
             project_root=self.project_root,
             token_limit=8192,
             dry_run=True
@@ -192,14 +192,14 @@ class TestMCPDryRun(unittest.TestCase):
     def test_dry_run_respects_token_limit(self):
         """Lower token_limit → fewer tags_at_budget."""
         import asyncio
-        from repomap_server import repo_map
+        from tricorder_server import tricorder_scan
 
-        result_high = asyncio.run(repo_map(
+        result_high = asyncio.run(tricorder_scan(
             project_root=self.project_root,
             token_limit=16384,
             dry_run=True
         ))
-        result_low = asyncio.run(repo_map(
+        result_low = asyncio.run(tricorder_scan(
             project_root=self.project_root,
             token_limit=2048,
             dry_run=True

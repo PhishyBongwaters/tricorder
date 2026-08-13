@@ -1,4 +1,4 @@
-"""Tests for search_symbols MCP tool (Milestone 2)."""
+"""Tests for tricorder_symbols MCP tool (Milestone 2)."""
 import asyncio
 import sys
 import time
@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from repomap_server import search_symbols
+from tricorder_server import tricorder_symbols
 
 
 class TestSearchSymbols(unittest.TestCase):
@@ -15,7 +15,7 @@ class TestSearchSymbols(unittest.TestCase):
 
     def test_name_only(self):
         """Name-only search finds the symbol."""
-        result = asyncio.run(search_symbols(
+        result = asyncio.run(tricorder_symbols(
             project_root=self.project_root, query="count_tokens"
         ))
         self.assertNotIn("error", result)
@@ -24,7 +24,7 @@ class TestSearchSymbols(unittest.TestCase):
 
     def test_type_only(self):
         """Type-only search returns only matching types."""
-        result = asyncio.run(search_symbols(
+        result = asyncio.run(tricorder_symbols(
             project_root=self.project_root, query="", type="function"
         ))
         self.assertNotIn("error", result)
@@ -34,21 +34,21 @@ class TestSearchSymbols(unittest.TestCase):
 
     def test_combined_filters(self):
         """Combined query+type+file filters work with AND logic."""
-        result = asyncio.run(search_symbols(
+        result = asyncio.run(tricorder_symbols(
             project_root=self.project_root,
-            query="map",
+            query="tricorder",
             type="function",
-            file="repomap"
+            file="tricorder_server"
         ))
         self.assertNotIn("error", result)
         for s in result["symbols"]:
-            self.assertIn("map", s["name"].lower())
+            self.assertIn("tricorder", s["name"].lower())
             self.assertEqual(s["type"], "function")
-            self.assertIn("repomap", s["file"].lower())
+            self.assertIn("tricorder_server", s["file"].lower())
 
     def test_limit_respected(self):
         """limit=3 returns at most 3 results."""
-        result = asyncio.run(search_symbols(
+        result = asyncio.run(tricorder_symbols(
             project_root=self.project_root, query="", limit=3
         ))
         self.assertNotIn("error", result)
@@ -56,7 +56,7 @@ class TestSearchSymbols(unittest.TestCase):
 
     def test_limit_cap(self):
         """limit > 200 is capped at 200."""
-        result = asyncio.run(search_symbols(
+        result = asyncio.run(tricorder_symbols(
             project_root=self.project_root, query="", limit=999
         ))
         self.assertNotIn("error", result)
@@ -64,7 +64,7 @@ class TestSearchSymbols(unittest.TestCase):
 
     def test_all_fields_present(self):
         """Every symbol record has all 9 required fields."""
-        result = asyncio.run(search_symbols(
+        result = asyncio.run(tricorder_symbols(
             project_root=self.project_root, query="count_tokens"
         ))
         self.assertNotIn("error", result)
@@ -77,7 +77,7 @@ class TestSearchSymbols(unittest.TestCase):
     def test_performance(self):
         """Full scan returns in <2s."""
         start = time.time()
-        result = asyncio.run(search_symbols(
+        result = asyncio.run(tricorder_symbols(
             project_root=self.project_root, query=""
         ))
         elapsed = time.time() - start
@@ -86,7 +86,7 @@ class TestSearchSymbols(unittest.TestCase):
 
     def test_empty_result(self):
         """Type with no matches returns empty list, not error."""
-        result = asyncio.run(search_symbols(
+        result = asyncio.run(tricorder_symbols(
             project_root=self.project_root, query="", type="import"
         ))
         self.assertNotIn("error", result)

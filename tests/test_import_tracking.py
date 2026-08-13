@@ -6,7 +6,7 @@ import shutil
 import unittest
 from pathlib import Path
 
-from repomap_class import RepoMap
+from core import Tricorder
 from import_parser import parse_imports, ImportBinding
 from name_resolver import NameResolver
 from grep_ast.tsl import get_parser
@@ -231,11 +231,11 @@ class TestNameResolver(unittest.TestCase):
 
 
 class TestImportTrackingIntegration(unittest.TestCase):
-    """Test import tracking integrated with RepoMap."""
+    """Test import tracking integrated with Tricorder."""
 
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
-        self.repo = RepoMap(root=self.test_dir, verbose=False)
+        self.repo = Tricorder(root=self.test_dir, verbose=False)
 
     def tearDown(self):
         if hasattr(self.repo, 'TAGS_CACHE') and hasattr(self.repo.TAGS_CACHE, 'close'):
