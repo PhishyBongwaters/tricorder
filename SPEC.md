@@ -41,9 +41,13 @@ We forked RepoMapper and went deep on language coverage, correctness, and code i
 
 This is the rebrand. RepoMapper worked, but it was a fork that had outgrown its name. tricorder is the same code, repackaged as a first-class code-intelligence tool with:
 
-- **Native MCP server** — register `tricorder-mcp` under `mcp_servers:` in Hermes `config.yaml`; its 4 tools then appear as `mcp_tricorder_*` in every conversation. This is the primary and only required integration (see [Integration](#integration-reality)). No plugin code needed.
+- **Native MCP server** — register `tricorder-mcp` under `mcp_servers:` in Hermes `config.yaml`; its 4 tools then appear as `mcp_tricorder_*` in every conversation. This is the reliable on-demand tool surface.
+- **Lifecycle plugin** — `plugins/tricorder/` binds `on_session_start` + `pre_llm_call` so the active project's T0 map is built and injected on the first turn automatically ("control, not assume"). Plus `/tricorder` slash commands.
 - **Bundled skill** — `skills/tricorder/SKILL.md` teaches the agent the scan→detect/symbols→detail workflow.
-- **Slash commands** `/scan`, `/findsym`, `/symbol` — optional, thin Hermes plugin; NOT a build requirement (see below).
+
+Both integrations delegate to the tricorder venv's own binaries (never imported in-process).
+The MCP server covers on-demand probes; the plugin covers proactive mapping. Together they are
+the "plugin" that makes tricorder a first-class Hermes citizen.
 
 The name comes from the Star Trek tricorder — a handheld sensor device that scans, analyzes, and reports on unfamiliar environments. That's exactly what this tool does with codebases. 🖖
 
@@ -74,7 +78,9 @@ tricorder/
 │       └── ... (20+ languages via tree-sitter-language-pack)
 ├── skills/
 │   └── tricorder/              # bundled usage skill (SKILL.md)
-├── tests/                      # 73 tests (ported from RepoMapper fork)
+├── plugins/
+│   └── tricorder/              # Hermes lifecycle plugin (hooks + /tricorder slash cmd)
+├── tests/                      # 75 tests (ported from RepoMapper fork)
 ├── README.md
 ├── SPEC.md
 ├── LICENSE                     # MIT
@@ -83,8 +89,11 @@ tricorder/
 
 ### Integration reality
 
-tricorder is **not** a `plugin.yaml`-manifest plugin, and it has no `commands/` / `hooks/`
-directories. Those do not exist in Hermes' plugin model. The verified, working surfaces are:
+tricorder is a **real `plugin.yaml`-manifest plugin** (`plugins/tricorder/`) installed to
+`~/.hermes/plugins/tricorder/` via `hermes plugins install`. It uses the standard Hermes
+plugin surface: a plugin manifest + `__init__.py` with `register(ctx)` calling
+`ctx.register_hook(...)` / `ctx.register_command(...)` / `ctx.register_skill(...)`. The
+verified, working surfaces are:
 
 - **Native MCP client (primary, required):** Hermes launches `tricorder-mcp.exe` (from the
   tricorder venv) via `config.yaml` → `mcp_servers:` and exposes the 4 tools as
@@ -92,16 +101,19 @@ directories. Those do not exist in Hermes' plugin model. The verified, working s
   `mcp_tricorder_detail`. Confirmed against the real Hermes host (v0.20.0). Requires the
   `mcp` Python package in the host and a Hermes restart after config change (no hot-reload).
   The tricorder venv (`D:/Projects/tricorder/.venv`, Python 3.11) already has `mcp`+`fastmcp`.
-- **Real plugin API** (only if slash commands are ever wanted): a Hermes plugin is a package
-  whose `__init__.py` exposes `register(ctx)`; you call `ctx.register_command(name, handler,
-  description=...)`, `ctx.register_skill(name, skill_root, ...)`, `ctx.register_tool(...)`,
-  `ctx.register_hook(...)`. The known hook names are `subagent_start`, `subagent_stop`,
-  `pre_llm_call` — **none of which provide "auto-activate a toolset."** So lifecycle
-  enforcement is out of scope until a real capability exists.
+- **Lifecycle plugin (primary proactive surface) — BUILT:** `plugins/tricorder/` is a
+  real Hermes plugin (manifest + `__init__.py` with `register(ctx)`). It wires the
+  `on_session_start` + `pre_llm_call` hooks so the active project's T0 map is built once
+  and a compact digest is injected into the first turn's user message — the agent gets
+  the codebase skeleton *before* it acts. It also registers `/tricorder` slash commands
+  (`root`, `scan`, `status`) and the `tricorder:tricorder` skill. See
+  [Lifecycle Hooks](#lifecycle-hooks-real--this-is-the-control-not-assume-surface).
+  Installed via `hermes plugins install <git>#plugins/tricorder --enable`.
 - **Cross-venv note:** Hermes runs from `AppData\Local\hermes\hermes-agent\venv`; tricorder
-  runs from its own venv. A plugin that imports tricorder logic in-process would require
-  installing tricorder (and its deps) into Hermes' Python. The MCP route avoids this entirely
-  — subprocess stdio, clean separation. Prefer it.
+  runs from its own venv (`D:/Projects/tricorder/.venv`, Python 3.11). The plugin never
+  imports tricorder in-process — it shells to `tricorder.exe` once per project (on session
+  start / stale first turn) and caches the map to `~/.hermes/tricorder/`. Per-turn hook
+  calls read the disk cache, so there is no per-turn subprocess cost.
 ```
 
 ---
@@ -185,37 +197,54 @@ Returns callers (in-file + cross-file with import resolution) and callees.
 
 ---
 
-## Slash Commands (optional — not yet built)
+## Slash Commands (built in the plugin)
 
-These are convenience wrappers that would live in a thin Hermes plugin (`register(ctx)` →
-`ctx.register_command(name, handler, ...)`). They are **not** build requirements and the
-tools they wrap are already available as `mcp_tricorder_*` via native MCP. Build only if
-interactive CLI ergonomics are wanted:
+The lifecycle plugin registers a single `/tricorder` slash command with subcommands.
+The map itself is auto-injected via `pre_llm_call`; the slash command is for on-demand
+control and project setup:
 
 | Command | Description |
 |---------|-------------|
-| `/scan <path>` | Generate a repo map for a directory, write to disk |
-| `/findsym <name> [path]` | Search for a symbol by name across a project |
-| `/symbol <file> <name>` | Get full symbol details (callers, callees, signature) |
+| `/tricorder root <path>` | Set the active project (persists to `plugins.entries.tricorder.active_project`) |
+| `/tricorder scan [path]` | Generate a repo map (default: active project) |
+| `/tricorder status` | Show active project + cached map |
 
-They would delegate to the MCP server over stdio (subprocess) — not import tricorder
-in-process — because tricorder runs in its own venv, separate from Hermes' Python.
+Symbol search/detail are **not** slash commands — they're the MCP tools
+(`mcp_tricorder_detect/symbols/detail`), which already work and are better suited to
+that (structured results, filters). The CLI only generates maps, so the plugin shells
+to `tricorder.exe` for map production only; targeted probes route to MCP.
 
 ---
 
-## Lifecycle Hooks (NOT available)
+## Lifecycle Hooks (REAL — this is the "control, not assume" surface)
 
-The following were originally envisioned, but **no such capability exists** in the real
-Hermes plugin API:
+The plugin wires into Hermes' lifecycle hooks, which the live `VALID_HOOKS` set in
+`hermes_cli/plugins.py` confirms **do exist** (the earlier "NOT available" claim was
+stale). The relevant ones:
 
-- ~~Auto-detection on project open~~
-- ~~Intercepting `read_file` to enforce a map-first workflow~~
-- ~~mtime-based smart map caching~~
+- **`on_session_start`** — fired once per new session (`agent/conversation_loop.py`).
+  Builds a fresh T0 repo map for the configured active project and caches it to
+  `~/.hermes/tricorder/`. This is the "project opened → map it" trigger.
+- **`pre_llm_call`** — fired before each LLM call (`agent/turn_context.py`). A plugin
+  may return `{"context": "..."}` (or a plain string) which Hermes **injects into the
+  current turn's user message** — ephemeral, never persisted, system prompt stays
+  byte-stable (prompt-cache friendly). This is the missing "auto-activate a toolset"
+  primitive: tricorder feeds the compact map digest to the agent on the first turn
+  without the agent having to choose to scan.
 
-The only plugin hooks Hermes actually exposes are `subagent_start`, `subagent_stop`, and
-`pre_llm_call`, and none of them can do any of the above. Treat this entire section as
-out of scope until Hermes grows a real capability for it. `--force-refresh` and the
-on-disk `.repomap.tags.cache.v1/` already handle caching at the CLI/MCP layer.
+Also available (not used yet): `post_llm_call`, `pre_tool_call`, `post_tool_call`,
+`pre_verify`, `on_skill_lifecycle`, `subagent_start`/`stop`, kanban + approval hooks,
+`on_session_end`.
+
+**Active project is declared, never assumed.** Both hooks receive `session_id`,
+`model`, `platform` — but **no cwd/project root**. So the plugin reads the active
+project from config: `plugins.entries.tricorder.active_project` (via `/tricorder root
+<path>` or `hermes config set`). It does not sniff paths from messages or cwd.
+
+**Bounded, not chatty.** The map is built once (on session start / stale first turn);
+the digest is injected only on the first turn. Later turns stay silent — the map file
++ MCP tools + skill cover follow-up access, keeping context economy intact (~1.5% of
+full-repo cost).
 
 ---
 
@@ -273,3 +302,17 @@ venv's `tricorder-mcp.exe`) and the `mcp` client SDK is present, so after a Herm
 4 tools appear as `mcp_tricorder_scan/detect/symbols/detail`. SPEC.md documents design
 and the *real* integration surface — where the design is not yet supported by Hermes, that
 is flagged explicitly rather than assumed.
+**Phase 3 (lifecycle plugin) complete** — `plugins/tricorder/` built and installed to
+`~/.hermes/plugins/tricorder`, enabled in config. `on_session_start` builds the active
+project's T0 map; `pre_llm_call` injects a bounded digest on the first turn (verified 1/0
+injection on first/later turns through the real singleton `invoke_hook` pipeline);
+`/tricorder root|scan|status` slash commands registered; `tricorder:tricorder` skill
+registered. This is the "control, not assume" surface: the agent gets the codebase skeleton
+fed to it without having to choose to scan. **This makes tricorder a release candidate.**
+
+```
+# Install (idempotent reinstall after plugin changes):
+hermes plugins install "http://127.0.0.1:3001/projects/tricorder.git#plugins/tricorder" --force --enable
+# Set the active project once:
+hermes config set plugins.entries.tricorder.active_project D:/Projects/<repo>
+```
