@@ -180,14 +180,20 @@ def _on_pre_llm_call(
 ) -> Optional[str]:
     """Return a short tricorder digest to inject into the user message.
 
-    Inject on first turn (fresh map) so the agent has the repo skeleton before
-    it does anything. Subsequent turns are silent unless the map just refreshed
-    (cheap re-inject is acceptable; Hermes dedups presentation)."""
+    Injection policy (context-economy aware):
+      * First turn -> always inject, rebuilding the map first if it's stale,
+        so the agent gets the repo skeleton before it does anything.
+      * Later turns -> silent. No per-turn injection; the map file + skills
+        cover follow-up access. This keeps the injected context to one turn.
+    """
     root = _active_project()
     if not root:
         return None
     if not _is_fresh(root):
         build_map(root)
+    if not is_first_turn:
+        # Only the first turn carries the digest; later turns stay quiet.
+        return None
     out = _cache_file(root)
     if not out.exists():
         return None
