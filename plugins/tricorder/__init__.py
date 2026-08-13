@@ -292,17 +292,12 @@ def register(ctx) -> None:
     ctx.register_command(
         "tricorder",
         handler=_handle_tricorder,
-        description="Codebase intelligence: map, find, detail, set root.",
-        args_hint="<scan|find|detail|root|status>",
+        description="Codebase intelligence: map lifecycle + active project.",
+        args_hint="<root|scan|status>",
     )
 
-    # Register the bundled skill so the workflow is discoverable.
-    skill_root = Path(__file__).resolve().parent.parent.parent / "skills" / "tricorder"
-    if skill_root.exists():
-        try:
-            ctx.register_skill("tricorder", skill_root)
-        except Exception as exc:
-            logger.debug("tricorder: skill registration skipped: %s", exc)
+    # NOTE: the tricorder skill is already installed globally at
+    # ~/.hermes/skills/ (independent of this plugin), so no register_skill here.
 
 
 if __name__ == "__main__":  # pragma: no cover — manual smoke test
