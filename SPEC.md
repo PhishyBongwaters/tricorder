@@ -266,8 +266,10 @@ with optional slash-command plugin) of the RepoMapper fork maintained at `http:/
 ## Status
 
 **Phase 1 (rebrand) complete** — RepoMapper fork imported and fully rebranded to tricorder
-(see git log). 73 tests green; CLI and MCP server verified. **Phase 2 (Hermes integration)**
-in progress: bundled skill (`skills/tricorder/`) added; registration under Hermes'
-`mcp_servers:` is the primary path and is pending config wiring. SPEC.md documents design
+(see git log). 73 tests green (now 75, incl. `exclude_globs`); CLI and MCP server verified.
+**Phase 2 (Hermes integration) complete** — bundled skill (`skills/tricorder/`) added and
+installed; the MCP server is registered under Hermes' `mcp_servers:` (command points at the
+venv's `tricorder-mcp.exe`) and the `mcp` client SDK is present, so after a Hermes restart the
+4 tools appear as `mcp_tricorder_scan/detect/symbols/detail`. SPEC.md documents design
 and the *real* integration surface — where the design is not yet supported by Hermes, that
 is flagged explicitly rather than assumed.
