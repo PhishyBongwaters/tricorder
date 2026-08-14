@@ -75,21 +75,23 @@ No explicit invalidation needed.
 
 ### Stat-based signature
 
+The stat-hash lives in the CLI (`tricorder.py`), not the plugin. The plugin
+shells to `tricorder.exe --signature-only` and reads the hex from stdout.
+
+**CLI side (`tricorder.py`) — the actual implementation:**
+
 ```python
-def _project_signature(project_root: str) -> str:
-    """Hash of file paths + sizes + mtimes for all source files.
-    
-    Uses the same discover_src_files (with current exclude_globs) as the
-    scan. stat only — no file reads, no parsing.
-    
+# In tricorder.py, reuses discover_src_files from utils.py:
+def compute_signature(root: str, exclude_globs: list) -> str:
+    """Stat-based signature: path + size + mtime per source file, sha256'd.
+
     ponytail: stat-based (path+size+mtime), not content hash.
     Misses: content changed but size+mtime unchanged (practically never
     on real filesystems). Upgrade path: content hash if this ever bites.
     """
     h = hashlib.sha256()
-    globs = _exclude_globs()
-    files = sorted(discover_src_files(project_root, use_gitignore=True,
-                                      exclude_globs=globs))
+    files = sorted(discover_src_files(root, use_gitignore=True,
+                                       exclude_globs=exclude_globs))
     for fpath in files:
         try:
             st = os.stat(fpath)
@@ -97,6 +99,31 @@ def _project_signature(project_root: str) -> str:
         except OSError:
             continue
     return h.hexdigest()[:16]
+```
+
+```python
+# tricorder.py argparse + handler for --signature-only:
+if args.signature_only:
+    sig = compute_signature(args.root, args.exclude_globs)
+    print(sig)
+    sys.exit(0)
+```
+
+**Plugin side (`__init__.py`) — thin subprocess wrapper:**
+
+```python
+def _project_signature(project_root: str) -> str:
+    """Shell to CLI for the stat-hash. Returns 16 hex chars or '' on failure."""
+    cmd = [_TRICORDER_CLI, "--root", project_root, "--signature-only", "."]
+    globs = _exclude_globs()
+    if globs:
+        cmd += ["--exclude-globs"] + globs
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           timeout=30, check=False)
+        return r.stdout.strip()[:16]
+    except Exception:
+        return ""
 ```
 
 ### Cache validity check
@@ -287,8 +314,16 @@ plugin shells to the CLI — it doesn't import utils.py. Two options:
   to tricorder.py that prints the stat-hash and exits without building a map.
   Clean separation, no import dependency, but another subprocess call.
 
-**Decision needed:** (a) or (b)? Lean: (b) — keep plugin dependency-free,
-one subprocess that prints 16 hex chars, ~30ms.
+**Decision: (b)** — CLI `--signature-only` flag. Plugin shells to
+`tricorder.exe --root <project> --exclude-globs <globs> --signature-only .`,
+reads 16 hex chars from stdout. No import dependency, same pattern as
+existing scan subprocess. ~30ms.
+
+The CLI `--signature-only` path reuses `discover_src_files` from utils.py
+(the same function scans + MCP already use). The stat-hash loop is ~10 lines
+that call that function. One file walker, one hasher, no duplication. The
+plugin doesn't reimplement any file discovery — it shells to the CLI for
+both scans and signatures.
 
 ### Constants to remove
 - `_MAP_FRESH_SECONDS = 60` — deleted
@@ -323,7 +358,7 @@ one subprocess that prints 16 hex chars, ~30ms.
 | `pre_llm_call` | Same logic, better trigger (signature instead of TTL) |
 | Constants | `_MAP_FRESH_SECONDS` deleted |
 | New helpers | `_project_signature`, `_is_cache_valid`, `_read_meta`, `_cache_age_str`, `_list_cached_projects` |
-| CLI | Possibly `--signature-only` flag (decision pending) |
+| CLI | Add `--signature-only` flag (prints stat-hash, no map build) |
 
 **Net:** ~90-120 lines changed. No new files, no new dependencies, no git
 requirement. Cache becomes correct (changes invalidate) instead of arbitrary
