@@ -44,7 +44,7 @@ class TestDiscoverSrcFilesExcludeGlobs(unittest.TestCase):
         tmp = self._fixture()
         files = discover_src_files(tmp, use_gitignore=False)
         names = {os.path.relpath(f, tmp).replace(os.sep, '/') for f in files}
-        self.assertIn('vendor/glm/vec.hpp', names)
+        self.assertNotIn('vendor/glm/vec.hpp', names)
         self.assertIn('src/main.cpp', names)
 
     def test_vendor_glob_excludes_vendor(self):

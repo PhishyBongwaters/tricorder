@@ -1044,7 +1044,10 @@ class Tricorder:
         )
         
         tree_parts = []
-        
+        grouped_files = defaultdict(list)
+        for rel_fname, file_tag_list in sorted_files:
+            grouped_files[Path(rel_fname).parent.as_posix()].append((rel_fname, file_tag_list))
+
         # Pre-compute line counts for files we're about to render
         file_abs_paths = {rel: str(self.root / rel) for rel, _ in sorted_files}
         file_line_counts = {}
@@ -1052,63 +1055,43 @@ class Tricorder:
             code = self.read_text_func_internal(abs_path)
             if code:
                 file_line_counts[rel] = len(code.splitlines())
-        
-        for rel_fname, file_tag_list in sorted_files:
-            # Get lines of interest
-            lois = [tag.line for rank, tag in file_tag_list]
 
-            # Expand lois for T1 context rendering
-            if self.context_lines > 0:
-                expanded_lois = []
-                for loi in lois:
-                    for offset in range(-self.context_lines, self.context_lines + 1):
-                        expanded_lois.append(max(1, loi + offset))
-                lois = sorted(set(expanded_lois))
-            
-            # Find absolute filename
-            abs_fname = str(self.root / rel_fname)
-            
-            # Get the max rank for the file
-            max_rank = max(rank for rank, tag in file_tag_list)
-            
-            # Render the tree for this file
-            rendered = self.render_tree(abs_fname, rel_fname, lois)
-            if rendered:
+        for group_name, files_in_group in sorted(grouped_files.items(), key=lambda item: (item[0] != '.', item[0])):
+            group_parts = []
+            for rel_fname, file_tag_list in files_in_group:
+                lois = [tag.line for rank, tag in file_tag_list]
+                if self.context_lines > 0:
+                    expanded_lois = []
+                    for loi in lois:
+                        for offset in range(-self.context_lines, self.context_lines + 1):
+                            expanded_lois.append(max(1, loi + offset))
+                    lois = sorted(set(expanded_lois))
+
+                abs_fname = str(self.root / rel_fname)
+                max_rank = max(rank for rank, tag in file_tag_list)
+                rendered = self.render_tree(abs_fname, rel_fname, lois)
+                if not rendered:
+                    continue
+
                 rendered_lines = rendered.splitlines()
                 first_line = rendered_lines[0]
                 code_lines = rendered_lines[1:]
-                
-                # Append line count to filename header
                 lc = file_line_counts.get(rel_fname)
                 if lc:
                     first_line = f"{rel_fname} ({lc} lines)"
-                
-                # Skip rank line when all files share the same rank (PR-3)
                 rank_line = f"(Rank value: {max_rank:.4f})\n"
                 if len(set(rank for rank, _ in file_tag_list)) == 1 and all(
                     max(r for r, _ in file_tags) == max_rank for _, file_tags in sorted_files
                 ):
                     rank_line = ""
-                
-                tree_parts.append(
-                    f"{first_line}\n"
-                    f"{rank_line}\n\n"
-                    + "\n".join(code_lines)
+                group_parts.append(
+                    f"{first_line}\n{rank_line}\n\n" + "\n".join(code_lines)
                 )
-        
-        # Skip untagged section in T1 mode (already visible via context) or when --exclude-untagged — PR-3
-        if untagged_files and self.context_lines == 0 and not self.exclude_untagged:
-            other_lines = []
-            for uf in untagged_files:
-                abs_path = str(self.root / uf)
-                code = self.read_text_func_internal(abs_path)
-                if code:
-                    lc = len(code.splitlines())
-                    other_lines.append(f"{uf} ({lc} lines)")
-                else:
-                    other_lines.append(uf)
-            tree_parts.append("Other files:\n" + "\n".join(other_lines))
-        
+
+            if group_parts:
+                header = "root" if group_name == "." else group_name
+                tree_parts.append(f"{header}/\n" + "\n\n".join(group_parts))
+
         return "\n\n".join(tree_parts)
     
     def to_mermaid(self, chat_fnames: List[str], other_fnames: List[str],

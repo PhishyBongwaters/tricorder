@@ -89,6 +89,11 @@ def read_text(filename: str, encoding: str = "utf-8", silent: bool = False) -> O
 
 _SKIP_EXTS = {'.frag', '.vert', '.inc', '.icns', '.plist', '.entitlements',
               '.cmake.in', '.h.in', '.cpp.in', '.hpp.in'}
+_BINARY_MEDIA_EXTS = {
+    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.tif', '.tiff',
+    '.mp4', '.mov', '.mkv', '.avi', '.webm', '.mp3', '.wav', '.flac', '.ogg',
+    '.pdf', '.svg',
+}
 _BUILTIN_SKIP_DIRS = {'node_modules', '__pycache__', 'venv', 'env', 'build', 'dist', '.tox', '.eggs'}
 
 
@@ -115,14 +120,14 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
                 break
             p = p.parent
         gitignore_dirs = parse_gitignore(git_root or directory)
-    skip_dirs = gitignore_dirs | _BUILTIN_SKIP_DIRS
+    skip_dirs = gitignore_dirs | _BUILTIN_SKIP_DIRS | {'vendor'}
     src_files = []
     for r, d, f_list in os.walk(directory):
         d[:] = [dn for dn in d if not dn.startswith('.') and dn not in skip_dirs]
         for f in f_list:
             if f.startswith('.'):
                 continue
-            if any(f.endswith(ext) for ext in _SKIP_EXTS):
+            if any(f.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS):
                 continue
             full = os.path.join(r, f)
             if exclude_globs:

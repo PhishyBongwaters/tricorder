@@ -41,9 +41,6 @@ from hermes_constants import get_hermes_home
 _CACHE_DIR = get_hermes_home() / "tricorder"
 _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Reasonable cap for the auto-generated map (tokens). Tier 0 = defs only.
-_DEFAULT_TOKENS = 2048
-
 # Path to the tricorder CLI in its own venv. Detect once at import.
 _TRICORDER_CLI = None
 _VENVS = [
@@ -208,7 +205,6 @@ def build_map(project_root: str) -> Optional[dict]:
     out = _cache_file(project_root)
     cmd = [
         _TRICORDER_CLI, "--root", project_root,
-        "--map-tokens", str(_DEFAULT_TOKENS),
         "--tier", "0",
         "--output", str(out),
         ".",

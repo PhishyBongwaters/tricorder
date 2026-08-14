@@ -68,15 +68,15 @@ class TestTricorderT1Context(unittest.TestCase):
             # T0 should only show definition lines, no surrounding context
             self.assertIn('core.py', tree)
 
-    def test_t1_with_context(self):
-        repo_map = Tricorder(root=self.project_root, context_lines=3)
-        self.assertEqual(repo_map.context_lines, 3)
-        class_path = str(Path(self.project_root) / 'core.py')
-        ranked_tags, _ = repo_map.get_ranked_tags([class_path], [])
+    def test_tier_headers_group_files(self):
+        repo_map = Tricorder(root=self.project_root, context_lines=0)
+        files = [str(Path(self.project_root) / f) for f in ['core.py', 'utils.py']]
+        ranked_tags, _ = repo_map.get_ranked_tags(files, [])
         if ranked_tags:
-            tree = repo_map.to_tree(ranked_tags[:5], set())
-            # T1 should show definition + surrounding lines
+            tree = repo_map.to_tree(ranked_tags[:12], set())
+            self.assertIn('root/', tree)
             self.assertIn('core.py', tree)
+            self.assertNotIn('utils.py', tree)
 
     def test_context_lines_clamped(self):
         repo_map = Tricorder(root=self.project_root, context_lines=100)
