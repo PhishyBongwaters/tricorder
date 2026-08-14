@@ -58,6 +58,14 @@ for _cand in _VENVS:
 # sniffed from cwd/messages.
 # ---------------------------------------------------------------------------
 
+# Lean default token budget for the tier-0 navigation scaffold. The map goes to
+# file (not context) and the reference/depth path lives in the MCP tools, so
+# the scaffold only needs the top definitions, not the whole repo. Bump via
+# config if a project genuinely needs a fat scaffold (ponytail: constant, not
+# config knob — raise when a real project overflows 2048).
+_MAP_TOKENS = 2048
+
+
 def _active_project() -> Optional[str]:
     """Return the configured active project root, or None if not set."""
     try:
@@ -206,6 +214,7 @@ def build_map(project_root: str) -> Optional[dict]:
     cmd = [
         _TRICORDER_CLI, "--root", project_root,
         "--tier", "0",
+        "--map-tokens", str(_MAP_TOKENS),
         "--output", str(out),
         ".",
     ]

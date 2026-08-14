@@ -336,29 +336,35 @@ class Tricorder:
             for capture_name, parents in parent_nodes.items():
                 sym_type = kind_map.get(capture_name, "variable")
                 name_list = name_nodes.get("name." + capture_name, [])
-                # Match each parent to the name_node whose byte range
-                # overlaps (the name identifier is inside the parent node).
-                # Falls back to positional index + text extraction.
+                # Deterministic name resolution: the identifier immediately
+                # following the def/func/fn/class keyword in parent.children.
+                # Order-independent; avoids stealing nested/sibling names.
                 used_names = set()
                 for i, parent in enumerate(parents):
-                    # Find name_node overlapping this parent
-                    name_node = None
-                    for n in name_list:
-                        if id(n) in used_names:
-                            continue
-                        # Check if name_node is within parent's range
-                        if n.start_byte >= parent.start_byte and n.end_byte <= parent.end_byte:
-                            name_node = n
-                            used_names.add(id(n))
+                    name = ""
+                    # Find the keyword child, then take the next identifier sibling
+                    keyword_types = ("def", "func", "fn", "class", "type", "interface", "enum")
+                    for idx, child in enumerate(parent.children):
+                        if child.type in keyword_types:
+                            for next_child in parent.children[idx + 1:]:
+                                if next_child.type in ("identifier", "type_identifier", "property_identifier"):
+                                    name = next_child.text.decode("utf-8", errors="ignore")
+                                    break
                             break
-                    # Fallback to positional index
-                    if name_node is None and i < len(name_list):
-                        if id(name_list[i]) not in used_names:
-                            name_node = name_list[i]
-                            used_names.add(id(name_list[i]))
-                    name = name_node.text.decode("utf-8", errors="ignore") if name_node else ""
+                    # Fallback: byte-range match against a name_node inside parent
                     if not name:
-                        # Fallback: extract identifier from parent's children
+                        name_node = None
+                        for n in name_list:
+                            if id(n) in used_names:
+                                continue
+                            if n.start_byte >= parent.start_byte and n.end_byte <= parent.end_byte:
+                                name_node = n
+                                used_names.add(id(n))
+                                break
+                        if name_node is not None:
+                            name = name_node.text.decode("utf-8", errors="ignore")
+                    if not name:
+                        # Last resort: any identifier child
                         for child in parent.children:
                             if child.type in ("identifier", "type_identifier", "property_identifier"):
                                 name = child.text.decode("utf-8", errors="ignore")
@@ -480,7 +486,7 @@ class Tricorder:
                             # ponytail: C# return type can be an identifier
                             # (user-defined class) — skip the method name
                             # identifier specifically, then allow identifier.
-                            _name_text = name_node.text.decode("utf-8", "ignore") if name_node else ""
+                            _name_text = name
                             for c in parent.children:
                                 if c.type in _SKIP_NODES and c.type != "identifier":
                                     continue
