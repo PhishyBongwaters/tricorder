@@ -207,6 +207,7 @@ def build_map(project_root: str) -> Optional[dict]:
     """Run tricorder scan for project_root into the cache. Returns meta dict
     (map_file, token_estimate, symbol counts) or None on failure. Best-effort,
     never raises."""
+    # Always rebuild on explicit scan - cache is for auto lifecycle only
     if not _TRICORDER_CLI:
         logger.debug("tricorder: CLI not found; skipping map")
         return None
@@ -215,6 +216,7 @@ def build_map(project_root: str) -> Optional[dict]:
         _TRICORDER_CLI, "--root", project_root,
         "--tier", "0",
         "--map-tokens", str(_MAP_TOKENS),
+        "--exclude-untagged",
         "--output", str(out),
         ".",
     ]
@@ -361,6 +363,10 @@ def _handle_tricorder(raw_args: str) -> Optional[str]:
             target = root
         else:
             return "No active project. Use /tricorder root <path> first, or pass a path."
+        # Force fresh map by deleting cache
+        for p in [_cache_file(target), _meta_file(target)]:
+            try: p.unlink()
+            except: pass
         meta = build_map(target)
         if not meta:
             return f"Scan failed or empty for {target}."

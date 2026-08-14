@@ -94,6 +94,12 @@ _BINARY_MEDIA_EXTS = {
     '.mp4', '.mov', '.mkv', '.avi', '.webm', '.mp3', '.wav', '.flac', '.ogg',
     '.pdf', '.svg',
 }
+# Data/asset text formats — not source code, never wants to be in a code map.
+_DATA_EXTS = {
+    '.milk',          # projectM presets
+    '.json', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.config',
+    '.csv', '.tsv',
+}
 _BUILTIN_SKIP_DIRS = {'node_modules', '__pycache__', 'venv', 'env', 'build', 'dist', '.tox', '.eggs'}
 
 
@@ -127,7 +133,9 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
         for f in f_list:
             if f.startswith('.'):
                 continue
-            if any(f.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS):
+            # Case-insensitive ext check: .Jpg slides past .jpg otherwise.
+            low = f.lower()
+            if any(low.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS | _DATA_EXTS):
                 continue
             full = os.path.join(r, f)
             if exclude_globs:
