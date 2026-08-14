@@ -53,6 +53,22 @@ tricorder --exclude-globs vendor/** third_party/** .  # skip vendored code
 
 Tier tokens: T0 ≈ 14 tokens/tag (definitions), T1 ≈ 350 tokens/tag (with context).
 
+## Multi-project caching
+
+The plugin caches maps per-project in `~/.hermes/tricorder/`. Cache validity is
+**content-aware**: a stat-based signature (path + size + mtime per source file,
+sha256'd) is stored in the meta JSON. On the next access, if the signature matches
+the current file stats, the cache is reused — no rebuild. If files changed, the
+signature differs and a rebuild happens automatically.
+
+- `/tricorder root <path>` sets the active project and checks the cache: if
+  valid → "cache ready." If stale/missing → auto-rebuild.
+- `/tricorder scan` forces a rebuild, ignoring the signature.
+- `/tricorder status` shows the active project's cache state (valid/stale/missing,
+  age) plus all other cached projects.
+- Changing `exclude_globs` changes the file set → different signature → rebuild
+  on next access. No explicit cache-busting needed.
+
 ## Pitfalls
 
 - **Stale cache → empty/odd maps**: after installing new tree-sitter parsers or an upgrade, maps can look wrong from a cached parse. Run `--force-refresh` (MCP: `force_refresh: true`) or delete the `.repomap.tags.cache.v1/` dir.

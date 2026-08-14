@@ -43,7 +43,6 @@ _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Reasonable cap for the auto-generated map (tokens). Tier 0 = defs only.
 _DEFAULT_TOKENS = 2048
-_MAP_FRESH_SECONDS = 60  # rebuild at most this often per project
 
 # Path to the tricorder CLI in its own venv. Detect once at import.
 _TRICORDER_CLI = None
@@ -124,15 +123,75 @@ def _meta_file(project_root: str) -> Path:
     return _cache_file(project_root).with_suffix(".json")
 
 
-def _is_fresh(project_root: str) -> bool:
+def _read_meta(project_root: str) -> dict:
+    """Read cached meta JSON, return {} if missing/corrupt."""
+    m = _meta_file(project_root)
+    try:
+        return json.loads(m.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _project_signature(project_root: str) -> str:
+    """Shell to CLI for the stat-hash. Returns 16 hex chars or '' on failure."""
+    if not _TRICORDER_CLI:
+        return ""
+    cmd = [_TRICORDER_CLI, "--root", project_root, "--signature-only", "."]
+    globs = _exclude_globs()
+    if globs:
+        cmd += ["--exclude-globs"] + globs
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           timeout=30, check=False)
+        return r.stdout.strip()[:16]
+    except Exception:
+        return ""
+
+
+def _is_cache_valid(project_root: str) -> bool:
+    """Cache is valid if meta exists and stored signature matches current."""
+    meta = _read_meta(project_root)
+    cached_sig = meta.get("project_sig")
+    if not cached_sig:
+        return False  # no signature → rebuild
+    return cached_sig == _project_signature(project_root)
+
+
+def _cache_age_str(project_root: str) -> str:
+    """Human-readable age of cached map: '2m', '1h', '3d', or 'unknown'."""
     m = _meta_file(project_root)
     if not m.exists():
-        return False
-    try:
-        import time as _t
-        return (_t.time() - m.stat().st_mtime) < _MAP_FRESH_SECONDS
-    except Exception:
-        return False
+        return "unknown"
+    import time as _t
+    secs = int(_t.time() - m.stat().st_mtime)
+    if secs < 60:
+        return f"{secs}s"
+    if secs < 3600:
+        return f"{secs // 60}m"
+    if secs < 86400:
+        return f"{secs // 3600}h"
+    return f"{secs // 86400}d"
+
+
+def _list_cached_projects() -> list:
+    """List all cached projects (path, age_str, lines) excluding active."""
+    root = _active_project()
+    result = []
+    for meta_file in _CACHE_DIR.glob("*.json"):
+        try:
+            info = json.loads(meta_file.read_text(encoding="utf-8"))
+            proj = info.get("project_root", "")
+            if proj and proj != root:
+                import time as _t
+                secs = int(_t.time() - meta_file.stat().st_mtime)
+                age = (f"{secs}s" if secs < 60 else
+                       f"{secs // 60}m" if secs < 3600 else
+                       f"{secs // 3600}h" if secs < 86400 else
+                       f"{secs // 86400}d")
+                result.append((proj, age, info.get("lines", 0)))
+        except Exception:
+            continue
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +238,7 @@ def build_map(project_root: str) -> Optional[dict]:
         "map_file": str(out),
         "lines": n_lines,
         "tokens_approx": int(n_lines * 14),  # T0 ~14 tokens/tag
+        "project_sig": _project_signature(project_root),
     }
     _meta_file(project_root).write_text(
         json.dumps(meta), encoding="utf-8"
@@ -195,6 +255,9 @@ def _on_session_start(session_id: str = "", **_: Any) -> None:
     the first-turn digest. Best-effort; never blocks the session."""
     root = _active_project()
     if not root:
+        return
+    if _is_cache_valid(root):
+        logger.debug("tricorder: cache valid for %s, skipping rebuild", root)
         return
     build_map(root)
 
@@ -216,7 +279,7 @@ def _on_pre_llm_call(
     root = _active_project()
     if not root:
         return None
-    if not _is_fresh(root):
+    if not _is_cache_valid(root):
         build_map(root)
     if not is_first_turn:
         # Only the first turn carries the digest; later turns stay quiet.
@@ -224,11 +287,7 @@ def _on_pre_llm_call(
     out = _cache_file(root)
     if not out.exists():
         return None
-    meta = _meta_file(root)
-    try:
-        info = json.loads(meta.read_text(encoding="utf-8"))
-    except Exception:
-        info = {}
+    info = _read_meta(root)
     # Keep the injected context tiny: a pointer + digest, not the full map.
     lines = info.get("lines", 0)
     return (
@@ -251,7 +310,7 @@ _HELP = """\
 
   /tricorder root <path>     Set active project (persisted to config)
   /tricorder scan [path]     Generate a repo map (default: active project)
-  /tricorder status          Show active project + cached map
+  /tricorder status          Show active project + cache state + all cached projects
   /tricorder help            This text
 
 Symbol search / detail live in the MCP tools (mcp_tricorder_detect,
@@ -272,11 +331,23 @@ def _handle_tricorder(raw_args: str) -> Optional[str]:
             return "Usage: /tricorder root <path>"
         p = Path(argv[1]).resolve()
         _set_active_project_config(str(p))
-        build_map(str(p))
-        return f"Active project set to {p} and mapped."
-        # NOTE: config change for active_project takes effect for future runs;
-        # the in-process value is still the old one this session. Restart or
-        # re-set for the hook to pick it up.
+        if _is_cache_valid(str(p)):
+            meta = _read_meta(str(p))
+            age = _cache_age_str(str(p))
+            return (
+                f"Active project set to {p}.\n"
+                f"  Cache: valid ({meta.get('lines', '?')} lines, "
+                f"~{meta.get('tokens_approx', '?')} tokens, {age} old)."
+            )
+        # Stale or missing — auto-rebuild
+        meta = build_map(str(p))
+        if meta:
+            return (
+                f"Active project set to {p}.\n"
+                f"  Map rebuilt ({meta['lines']} lines, "
+                f"~{meta['tokens_approx']} tokens)."
+            )
+        return f"Active project set to {p}.\n  Scan failed — run /tricorder scan."
 
     if cmd == "scan":
         if len(argv) > 1 and not argv[1].startswith("-"):
@@ -296,11 +367,23 @@ def _handle_tricorder(raw_args: str) -> Optional[str]:
     if cmd == "status":
         lines = [f"Active project: {root or '(none set)'}"]
         if root:
-            out = _cache_file(root)
-            if out.exists():
-                lines.append(f"  cached map: {out} ({out.stat().st_size} bytes)")
+            cache = _cache_file(root)
+            if cache.exists():
+                meta = _read_meta(root)
+                age = _cache_age_str(root)
+                valid = _is_cache_valid(root)
+                state = "valid" if valid else "stale (files changed)"
+                lines.append(
+                    f"  cache: {state} ({meta.get('lines', '?')} lines, "
+                    f"~{meta.get('tokens_approx', '?')} tokens, {age} old)"
+                )
             else:
-                lines.append("  cached map: (not yet built)")
+                lines.append("  cache: (not built)")
+        others = _list_cached_projects()
+        if others:
+            lines.append(f"  other cached maps ({len(others)}):")
+            for proj_path, age, n_lines in others:
+                lines.append(f"    {proj_path} — {n_lines} lines, {age} old")
         return "\n".join(lines)
 
     return f"Unknown subcommand: {cmd}\n\n{_HELP}"

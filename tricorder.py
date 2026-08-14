@@ -8,6 +8,7 @@ Uses Tree-sitter for parsing and PageRank for ranking importance.
 """
 
 import argparse
+import hashlib
 import os
 import sys
 from pathlib import Path
@@ -32,6 +33,25 @@ def find_git_root(base: str) -> Optional[str]:
 def find_src_files(directory: str, exclude_globs: Optional[List[str]] = None) -> List[str]:
     """Find source files in a directory (delegates to shared discover_src_files)."""
     return discover_src_files(directory, use_gitignore=True, exclude_globs=exclude_globs)
+
+
+def compute_signature(root: str, exclude_globs: Optional[List[str]] = None) -> str:
+    """Stat-based signature: path + size + mtime per source file, sha256'd.
+
+    ponytail: stat-based (path+size+mtime), not content hash.
+    Misses: content changed but size+mtime unchanged (practically never
+    on real filesystems). Upgrade path: content hash if this ever bites.
+    """
+    h = hashlib.sha256()
+    files = sorted(discover_src_files(root, use_gitignore=True,
+                                       exclude_globs=exclude_globs))
+    for fpath in files:
+        try:
+            st = os.stat(fpath)
+            h.update(f"{fpath}:{st.st_size}:{int(st.st_mtime)}".encode())
+        except OSError:
+            continue
+    return h.hexdigest()[:16]
 
 
 def tool_output(*messages):
@@ -209,8 +229,21 @@ Examples:
         action="store_true",
         help="Estimate token budget needed without generating the map"
     )
+
+    parser.add_argument(
+        "--signature-only",
+        action="store_true",
+        help="Print a stat-based content signature (16 hex chars) and exit. "
+             "No map is built. Used by the lifecycle plugin for cache validation."
+    )
     
     args = parser.parse_args()
+
+    # --signature-only: stat-hash, no map build. Early exit.
+    if args.signature_only:
+        sig = compute_signature(args.root, args.exclude_globs)
+        print(sig)
+        sys.exit(0)
     
     # Set up token counter with specified model
     def token_counter(text: str) -> int:

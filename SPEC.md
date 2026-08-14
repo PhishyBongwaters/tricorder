@@ -205,9 +205,9 @@ control and project setup:
 
 | Command | Description |
 |---------|-------------|
-| `/tricorder root <path>` | Set the active project (persists to `plugins.entries.tricorder.active_project`) |
-| `/tricorder scan [path]` | Generate a repo map (default: active project) |
-| `/tricorder status` | Show active project + cached map |
+| `/tricorder root <path>` | Set the active project (persists to `plugins.entries.tricorder.active_project`). Checks cache: if valid, reports "cache ready." If stale/missing, auto-rebuilds. |
+| `/tricorder scan [path]` | Force-rebuild a repo map (default: active project). Ignores signature. |
+| `/tricorder status` | Show active project + cache state (valid/stale/missing, age) + all other cached projects. |
 
 Symbol search/detail are **not** slash commands — they're the MCP tools
 (`mcp_tricorder_detect/symbols/detail`), which already work and are better suited to
@@ -230,6 +230,16 @@ hermes config set plugins.entries.tricorder.exclude_globs '["vendor/**","third_p
 
 The CLI also exposes `--exclude-globs PATTERNS...` directly for ad-hoc runs (see SKILL.md).
 
+**Cache validity:** The plugin uses a **stat-based content signature** (not an
+mtime TTL) to decide whether the cached map is still valid. The CLI's
+`--signature-only` flag computes a sha256 over `{path}:{size}:{mtime}` for every
+source file and prints 16 hex chars. The plugin shells to the CLI for this,
+compares the result to the `project_sig` stored in the meta JSON, and skips
+rebuild if they match. Changing `exclude_globs` changes the file set, which
+changes the signature, which triggers a rebuild — no explicit invalidation.
+
+No `cache_ttl_seconds` knob exists. The signature replaces all TTL logic.
+
 ---
 
 ## Lifecycle Hooks (REAL — this is the "control, not assume" surface)
@@ -239,14 +249,15 @@ The plugin wires into Hermes' lifecycle hooks, which the live `VALID_HOOKS` set 
 stale). The relevant ones:
 
 - **`on_session_start`** — fired once per new session (`agent/conversation_loop.py`).
-  Builds a fresh T0 repo map for the configured active project and caches it to
-  `~/.hermes/tricorder/`. This is the "project opened → map it" trigger.
+  Checks the stat-based signature against the cached map. If valid → skip
+  rebuild (files unchanged). If stale/missing → rebuild. This is the
+  "project opened → map it (if it changed)" trigger.
 - **`pre_llm_call`** — fired before each LLM call (`agent/turn_context.py`). A plugin
   may return `{"context": "..."}` (or a plain string) which Hermes **injects into the
   current turn's user message** — ephemeral, never persisted, system prompt stays
-  byte-stable (prompt-cache friendly). This is the missing "auto-activate a toolset"
-  primitive: tricorder feeds the compact map digest to the agent on the first turn
-  without the agent having to choose to scan.
+  byte-stable (prompt-cache friendly). On the first turn: if the signature matches
+  the cache, inject from disk (no rebuild). If stale/missing, rebuild + inject.
+  Later turns: silent.
 
 Also available (not used yet): `post_llm_call`, `pre_tool_call`, `post_tool_call`,
 `pre_verify`, `on_skill_lifecycle`, `subagent_start`/`stop`, kanban + approval hooks,
