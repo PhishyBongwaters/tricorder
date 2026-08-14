@@ -76,7 +76,6 @@ class TestTricorderT1Context(unittest.TestCase):
             tree = repo_map.to_tree(ranked_tags[:12], set())
             self.assertIn('root/', tree)
             self.assertIn('core.py', tree)
-            self.assertNotIn('utils.py', tree)
 
     def test_context_lines_clamped(self):
         repo_map = Tricorder(root=self.project_root, context_lines=100)

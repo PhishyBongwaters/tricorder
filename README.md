@@ -1,6 +1,6 @@
 # Tricorder — Code Intelligence Scanner (CLI + MCP Server)
 
-Tricorder is a code-intelligence scanner in the spirit of the *Star Trek* tricorder: point it at a codebase and it reads only what matters. It scans for symbols, signatures, references, and cross-file call graphs, then generates a compact "map" of the repository — highlighting important files, definitions, and their relationships. It runs as both a **command-line application** for on-demand analysis and an **MCP (Model Context Protocol) server** for continuous repository mapping used by LLM clients.
+Tricorder is a code-intelligence scanner in the spirit of the *Star Trek* tricorder: point it at a codebase and it reads only what matters. It scans for symbols, signatures, references, and cross-file call graphs, then generates a compact "map" of the repository — highlighting important files, definitions, and their relationships. It runs as a **command-line application**, an **MCP (Model Context Protocol) server**, and a **Hermes plugin**. All three surfaces share the same lean map policy: prioritize navigation value, skip obvious noise, and avoid dumping the whole tree.
 
 Leverages **tree-sitter** for accurate code parsing and the **PageRank** algorithm to rank code elements by importance, so the most relevant information is always prioritized. A full-repo map typically costs ~1.5% of the tokens of reading every file.
 
@@ -136,6 +136,8 @@ tricorder . --dry-run --map-tokens 2048
 4. **Ranking**: PageRank over the graph
 5. **Token Optimization**: binary search fits the most important content within token limits
 6. **Output Generation**: readable code map
+
+This same discovery policy is shared by the CLI, MCP server, and Hermes plugin, so a repo that looks lean in one surface looks lean in the others too.
 
 ## Output Format & Tiers
 
