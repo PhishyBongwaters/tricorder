@@ -988,8 +988,8 @@ class Tricorder:
                     final_rank = file_rank * boost
                     ranked_tags.append((final_rank, tag))
         
-        # Sort by rank (descending)
-        ranked_tags.sort(key=lambda x: x[0], reverse=True)
+        # Sort by rank (descending), then filename, line for determinism
+        ranked_tags.sort(key=lambda x: (-x[0], self.get_rel_fname(x[1].fname), x[1].line))
         
         return ranked_tags, file_report
     
