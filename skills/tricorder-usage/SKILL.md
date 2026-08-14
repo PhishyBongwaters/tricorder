@@ -6,6 +6,8 @@ category: codebase-understanding
 
 # Tricorder Usage Protocol
 
+This skill is the operating procedure for tricorder. The plugin injects a short digest on first turn; this skill tells you what to do with it.
+
 When you see a `[tricorder]` digest in your user message, **do not guess** — the map exists and is current. Follow this flow:
 
 ## 1. Digest Injection (Auto on First Turn)
@@ -23,6 +25,8 @@ This means:
 - Tier 0 = definitions only (~14 tokens/tag), Tier 1 = with context (~350 tokens/tag)
 
 ## 2. Get Symbols — Three Ways
+
+Use these only when the digest points you at a directory, symbol family, or file path. The point is to stay directed before opening the repo.
 
 **A. MCP Tools (preferred for queries)**
 ```
@@ -46,6 +50,12 @@ Format: `path/to/file.ext:line:kind:symbol` — one per line
 
 User asks: "Where is the SDL window initialized?"
 
+Recommended flow:
+1. Read the digest.
+2. Use MCP to narrow to the right symbol/file.
+3. Pull only the specific file or symbol body you need.
+4. Use a full file read as the last restore only when the map and symbol lookup still leave ambiguity.
+
 ```python
 # 1. Search for SDL init
 mcp_tricorder_detect(pattern="SDL_Init|SDL_CreateWindow")
@@ -64,6 +74,11 @@ read_file("/cache/abc123.map")  # grep for SDL
 - Changing `exclude_globs` changes file set → new signature → rebuild
 
 ## 5. Don't Do This
+
+- Treat the digest as a full answer; it is direction, not proof.
+- Open the whole repo first.
+- Jump to a full file pull before trying symbol lookup.
+- Re-scan when the digest already points at the right area.
 
 - ��� Guess file locations
 - ��� Ask user to run `/tricorder scan` unless map is stale

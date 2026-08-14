@@ -80,3 +80,4 @@ signature differs and a rebuild happens automatically.
 ## Related Skills
 
 - **`tricorder-usage`** — protocol for using the repo map (digest → MCP → symbols)
+- **`tricorder-install`** — install the bundled skills into Hermes so the digest flow is actually available
