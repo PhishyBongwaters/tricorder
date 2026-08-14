@@ -76,6 +76,29 @@ def _active_project() -> Optional[str]:
     return None
 
 
+def _exclude_globs() -> list:
+    """Return the configured exclude_globs list (vendor/third-party patterns), or []."""
+    try:
+        from hermes_cli.config import load_config
+        cfg = load_config() or {}
+        entry = ((cfg.get("plugins") or {}).get("entries") or {}).get("tricorder") or {}
+        val = entry.get("exclude_globs")
+        if isinstance(val, list):
+            return [str(g) for g in val if g]
+        if isinstance(val, str) and val.strip():
+            # config set may store a JSON list as a string; recover it.
+            import json as _j
+            try:
+                parsed = _j.loads(val)
+                if isinstance(parsed, list):
+                    return [str(g) for g in parsed if g]
+            except (ValueError, TypeError):
+                pass
+    except Exception as exc:  # pragma: no cover
+        logger.debug("tricorder: could not read exclude_globs: %s", exc)
+    return []
+
+
 def _set_active_project_config(path: str) -> None:
     """Persist the active project via ``hermes config set`` (never hand-edit)."""
     # hermes config set plugins.entries.tricorder.active_project <path>
@@ -124,16 +147,20 @@ def build_map(project_root: str) -> Optional[dict]:
         logger.debug("tricorder: CLI not found; skipping map")
         return None
     out = _cache_file(project_root)
+    cmd = [
+        _TRICORDER_CLI, "--root", project_root,
+        "--map-tokens", str(_DEFAULT_TOKENS),
+        "--tier", "0",
+        "--output", str(out),
+        ".",
+    ]
+    globs = _exclude_globs()
+    if globs:
+        cmd += ["--exclude-globs"] + globs
     try:
         # The CLI needs at least one paths positional; resolve against --root.
         subprocess.run(
-            [
-                _TRICORDER_CLI, "--root", project_root,
-                "--map-tokens", str(_DEFAULT_TOKENS),
-                "--tier", "0",
-                "--output", str(out),
-                ".",
-            ],
+            cmd,
             capture_output=True, text=True, timeout=120,
             check=False,
         )

@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from utils import count_tokens, read_text, Tag, parse_gitignore
+from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files
 from scm import get_scm_fname
 from importance import filter_important_files
 from core import Tricorder
@@ -29,39 +29,9 @@ def find_git_root(base: str) -> Optional[str]:
     return None
 
 
-def find_src_files(directory: str) -> List[str]:
-    """Find source files in a directory."""
-    if not os.path.isdir(directory):
-        return [directory] if os.path.isfile(directory) else []
-    
-    # ponytail: skip noise extensions that can't have tree-sitter symbols
-    _SKIP_EXTS = {'.frag', '.vert', '.inc', '.icns', '.plist', '.entitlements',
-                  '.cmake.in', '.h.in', '.cpp.in', '.hpp.in'}
-    # ponytail: Windows device files that tree-sitter can't parse
-    _SKIP_NAMES = {'nul', 'con', 'prn', 'aux', 'com1', 'com2', 'com3', 'com4',
-                   'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9'}
-    # ponytail: parse .gitignore for dirs to skip — covers build/, dist/, etc.
-    git_root = find_git_root(directory) or directory
-    gitignore_dirs = parse_gitignore(git_root)
-    # ponytail: always-skip dirs (hardcoded fallback when no .gitignore)
-    builtin_skip = {'node_modules', '__pycache__', 'venv', 'env', 'build', 'dist', '.tox', '.eggs'}
-    skip_dirs = gitignore_dirs | builtin_skip
-    
-    src_files = []
-    for root, dirs, files in os.walk(directory):
-        # Skip hidden directories and common non-source directories
-        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in skip_dirs]
-        
-        for file in files:
-            if file.startswith('.') or file.lower() in _SKIP_NAMES:
-                continue
-            p = Path(file)
-            if p.suffix in _SKIP_EXTS or file.endswith(('.cmake.in', '.h.in', '.cpp.in', '.hpp.in')):
-                continue
-            full_path = os.path.join(root, file)
-            src_files.append(full_path)
-    
-    return src_files
+def find_src_files(directory: str, exclude_globs: Optional[List[str]] = None) -> List[str]:
+    """Find source files in a directory (delegates to shared discover_src_files)."""
+    return discover_src_files(directory, use_gitignore=True, exclude_globs=exclude_globs)
 
 
 def tool_output(*messages):
@@ -219,6 +189,16 @@ Examples:
     )
 
     parser.add_argument(
+        "--exclude-globs",
+        nargs="*",
+        default=None,
+        metavar="PATTERN",
+        help="Glob patterns (POSIX, relative to --root) to exclude from auto-scan, "
+             "e.g. vendor/** third_party/**. Filters vendored/third-party subtrees "
+             "before ranking so first-party code dominates the map."
+    )
+
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress all output except the map (no verbose, no info messages)"
@@ -285,7 +265,7 @@ Examples:
         p = Path(path_spec_str)
         if not p.is_absolute():
             p = root_path / path_spec_str
-        effective_other_files_unresolved.extend(find_src_files(str(p)))
+        effective_other_files_unresolved.extend(find_src_files(str(p), exclude_globs=args.exclude_globs))
     
     # chat_files for Tricorder are from --chat-files argument, resolved.
     chat_files = [str(Path(f).resolve()) for f in chat_files_from_args]

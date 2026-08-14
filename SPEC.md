@@ -214,6 +214,22 @@ Symbol search/detail are **not** slash commands — they're the MCP tools
 that (structured results, filters). The CLI only generates maps, so the plugin shells
 to `tricorder.exe` for map production only; targeted probes route to MCP.
 
+### Plugin config
+
+Both knobs live under `plugins.entries.tricorder.*` in `~/.hermes/config.yaml`:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `active_project` | string | Project root the plugin auto-maps on session start (REQUIRED — never guessed) |
+| `exclude_globs` | list | Glob patterns (POSIX, relative to active_project) to skip — vendor noise filter |
+
+```bash
+hermes config set plugins.entries.tricorder.active_project D:/Projects/projectm
+hermes config set plugins.entries.tricorder.exclude_globs '["vendor/**","third_party/**"]' --force
+```
+
+The CLI also exposes `--exclude-globs PATTERNS...` directly for ad-hoc runs (see SKILL.md).
+
 ---
 
 ## Lifecycle Hooks (REAL — this is the "control, not assume" surface)
