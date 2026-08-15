@@ -193,8 +193,9 @@ mcp_servers:
 ```
 
 Requires the `mcp` Python package in the Hermes host (`pip install mcp`). A bundled skill
-(`skills/tricorder/SKILL.md`) teaches the agent the scan → detect/symbols → detail workflow.
-No plugin code is required — native MCP client is the supported path.
+(`skills/tricorder/SKILL.md`) teaches the agent the escalation ladder: T0 map → detect/symbols
+→ detail → tier-1 scan → full-file read (last resort). No plugin code is required — native MCP
+client is the supported path.
 
 ### Other clients (Cline/Roo)
 

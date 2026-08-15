@@ -23,12 +23,17 @@ It is surfaced two ways:
 
 Don't scan for a known symbol — go straight to `detect`/`symbols`. Scan only for structure.
 
-## Workflow (lowest token cost)
+## Workflow — escalation ladder (stop at the first rung that answers the question)
 
-1. **Topography** (optional): `mcp_tricorder_scan {project_root, output_format: "mermaid"}` — get the module structure once.
-2. **Locate**: `mcp_tricorder_symbols {query, file?, type?}` or `mcp_tricorder_detect {query}` for a definition/line.
-3. **Deep-dive**: `mcp_tricorder_detail {name, file, line}` for body + cross-file callers/callees.
-4. **Read the actual code**: `read_file` at the line numbers found. Direct read beats a full scan for a single target.
+The point of tricorder is to NOT read every file. Climb the ladder; stop at the first rung that answers the question. Pulling a full file is the **last resort, not the default**.
+
+1. **T0 map (auto-injected)** — the `[tricorder]` digest at turn 0 already gives you the repo skeleton: file paths + symbol names + line numbers. Often enough to know *which* file. **Don't re-scan** — the digest is current.
+2. **Locate** — `mcp_tricorder_detect {query}` (case-insensitive, token-cheap) or `mcp_tricorder_symbols {query, file?, type?}` for a definition + signature + line. Returns the what/where without reading the file.
+3. **Deep-dive** — `mcp_tricorder_detail {name, file, line}` returns the **full symbol body** + cross-file callers/callees. For most "how does X work" questions this is enough — you get the implementation, not just the signature, at a fraction of a full-file read.
+4. **Escalate the map tier** — still missing context? `mcp_tricorder_scan {project_root, tier: 1, context_lines: 3}` gives definitions + surrounding lines (~350 tokens/tag, ~25x T0). Use `output_format: "mermaid"` for a module dependency graph. Narrow with `chat_files`/`mentioned_files` to keep it small.
+5. **Full file read — last resort** — `read_file` only when all of the above left genuine ambiguity (a bug spans half a file, you need a comment block far from any symbol, etc). Read the *specific line range* found in step 2/3, not the whole file blindly. A whole-file pull is a confession that the ladder failed.
+
+**Token economics**: T0 ≈ 14 tokens/tag. T1 ≈ 350 tokens/tag. `detail` returns one symbol body (typically 50-400 tokens). A full file read is thousands. Escalate deliberately.
 
 ### Required param
 
@@ -69,6 +74,15 @@ signature differs and a rebuild happens automatically.
 - Changing `exclude_globs` changes the file set → different signature → rebuild
   on next access. No explicit cache-busting needed.
 
+## Don't — discipline
+
+- **Don't pull a full file before trying `detect` → `symbols` → `detail`.** The ladder exists because `detail` returns the body at a fraction of the cost. A whole-file read is the last rung.
+- **Don't treat the digest as a full answer.** It's direction, not proof.
+- **Don't open the whole repo first.** Use the map to narrow.
+- **Don't re-scan when the digest already points at the right area.** It's current.
+- **Don't guess file locations.** Query MCP.
+- **Don't ask the user to run `/tricorder scan`** unless the map is stale (file changes not reflected).
+
 ## Pitfalls
 
 - **Stale cache → empty/odd maps**: after installing new tree-sitter parsers or an upgrade, maps can look wrong from a cached parse. Run `--force-refresh` (MCP: `force_refresh: true`) or delete the `.repomap.tags.cache.v1/` dir.
@@ -76,8 +90,3 @@ signature differs and a rebuild happens automatically.
 - `project_root` must be absolute; relative paths are not trusted.
 - `tricorder_detect` is case-insensitive and token-cheap — prefer it over a full scan to find an identifier.
 - **Arg names are exact** — the tools use strict MCP names, so a wrong guess costs a rejected call before the schema comes back. The ones that bite: `tricorder_scan` takes `project_root` (not `files`/`path`), `tricorder_detect` takes `query` (not `identifier`), `tricorder_detail` takes `name`+`file`+`line` (not `symbol`). Coping them correctly up front skips the round-trip.
-
-## Related Skills
-
-- **`tricorder-usage`** — protocol for using the repo map (digest → MCP → symbols)
-- **`tricorder-install`** — install the bundled skills into Hermes so the digest flow is actually available

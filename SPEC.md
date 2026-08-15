@@ -43,7 +43,7 @@ This is the rebrand. RepoMapper worked, but it was a fork that had outgrown its 
 
 - **Native MCP server** — register `tricorder-mcp` under `mcp_servers:` in Hermes `config.yaml`; its 4 tools then appear as `mcp_tricorder_*` in every conversation. This is the reliable on-demand tool surface.
 - **Lifecycle plugin** — `plugins/tricorder/` binds `on_session_start` + `pre_llm_call` so the active project's T0 map is built and injected on the first turn automatically ("control, not assume"). Plus `/tricorder` slash commands.
-- **Bundled skill** — `skills/tricorder/SKILL.md` teaches the agent the scan→detect/symbols→detail workflow.
+- **Bundled skill** — `skills/tricorder/SKILL.md` teaches the agent the escalation ladder: T0 map → detect/symbols → detail → tier-1 scan → full-file read (last resort).
 
 Both integrations delegate to the tricorder venv's own binaries (never imported in-process).
 The MCP server covers on-demand probes; the plugin covers proactive mapping. Together they are
