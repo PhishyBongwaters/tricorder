@@ -65,6 +65,7 @@ for _cand in _VENVS:
 # config if a project genuinely needs a fat scaffold (ponytail: constant, not
 # config knob — raise when a real project overflows 2048).
 _MAP_TOKENS = 2048
+_INJECT_MIN_FILES = 200
 
 # Extensions tricorder can parse (via grep_ast filename_to_lang).  The probe
 # uses this to distinguish code files from noise without importing tree-sitter.
@@ -424,6 +425,8 @@ def _on_pre_llm_call(
     info = _read_meta(root)
     # Run the probe for situational awareness (file/language tally).
     probe = _probe_project(root)
+    if probe.get("total_files", 0) < _INJECT_MIN_FILES:
+        return None
     probe_str = _format_probe_digest(probe, info)
     return (
         f"[tricorder] {info.get('project_root', root)} — {probe_str} "
