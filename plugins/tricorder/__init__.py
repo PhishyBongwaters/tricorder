@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import subprocess
+import fnmatch
 from pathlib import Path
 from typing import Any, Optional
 
@@ -64,6 +65,125 @@ for _cand in _VENVS:
 # config if a project genuinely needs a fat scaffold (ponytail: constant, not
 # config knob — raise when a real project overflows 2048).
 _MAP_TOKENS = 2048
+
+# Extensions tricorder can parse (via grep_ast filename_to_lang).  The probe
+# uses this to distinguish code files from noise without importing tree-sitter.
+# ponytail: hardcoded set, not dynamic import — the probe runs at session start
+# and must be cheap. If a new language is added to tree-sitter queries, add its
+# extension here.
+_CODE_EXTENSIONS = {
+    ".py": "python", ".rs": "rust", ".c": "c", ".h": "cpp", ".cpp": "cpp",
+    ".cc": "cpp", ".cxx": "cpp", ".hpp": "cpp", ".hxx": "cpp",
+    ".js": "javascript", ".jsx": "javascript", ".ts": "typescript",
+    ".tsx": "typescript", ".go": "go", ".java": "java", ".kt": "kotlin",
+    ".scala": "scala", ".rb": "ruby", ".php": "php", ".swift": "swift",
+    ".m": "objc", ".cs": "csharp", ".fs": "fsharp",
+    ".sh": "bash", ".bash": "bash", ".zsh": "bash",
+    ".hcl": "hcl", ".tf": "hcl",
+    ".lua": "lua", ".dart": "dart", ".r": "r", ".jl": "julia",
+    ".vim": "vim", ".el": "elisp", ".clj": "clojure", ".ex": "elixir",
+    ".exs": "elixir", ".erl": "erlang", ".hs": "haskell", ".ml": "ocaml",
+    ".nim": "nim", ".zig": "zig", ".v": "verilog", ".sv": "systemverilog",
+    ".d": "d", ".sql": "sql", ".cmake": "cmake",
+    ".html": "html", ".css": "css", ".scss": "css", ".less": "css",
+    ".vue": "javascript", ".svelte": "javascript",
+}
+
+
+def _probe_project(project_root: str) -> dict:
+    """Quick file-tree walk before map generation.  Returns a language tally
+    and rough size estimate so the agent knows what it's dealing with before
+    committing to any navigation strategy.
+
+    No tree-sitter, no parsing, no ranking — just os.walk + extension tally.
+    Costs milliseconds, zero tokens.  Runs before build_map in the lifecycle.
+
+    Returns: {"lang_counts": {lang: n_files}, "total_files": int,
+              "est_lines": int, "top_lang": str}
+    """
+    root_path = Path(project_root)
+    if not root_path.is_dir():
+        return {"lang_counts": {}, "total_files": 0, "est_lines": 0, "top_lang": ""}
+
+    # Reuse exclude_globs config so the probe agrees with what tricorder parses.
+    globs = _exclude_globs()
+    ignore_dirs = {".git", "node_modules", "__pycache__", ".venv", "venv",
+                    "target", "build", "dist", ".next", ".nuxt",
+                    "vendor", "third_party", ".tricorder"}
+
+    lang_counts: dict[str, int] = {}
+    total_bytes = 0
+
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        # Skip excluded dirs in-place (prunes the walk)
+        dirnames[:] = [d for d in dirnames if d not in ignore_dirs]
+        for fname in filenames:
+            # Apply exclude_globs (fnmatch against relative path)
+            rel = os.path.relpath(os.path.join(dirpath, fname), root_path)
+            if any(fnmatch.fnmatch(rel, g) for g in globs):
+                continue
+            ext = os.path.splitext(fname)[1].lower()
+            lang = _CODE_EXTENSIONS.get(ext)
+            if not lang:
+                continue
+            lang_counts[lang] = lang_counts.get(lang, 0) + 1
+            try:
+                total_bytes += os.path.getsize(os.path.join(dirpath, fname))
+            except OSError:
+                pass
+
+    total_files = sum(lang_counts.values())
+    # ponytail: ~40 bytes/line average across languages. Ceiling: a minified
+    # JS file skews this high, a verbose .h file skews low. It's a probe, not
+    # a census — the map does exact line counts.
+    est_lines = total_bytes // 40 if total_bytes else 0
+    top_lang = max(lang_counts, key=lang_counts.get) if lang_counts else ""
+
+    return {
+        "lang_counts": lang_counts,
+        "total_files": total_files,
+        "est_lines": est_lines,
+        "top_lang": top_lang,
+    }
+
+
+def _format_probe_digest(probe: dict, map_info: dict) -> str:
+    """Format the probe + map data into a concise agent cue for the digest."""
+    lang_counts = probe.get("lang_counts", {})
+    total = probe.get("total_files", 0)
+    est_lines = probe.get("est_lines", 0)
+    top_lang = probe.get("top_lang", "")
+
+    if not total:
+        return ""
+
+    # Top 3 languages by file count
+    top3 = sorted(lang_counts.items(), key=lambda x: -x[1])[:3]
+    lang_str = ", ".join(f"{n} {lang}" for lang, n in top3)
+
+    # Format line estimate
+    if est_lines >= 1000:
+        lines_str = f"~{est_lines // 1000}K lines"
+    else:
+        lines_str = f"~{est_lines} lines"
+
+    map_lines = map_info.get("lines", 0)
+    map_tokens = map_info.get("tokens_approx", 0)
+
+    # How many of the top language's files made it into the map?
+    top_count = lang_counts.get(top_lang, 0)
+    # Count how many files in the map are of the top language
+    # (from map_info if available, otherwise just report total)
+    map_files = map_info.get("map_files", 0)
+
+    parts = [f"{total} code files ({lang_str}), {lines_str}."]
+    if map_files and top_count:
+        parts.append(f"T0 scaffold: {map_files}/{total} files surfaced (~{map_tokens} tokens).")
+    else:
+        parts.append(f"T0 scaffold: ~{map_tokens} tokens.")
+    parts.append("Use MCP tools (tricorder_symbols/detect/detail) for targeted probes, /tricorder scan --tier 1 for depth.")
+
+    return " ".join(parts)
 
 
 def _active_project() -> Optional[str]:
@@ -239,13 +359,20 @@ def build_map(project_root: str) -> Optional[dict]:
         return None
 
     # Best-effort stats for the digest.
-    n_lines = out.read_text(encoding="utf-8", errors="replace").count("\n")
+    map_text = out.read_text(encoding="utf-8", errors="replace")
+    n_lines = map_text.count("\n")
+    # Count unique files surfaced in the map (lines ending with " (N lines)" pattern)
+    map_files = len(set(
+        line.split(" (")[0] for line in map_text.splitlines()
+        if " (" in line and line.endswith(" lines)")
+    ))
     meta = {
         "project_root": project_root,
         "map_file": str(out),
         "lines": n_lines,
         "tokens_approx": int(n_lines * 14),  # T0 ~14 tokens/tag
         "project_sig": _project_signature(project_root),
+        "map_files": map_files,
     }
     _meta_file(project_root).write_text(
         json.dumps(meta), encoding="utf-8"
@@ -295,12 +422,11 @@ def _on_pre_llm_call(
     if not out.exists():
         return None
     info = _read_meta(root)
-    # Keep the injected context tiny: a pointer + digest, not the full map.
-    lines = info.get("lines", 0)
+    # Run the probe for situational awareness (file/language tally).
+    probe = _probe_project(root)
+    probe_str = _format_probe_digest(probe, info)
     return (
-        "[tricorder] Active project map ready: "
-        f"{info.get('project_root', root)} "
-        f"({lines} lines, ~{info.get('tokens_approx', 0)} tokens, tier 0). "
+        f"[tricorder] {info.get('project_root', root)} — {probe_str} "
         f"Full map at {out}. "
         "Use /tricorder scan to rebuild, the MCP tools (mcp_tricorder_detect/"
         "symbols/detail) for targeted probes, or read the map file for the "
@@ -386,10 +512,21 @@ def _handle_tricorder(raw_args: str) -> Optional[str]:
                 state = "valid" if valid else "stale (files changed)"
                 lines.append(
                     f"  cache: {state} ({meta.get('lines', '?')} lines, "
-                    f"~{meta.get('tokens_approx', '?')} tokens, {age} old)"
+                    f"~{meta.get('tokens_approx', '?')} tokens, "
+                    f"{meta.get('map_files', '?')} files, {age} old)"
                 )
             else:
                 lines.append("  cache: (not built)")
+            # Probe for live file/language tally
+            probe = _probe_project(root)
+            if probe["total_files"]:
+                top3 = sorted(probe["lang_counts"].items(), key=lambda x: -x[1])[:3]
+                lang_str = ", ".join(f"{n} {lang}" for lang, n in top3)
+                el = probe["est_lines"]
+                lines_str = f"~{el // 1000}K lines" if el >= 1000 else f"~{el} lines"
+                lines.append(
+                    f"  probe: {probe['total_files']} code files ({lang_str}), {lines_str}"
+                )
         others = _list_cached_projects()
         if others:
             lines.append(f"  other cached maps ({len(others)}):")
