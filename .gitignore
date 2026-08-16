@@ -11,5 +11,6 @@ build/
 venv/
 *.swp
 *.swo
+*.bak
 .DS_Store
 Thumbs.db
