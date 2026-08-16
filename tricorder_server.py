@@ -46,6 +46,39 @@ mcp = FastMCP("tricorder")
 # Can't enforce agent behavior (MCP is stateless per call) but can warn in the response.
 _tier_history: Dict[str, dict] = {}  # {project_root: {"last_tier": int, "last_format": str, "map_file": str}}
 
+
+def _savings_pct(token_estimate: int, full_repo_estimate: int) -> float:
+    """% of full-repo context saved by a token estimate. 0 when repo is empty or
+    the estimate exceeds the repo (a tier-1 map can cost more than reading it)."""
+    if not full_repo_estimate:
+        return 0.0
+    return round(max(0.0, 1 - token_estimate / full_repo_estimate) * 100, 1)
+
+
+def _full_repo_tokens(project_root: str) -> int:
+    """Estimate full-repo token cost (sum of raw source-file reads)."""
+    total = 0
+    for f in find_src_files(project_root):
+        text = read_text(f, silent=True)
+        if text:
+            total += count_tokens(text, "gpt-4")
+    return total
+
+
+def _budget_fields(resp: dict, full_repo_tokens: int) -> dict:
+    """Add token_estimate/full_repo_estimate/savings_pct to a search-tool response.
+
+    token_estimate = tokens of the serialized (non-error) response body.
+    savings_pct = context saved vs reading the full repo. 0 when repo is empty.
+    """
+    tok = count_tokens(json.dumps(resp), "gpt-4")
+    return {
+        "token_estimate": tok,
+        "full_repo_estimate": full_repo_tokens,
+        "savings_pct": _savings_pct(tok, full_repo_tokens),
+    }
+
+
 @mcp.tool()
 async def tricorder_scan(
     project_root: str,
@@ -180,11 +213,16 @@ async def tricorder_scan(
             tags_at_budget = int(token_limit / tokens_per_tag) if tokens_per_tag > 0 else 0
 
             if dry_run:
+                full_repo_estimate = _full_repo_tokens(project_root)
+                # Map is clamped to min(token_limit, full_repo) — honest best-case savings
+                map_tokens_planned = min(token_limit, full_repo_estimate)
                 return {
                     "tags": len(ranked_tags),
                     "tokens_per_tag": round(tokens_per_tag, 0),
                     "tags_at_budget": tags_at_budget,
-                    "full_repo_estimate": int(tokens_per_tag * len(ranked_tags)),
+                    "full_repo_estimate": full_repo_estimate,
+                    "token_estimate": map_tokens_planned,
+                    "savings_pct": _savings_pct(map_tokens_planned, full_repo_estimate),
                     "definition_matches": file_report.definition_matches,
                     "reference_matches": file_report.reference_matches,
                     "total_files_considered": file_report.total_files_considered,
@@ -228,6 +266,7 @@ async def tricorder_scan(
                 }
 
             token_estimate = count_tokens(map_content or "", "gpt-4")
+            full_repo_estimate = _full_repo_tokens(project_root)
 
             out_path = Path(output_file)
             out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -235,6 +274,8 @@ async def tricorder_scan(
             result: Dict[str, Any] = {
                 "map_file": str(out_path),
                 "token_estimate": token_estimate,
+                "full_repo_estimate": full_repo_estimate,
+                "savings_pct": _savings_pct(token_estimate, full_repo_estimate),
                 "tags": len(ranked_tags),
                 "tokens_per_tag": round(tokens_per_tag, 0),
                 "tags_at_budget": tags_at_budget,
@@ -291,7 +332,12 @@ async def tricorder_scan(
                 "reference_matches": file_report.reference_matches,
                 "total_files_considered": file_report.total_files_considered
             }
-        return {"map": map_content, "report": report_dict}
+        _tok = count_tokens(map_content or "", "gpt-4")
+        _full = _full_repo_tokens(project_root)
+        return {"map": map_content, "report": report_dict,
+                "token_estimate": _tok,
+                "full_repo_estimate": _full,
+                "savings_pct": _savings_pct(_tok, _full)}
 
     except Exception as e:
         log.exception(f"Error generating repository map for project '{project_root}': {e}")
@@ -388,7 +434,9 @@ async def tricorder_detect(
                     "context": context
                 })
 
-        return {"results": results}
+        resp = {"results": results}
+        resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
+        return resp
 
     except Exception as e:
         log.exception(f"Error searching identifiers in project '{project_root}': {e}")
@@ -465,7 +513,9 @@ async def tricorder_symbols(
         # Apply limit
         results = results[:limit]
 
-        return {"symbols": results, "total": len(results), "limit": limit}
+        resp = {"symbols": results, "total": len(results), "limit": limit}
+        resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
+        return resp
 
     except Exception as e:
         log.exception(f"Error searching symbols in project '{project_root}': {e}")
@@ -527,7 +577,9 @@ async def tricorder_detail(
         if detail is None:
             return {"error": "not found"}
 
-        return {"symbol": detail.to_dict()}
+        resp = {"symbol": detail.to_dict()}
+        resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
+        return resp
 
     except Exception as e:
         log.exception(f"Error getting symbol details for '{name}' in '{file_path}': {e}")
