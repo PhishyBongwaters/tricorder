@@ -219,3 +219,9 @@ tricorder_detect:  has token_estimate, full_repo_estimate, savings_pct
 **Validation**: Run `python -m pytest tests/test_<gate>.py -v`
 **Definition of Done**: All gates pass + SPEC.md updated + CHANGELOG entry
 ```
+
+## # M0.9.1 - Token Budget Fields
+- MCP tools: `token_estimate`, `full_repo_estimate`, `savings_pct` added.
+- CLI: `--stats-only <map>` + `--format json` budget fields implemented.
+- Plugin: `/tricorder status` surfaces savings vs full-repo via venv delegation.
+- Tests: 84/84 pass.

@@ -182,6 +182,11 @@ def _format_probe_digest(probe: dict, map_info: dict) -> str:
         parts.append(f"T0 scaffold: {map_files}/{total} files surfaced (~{map_tokens} tokens).")
     else:
         parts.append(f"T0 scaffold: ~{map_tokens} tokens.")
+    if map_info.get("full_repo_estimate"):
+        parts.append(
+            f"(~{map_info.get('savings_pct', 0.0)}% context saved "
+            f"vs ~{map_info.get('full_repo_estimate')} full-repo tokens.)"
+        )
     parts.append("Use MCP tools (tricorder_symbols/detect/detail) for targeted probes, /tricorder scan --tier 1 for depth.")
 
     return " ".join(parts)
@@ -272,6 +277,30 @@ def _project_signature(project_root: str) -> str:
         return r.stdout.strip()[:16]
     except Exception:
         return ""
+
+
+def _cli_budget(project_root: str, map_file) -> dict:
+    """Budget fields {token_estimate, full_repo_estimate, savings_pct} for a
+    cached map, shelled from the CLI (--stats-only). The plugin runs in Hermes'
+    Python without tricorder deps (tiktoken), so it delegates the estimate to
+    the CLI's own venv. Returns {} on any failure — callers fall back."""
+    if not _TRICORDER_CLI:
+        return {}
+    cmd = [_TRICORDER_CLI, "--root", project_root, "--stats-only", str(map_file)]
+    globs = _exclude_globs()
+    if globs:
+        cmd += ["--exclude-globs"] + globs
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           timeout=60, check=False)
+        if r.returncode != 0:
+            return {}
+        parsed = json.loads(r.stdout.strip())
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    return {}
 
 
 def _is_cache_valid(project_root: str) -> bool:
@@ -367,11 +396,14 @@ def build_map(project_root: str) -> Optional[dict]:
         line.split(" (")[0] for line in map_text.splitlines()
         if " (" in line and line.endswith(" lines)")
     ))
+    budget = _cli_budget(project_root, out)
     meta = {
         "project_root": project_root,
         "map_file": str(out),
         "lines": n_lines,
-        "tokens_approx": int(n_lines * 14),  # T0 ~14 tokens/tag
+        "tokens_approx": budget.get("token_estimate", int(n_lines * 14)),
+        "full_repo_estimate": budget.get("full_repo_estimate", 0),
+        "savings_pct": budget.get("savings_pct", 0.0),
         "project_sig": _project_signature(project_root),
         "map_files": map_files,
     }
@@ -518,6 +550,13 @@ def _handle_tricorder(raw_args: str) -> Optional[str]:
                     f"~{meta.get('tokens_approx', '?')} tokens, "
                     f"{meta.get('map_files', '?')} files, {age} old)"
                 )
+                if meta.get("full_repo_estimate"):
+                    savings = meta.get("savings_pct", 0.0)
+                    repo_tok = meta.get("full_repo_estimate")
+                    lines.append(
+                        f"  budget: map ~{meta.get('tokens_approx', '?')} tokens "
+                        f"vs ~{repo_tok} full-repo (~{savings}% saved)"
+                    )
             else:
                 lines.append("  cache: (not built)")
             # Probe for live file/language tally

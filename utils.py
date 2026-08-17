@@ -198,3 +198,37 @@ def detect_lang(fname: str) -> Optional[str]:
     if lang == "c" and fname.endswith((".h", ".H")):
         return "cpp"
     return lang
+
+
+def repo_budget(project_root: str, token_estimate: int,
+                model_name: str = "gpt-4",
+                exclude_globs: Optional[List[str]] = None) -> dict:
+    """Budget fields shared by CLI, MCP, and plugin: how many tokens a piece
+    of tricorder output costs vs. reading the whole repo.
+
+    full_repo_estimate = tokens of all discoverable source files under
+    project_root (canonical definition — a tier-1 map can legitimately cost
+    more than reading the repo, so savings_pct clamps at 0, never negative).
+
+    Returns: {"token_estimate": int, "full_repo_estimate": int,
+              "savings_pct": float}
+    """
+    files = discover_src_files(project_root, use_gitignore=True,
+                               exclude_globs=exclude_globs)
+    full = 0
+    for f in files:
+        try:
+            txt = read_text(f, silent=True)
+            if txt:
+                full += count_tokens(txt, model_name)
+        except Exception:
+            continue
+    if not full:
+        savings = 0.0
+    else:
+        savings = round(max(0.0, 1 - token_estimate / full) * 100, 1)
+    return {
+        "token_estimate": int(token_estimate),
+        "full_repo_estimate": int(full),
+        "savings_pct": savings,
+    }

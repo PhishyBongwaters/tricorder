@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, '.')
 
-from utils import discover_src_files
+from utils import discover_src_files, repo_budget
 from tricorder import find_src_files as cli_find_src_files
 from tricorder_server import find_src_files as mcp_find_src_files
 

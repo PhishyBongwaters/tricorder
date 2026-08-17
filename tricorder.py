@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files
+from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget
 from scm import get_scm_fname
 from importance import filter_important_files
 from core import Tricorder
@@ -236,6 +236,18 @@ Examples:
         help="Print a stat-based content signature (16 hex chars) and exit. "
              "No map is built. Used by the lifecycle plugin for cache validation."
     )
+
+    parser.add_argument(
+        "--stats-only",
+        nargs="?", const=".map",
+        metavar="MAP_FILE",
+        help="Print token-budget JSON for --root and exit: "
+             "{token_estimate, full_repo_estimate, savings_pct} where "
+             "token_estimate is the bytes/tokens of MAP_FILE (or the staged "
+             "map), full_repo_estimate is all source files under --root, and "
+             "savings_pct = context saved vs reading the repo. No map is built. "
+             "Used by the lifecycle plugin to enrich cache meta."
+    )
     
     args = parser.parse_args()
 
@@ -243,6 +255,21 @@ Examples:
     if args.signature_only:
         sig = compute_signature(args.root, args.exclude_globs)
         print(sig)
+        sys.exit(0)
+
+    # --stats-only: report budget fields, no map build. Early exit.
+    if args.stats_only is not None:
+        import json as _json
+        token_estimate = 0
+        if args.stats_only and args.stats_only != ".":
+            try:
+                p = Path(args.stats_only)
+                if p.exists():
+                    token_estimate = count_tokens(p.read_text(encoding="utf-8", errors="replace"), args.model)
+            except Exception:
+                token_estimate = 0
+        budget = repo_budget(args.root, token_estimate, args.model, args.exclude_globs)
+        print(_json.dumps(budget))
         sys.exit(0)
     
     # Set up token counter with specified model
@@ -352,10 +379,16 @@ Examples:
                 sample_tokens = repo_map.token_count(sample_tree)
                 tokens_per_tag = sample_tokens / len(sample)
                 tags_at_budget = int(args.map_tokens / tokens_per_tag) if tokens_per_tag > 0 else 0
+                full_est = repo_budget(args.root, args.map_tokens, args.model,
+                                       args.exclude_globs)["full_repo_estimate"]
+                planned = min(args.map_tokens, full_est)
+                savings = repo_budget(args.root, planned, args.model,
+                                      args.exclude_globs)["savings_pct"]
                 repo_map.output_handlers['info'](
                     f"Tags: {len(ranked_tags)} | Tokens per tag: ~{tokens_per_tag:.0f} | "
                     f"Tags at --map-tokens {args.map_tokens}: ~{tags_at_budget} | "
-                    f"Full repo estimate: ~{int(tokens_per_tag * len(ranked_tags))} tokens"
+                    f"Full repo estimate: ~{full_est} tokens | "
+                    f"Estimated savings: {savings}%"
                 )
             else:
                 repo_map.output_handlers['info']("No tags to estimate.")
@@ -401,6 +434,11 @@ Examples:
                         for rank, tag in ranked_tags
                     ]
                 }
+                # Budget fields: how much this map costs vs reading the whole repo.
+                map_tokens = repo_map.token_count(map_content)
+                json_output["budget"] = repo_budget(
+                    args.root, map_tokens, args.model, args.exclude_globs
+                )
                 output_text = json.dumps(json_output, indent=2)
             else:
                 output_text = map_content

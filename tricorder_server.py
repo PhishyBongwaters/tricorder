@@ -8,7 +8,7 @@ import dataclasses
 
 from fastmcp import FastMCP, settings
 from core import Tricorder
-from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord
+from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget
 from scm import get_scm_fname
 from importance import filter_important_files
 
@@ -57,12 +57,7 @@ def _savings_pct(token_estimate: int, full_repo_estimate: int) -> float:
 
 def _full_repo_tokens(project_root: str) -> int:
     """Estimate full-repo token cost (sum of raw source-file reads)."""
-    total = 0
-    for f in find_src_files(project_root):
-        text = read_text(f, silent=True)
-        if text:
-            total += count_tokens(text, "gpt-4")
-    return total
+    return repo_budget(project_root, 0)["full_repo_estimate"]
 
 
 def _budget_fields(resp: dict, full_repo_tokens: int) -> dict:
