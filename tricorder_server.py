@@ -211,7 +211,7 @@ async def tricorder_scan(
                 full_repo_estimate = _full_repo_tokens(project_root)
                 # Map is clamped to min(token_limit, full_repo) — honest best-case savings
                 map_tokens_planned = min(token_limit, full_repo_estimate)
-                return {
+                result = {
                     "tags": len(ranked_tags),
                     "tokens_per_tag": round(tokens_per_tag, 0),
                     "tags_at_budget": tags_at_budget,
@@ -222,6 +222,11 @@ async def tricorder_scan(
                     "reference_matches": file_report.reference_matches,
                     "total_files_considered": file_report.total_files_considered,
                 }
+                # Advisory tier hint: T0 incomplete (truncated at budget)
+                if tags_at_budget < len(ranked_tags):
+                    pct = round(tags_at_budget / len(ranked_tags) * 100, 1)
+                    result["tier_hint"] = f"T0 incomplete: {tags_at_budget}/{len(ranked_tags)} tags fit ({pct}%). Consider tier=1 or higher token_limit."
+                return result
 
             # output_file path — generate the actual map, write to disk, return metadata
             if output_format == "mermaid":
@@ -279,7 +284,11 @@ async def tricorder_scan(
                 "format": output_format,
                 "report": report_dict,
             }
-            # Advisory tier hint
+            # Advisory tier hint: T0 incomplete (truncated at budget)
+            if tags_at_budget < len(ranked_tags):
+                pct = round(tags_at_budget / len(ranked_tags) * 100, 1)
+                result["tier_hint"] = f"T0 incomplete: {tags_at_budget}/{len(ranked_tags)} tags fit ({pct}%). Consider tier=1 or higher token_limit."
+            # Advisory tier hint: upgrade from previous tier
             prev = _tier_history.get(project_root)
             if prev:
                 if tier > prev["last_tier"] and prev.get("map_file"):

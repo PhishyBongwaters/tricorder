@@ -223,7 +223,7 @@ def repo_budget(project_root: str, token_estimate: int,
                 full += count_tokens(txt, model_name)
         except Exception:
             continue
-    if not full:
+    if not full or token_estimate <= 0:
         savings = 0.0
     else:
         savings = round(max(0.0, 1 - token_estimate / full) * 100, 1)

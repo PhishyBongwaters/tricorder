@@ -25,15 +25,15 @@ tricorder_detect:  has token_estimate, full_repo_estimate, savings_pct
 
 ---
 
-### M0.9.2 — Tier Escalation Signal
+## M0.9.2 — Tier Escalation Signal
 **Scope**: `tricorder_scan` returns `tier_hint` when `tags_at_budget < total_tags` (T0 incomplete).
-**Files**: `tricorder_server.py:tricorder_scan` (lines ~180, ~246)
+**Files**: `tricorder_server.py:tricorder_scan` (dry_run and output_file paths)
 **Validation Gate**:
 ```bash
-# Scan 1500-file repo with token_limit=1024 (forces truncation)
+# Scan with token_limit=1024 forcing truncation (dry_run or output_file)
 # Response must contain tier_hint string mentioning T0 coverage %
 ```
-**Test**: `python -m pytest tests/test_tier_hint.py -v`
+**Test**: `python -m pytest tests/test_mcp.py::TestMCPOutputFile::test_output_file_tier_hint_on_upgrade -v`
 
 ---
 
@@ -220,8 +220,15 @@ tricorder_detect:  has token_estimate, full_repo_estimate, savings_pct
 **Definition of Done**: All gates pass + SPEC.md updated + CHANGELOG entry
 ```
 
-## # M0.9.1 - Token Budget Fields
+## M0.9.1 - Token Budget Fields
 - MCP tools: `token_estimate`, `full_repo_estimate`, `savings_pct` added.
 - CLI: `--stats-only <map>` + `--format json` budget fields implemented.
 - Plugin: `/tricorder status` surfaces savings vs full-repo via venv delegation.
 - Tests: 84/84 pass.
+
+## M0.9.2 - Tier Escalation Signal ✅ DONE
+- `tricorder_scan` returns `tier_hint` in `dry_run` and `output_file` paths when `tags_at_budget < total_tags`
+- `tier_hint` message: "T0 incomplete: X/Y tags fit (Z%). Consider tier=1 or higher token_limit."
+- Also retains upgrade advisory from `_tier_history` (T0→T1)
+- Test: `tests/test_mcp.py::TestMCPOutputFile::test_output_file_tier_hint_on_upgrade` passes
+- All 87 tests pass.
