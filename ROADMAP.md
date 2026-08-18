@@ -50,17 +50,9 @@ tricorder_detect:  has token_estimate, full_repo_estimate, savings_pct
 
 ---
 
-### M0.9.4 — Git-Diff Incremental Rebuild
-**Scope**: CLI `--changed-since <commit>` re-parses only changed files, merges into cached map.
-**Files**: `tricorder.py` (new arg), `scm.py` (`get_changed_files()`), `core.py` (merge logic)
-**Validation Gate**:
-```bash
-# 1. Full scan → cache map (record time T1)
-# 2. Touch 1 file → `tricorder --changed-since HEAD~1` → time T2
-# Assert: T2 < T1 * 0.3 (70%+ speedup)
-# Assert: map content identical to full rebuild
-```
-**Test**: `python -m pytest tests/test_incremental_rebuild.py -v`
+~~M0.9.4 — Git-Diff Incremental Rebuild~~ REMOVED
+No git dependence. tricorder does not assume a project is a git repo and never
+requires git to map a codebase. Incremental rebuilds are out of scope.
 
 ---
 
@@ -198,6 +190,7 @@ tricorder_detect:  has token_estimate, full_repo_estimate, savings_pct
 
 ## Non-Goals (Explicitly Out of Scope)
 
+- Git/VCS dependence — tricorder maps any directory, git or not; no `git diff`/incremental rebuild
 - AI summarization of symbols
 - Natural language → symbol mapping (embeddings)
 - Auto-tier selection by query heuristics
