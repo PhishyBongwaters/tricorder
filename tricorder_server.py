@@ -2,9 +2,16 @@ import asyncio
 import json
 import os
 import logging
+import sys
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Set
 import dataclasses
+
+# Resolve sibling modules to this repo regardless of the process CWD.
+# Bare `from utils/...` imports otherwise resolve `sys.path[0]` (the caller's
+# CWD), which can pick up an unrelated `utils.py` (e.g. a RepoMapper checkout)
+# and break with an ImportError. Same bootstrap in tricorder.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastmcp import FastMCP, settings
 from core import Tricorder

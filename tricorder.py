@@ -14,6 +14,11 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+# Resolve sibling modules to this repo regardless of the process CWD.
+# Bare `from utils/...` imports otherwise resolve `sys.path[0]` (the caller's
+# CWD), which can pick up an unrelated `utils.py` and break the import.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget
 from scm import get_scm_fname
 from importance import filter_important_files
