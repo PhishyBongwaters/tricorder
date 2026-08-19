@@ -42,24 +42,28 @@ That yields one skill, version-controlled. Repo copy is source of truth; the
 
 ## cordis.yml wiring
 
-Add to the dsh Cordis config (the row that mounts the MCP client):
+Add to the dsh Cordis config (the row that mounts the MCP client). The
+`dsh-mcp-client` plugin's stdio schema (from its `src/index.ts`) takes
+`serverName`, `command`, `args`, `env`, `cwd`. Put the row in the profile's
+`cordis.patch.yml` as an `insert:` entry:
 
 ```yaml
-- id: mcp-tricorder
-  name: '@deepseek-ai/dsh-mcp-client'
-  config:
-    serverName: tricorder
-    transport: stdio
-    command: tricorder-mcp
+- insert:
+    - id: mcp-tricorder
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: tricorder
+        transport: stdio
+        command: C:/Users/macdo/AppData/Roaming/Python/Python314/Scripts/tricorder-mcp.exe
+        args: []
 ```
 
-`tricorder-mcp` is the console-script entry point from this project's
-`pyproject.toml`. **It must be resolvable**: pip-install puts it under
-`%APPDATA%\Python\Python3xx\Scripts\` (e.g.
-`C:/Users/macdo/AppData/Roaming/Python/Python314/Scripts/tricorder-mcp.exe`)
-which is often NOT on PATH. Either that dir is on PATH, or set
-`command: C:/Users/macdo/AppData/Roaming/Python/Python314/Scripts/tricorder-mcp.exe`
-(the absolute path — robust, recommended).
+`tricorder-mcp` is the console-script entry point from the tricorder
+`pyproject.toml`. **It is usually not on PATH**: pip-install puts it under
+`%APPDATA%\Python\Python3xx\Scripts\` (here
+`C:/Users/macdo/AppData/Roaming/Python/Python314/Scripts/tricorder-mcp.exe`).
+Use that absolute path as `command` — robust, recommended. `serverName` must
+match `[A-Za-z0-9_-]{1,32}`; `tricorder` is valid.
 
 ## When to use
 
