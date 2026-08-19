@@ -23,6 +23,89 @@
 
 ---
 
+## Milestone 0.10 — Graph Query MCP Tool (P0)
+
+*Target: Single MCP tool replacing 5+ round-trips for common agent graph traversals.*
+
+### M0.10.1 — `tricorder_query` MCP Tool
+**Scope**: New MCP tool accepting graph traversal DSL → returns precise subgraph (nodes + edges) in one call. Reuses existing call graph (`build_call_graph`) and cross-file resolution (`name_resolver`).
+
+**DSL Grammar** (parse with `lark` or hand-rolled):
+```
+query := traversal (pipe traversal)*
+traversal := "callers" | "callees" | "refs" | "defs"
+pipe := "|" traversal
+modifiers := "depth=" INT | "exclude=" GLOB | "include=" GLOB | "type=" ("function"|"class"|"method"|"variable") | "limit=" INT
+```
+
+**Examples**:
+- `callers('authenticate') depth=2` — all callers up to 2 hops
+- `callees('main') depth=1 exclude=tests/**` — direct callees, skip tests
+- `refs('Config') type=class limit=50` — all references to class Config
+- `callers('foo') | callees('bar') depth=3` — chained traversals
+
+**Files**:
+- `tricorder_server.py` — new `@mcp.tool() tricorder_query`
+- `core.py` — `query_graph(dsl: str) -> dict` (BFS on call graph + filter)
+- `utils.py` — `parse_query_dsl(dsl: str) -> QueryAST` (new)
+- `tests/test_graph_query.py` — new test file
+
+**Validation Gates**:
+```bash
+# 1. Basic callers traversal
+echo 'callers("main") depth=2' | tricorder_query --root /proj
+# Returns: {"nodes": [...], "edges": [...], "token_estimate": N, "savings_pct": X}
+
+# 2. Exclude glob filtering
+tricorder_query 'callees("Config") exclude=tests/**' --root /proj
+# No nodes from tests/ in response
+
+# 3. Depth limiting
+tricorder_query 'callers("foo") depth=1' --root /proj
+# Only direct callers (not callers-of-callers)
+
+# 4. Type filter
+tricorder_query 'refs("User") type=class' --root /proj
+# Only class references, not variable/function refs
+
+# 5. Chained traversal
+tricorder_query 'callers("auth") | callees("login") depth=2' --root /proj
+# Two-phase traversal, combined result
+
+# 6. Token budget respected
+tricorder_query 'callers("x") depth=10' --root /proj --token-limit 1024
+# Response token_estimate <= 1024, truncates with tier_hint
+```
+
+**Test**: `python -m pytest tests/test_graph_query.py -v`
+
+**Test Coverage Requirements**:
+| Test | Description |
+|------|-------------|
+| `test_basic_callers` | Single-hop callers returns correct nodes/edges |
+| `test_depth_2` | Two-hop includes callers-of-callers |
+| `test_exclude_glob` | `exclude=tests/**` removes test files from result |
+| `test_type_filter` | `type=function` filters node kinds |
+| `test_limit` | `limit=10` caps nodes returned |
+| `test_chained` | `callers | callees` composes correctly |
+| `test_token_budget` | `token_limit` truncates with `tier_hint` |
+| `test_not_found` | Unknown symbol returns empty + error field |
+| `test_cross_file` | Callers/callees include cross-file edges (`cross_file: true`) |
+| `test_performance` | 1500-file repo query < 500ms |
+
+**Dependencies**: None — reuses existing `TAGS_CACHE`, `build_call_graph`, `get_symbol_detail`, import index.
+
+**Definition of Done**:
+- [ ] `tricorder_query` registered in `tricorder_server.py`
+- [ ] DSL parser handles all grammar forms
+- [ ] BFS traversal respects depth, exclude, type, limit
+- [ ] Response includes `token_estimate`, `full_repo_estimate`, `savings_pct`
+- [ ] All 10 test cases pass
+- [ ] SPEC.md updated with tool documentation
+- [ ] CHANGELOG entry
+
+---
+
 ## Non-Goals (Explicitly Out of Scope)
 
 - Git/VCS dependence — tricorder maps any directory, git or not; no `git diff`/incremental rebuild
