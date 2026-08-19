@@ -125,16 +125,16 @@ requires git to map a codebase. Incremental rebuilds are out of scope.
 
 ---
 
-### M1.4 — Watch Mode
-**Scope**: `tricorder --watch` uses `watchdog` (cross-platform) → incremental re-parse on file save → updated cache map.
-**Files**: `tricorder.py` (new `--watch` mode), `requirements.txt` (+watchdog)
+### M1.4 — Editor-Triggered Incremental Refresh
+**Scope**: `tricorder refresh <file> --root <project>` invalidates single-file cache entry, re-parses, rebuilds map. Editor integration via on-save hooks (VS Code task, Neovim autocmd, Zed task, shell alias). No daemon, no watchdog, no polling.
+**Files**: `tricorder.py` (new `refresh` subcommand), `core.py` (`refresh_files()`), `docs/editor-integration.md`
 **Validation Gate**:
 ```bash
-# tricorder . --watch --map-tokens 2048 (background)
-# Edit file.py → map cache updated within 2s
-# Kill watch → cache valid for next session start
+# tricorder refresh file.py --root /project --quiet
+# Editor save → sub-second map update
+# tricorder refresh --all --root /project → full cache refresh
 ```
-**Test**: `python -m pytest tests/test_watch_mode.py -v`
+**Test**: `python -m pytest tests/test_refresh_mode.py -v`
 
 ---
 

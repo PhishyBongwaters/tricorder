@@ -298,47 +298,65 @@ Stop at the first tier that answers the question.
 
 ---
 
-## Incremental Watch Mode (`tricorder --watch`)
+## Editor-Triggered Incremental Refresh (`tricorder refresh`)
 
-The CLI supports a file-watch mode that incrementally updates the cache on file changes, enabling near-instant map updates during active development.
+Instead of a background daemon polling the filesystem, tricorder provides a lightweight `refresh` command that editors call on file save. No daemon, no watchdog, no polling — the editor already knows when a file changes.
 
 ### Usage
 
 ```bash
-# Foreground watch (blocks, logs updates)
-tricorder . --watch --map-tokens 2048
+# Refresh a single file (most common — editor calls this on save)
+tricorder refresh src/auth/login.py --root /home/user/myproject --map-tokens 2048
 
-# Background daemon (detached)
-tricorder . --watch --daemon --map-tokens 2048
+# Refresh multiple files
+tricorder refresh file1.py file2.py --root /project
 
-# Stop background daemon
-tricorder . --watch --stop
+# Refresh all cached files (post git pull, language pack upgrade)
+tricorder refresh --all --root /project
+
+# Dry run: show what would be refreshed
+tricorder refresh file.py --root /project --dry-run
 ```
 
-### How It Works
+### How It Works (sub-second)
 
-1. **Filesystem events**: Uses `watchdog` (cross-platform) to monitor the project root recursively.
-2. **Debouncing**: Coalesces rapid events (e.g., editor atomic writes) with a 100ms timer.
-3. **Incremental invalidation**: On file change, evicts only that file's entry from the per-file tag cache (`.repomap.tags.cache.v1/`).
-4. **Re-parse on demand**: Next map generation reads from cache — changed files re-parse automatically via mtime check.
-5. **No git dependence**: Works on any directory; uses the same stat-based signature as session-start cache validation.
+1. **Invalidate** only the changed file's entry in the per-file tag cache (`.repomap.tags.cache.v1/`)
+2. **Re-parse** the single file (populates cache via existing mtime check in `get_tags()`)
+3. **Rebuild map** from cache (reads all cached tags — fast, no full directory walk)
+
+### Editor Integration
+
+The editor triggers `tricorder refresh` on save. Zero background processes.
+
+| Editor | Configuration |
+|--------|---------------|
+| **VS Code** | `.vscode/tasks.json` with `triggerTaskOnSave` extension, or `runOn: "save"` |
+| **Neovim** | `autocmd BufWritePost *` → `vim.fn.jobstart({ "tricorder", "refresh", file, "--root", root, "--quiet" }, { detach = true })` |
+| **Zed** | `.zed/tasks.json` with `"trigger": "on_save"` |
+| **Any shell** | Alias: `trr() { tricorder refresh "$1" --root "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" --quiet; }` |
+
+See `docs/editor-integration.md` for complete configs.
 
 ### Cache Sharing
 
 | Component | Cache Role |
 |-----------|------------|
 | `tricorder` (CLI) | **Writer** — builds initial cache |
-| `tricorder --watch` | **Writer** — incremental updates |
+| `tricorder refresh` | **Writer** — incremental invalidation + re-parse |
 | `tricorder-mcp` | **Reader** — queries cache via MCP tools |
 | `tricorder-lsp` | **Reader** — queries cache for editor LSP |
 
 The `diskcache` backend handles concurrent readers + single writer safely.
 
-### Configuration
+### Why Not a Daemon?
 
-- `--exclude-globs` respected (vendor noise filtered from watch)
-- Language detection filters non-code files automatically
-- Daemon PID stored at `.tricorder/watch.pid` in project root
+| Watch Daemon | `refresh` (editor-triggered) |
+|--------------|------------------------------|
+| 1 process per repo (always running) | 0 processes (on-demand) |
+| Polls filesystem continuously | Zero idle CPU |
+| Breaks with multiple repos | Works per-repo, per-save |
+| Battery drain on laptops | Neutral |
+| Watchdog edge cases (symlinks, network fs) | Explicit, deterministic |
 
 ---
 
