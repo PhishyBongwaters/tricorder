@@ -118,7 +118,7 @@ verified, working surfaces are:
 
 ---
 
-## MCP Tools (4)
+## MCP Tools (5)
 
 ### `tricorder_scan` (was `repo_map`)
 Generate a ranked code map for a project directory. Writes to `output_file` to avoid context bloat.
@@ -177,6 +177,43 @@ Full details for a symbol: body, signature, docstring, callers, callees.
 ```
 
 Returns callers (in-file + cross-file with import resolution) and callees.
+
+---
+
+### `tricorder_query` (NEW — M0.10)
+Execute graph traversal queries on the codebase call graph. Replaces 5+ round-trips for common agent graph traversals.
+
+**DSL Grammar**:
+```
+query := traversal ('|' traversal)*
+traversal := kind '(' target ')' modifiers?
+kind := "callers" | "callees" | "refs" | "defs"
+target := quoted string
+modifiers := (modifier)*
+modifier := "depth=" INT | "exclude=" GLOB | "include=" GLOB
+          | "type=" ("function"|"class"|"method"|"variable") | "limit=" INT
+```
+
+```json
+{
+  "project_root": "/absolute/path/to/project",
+  "query": "callers('authenticate') depth=2 exclude=tests/**",
+  "token_limit": 2048
+}
+```
+
+**Examples**:
+- `callers('authenticate') depth=2` — all callers up to 2 hops
+- `callees('main') depth=1 exclude=tests/**` — direct callees, skip tests
+- `refs('Config') type=class limit=50` — all references to class Config
+- `callers('foo') | callees('bar') depth=3` — chained traversals
+
+**Returns**: `{nodes: [...], edges: [...], token_estimate, full_repo_estimate, savings_pct, tier_hint?, stats: {nodes_visited, edges_traversed}}`
+
+- `nodes`: list of `{name, file, line, type}`
+- `edges`: list of `{from, to, from_file, to_file, from_line, to_line, type}` where type is `calls`, `called_by`, `refers`, or `defines`
+- Cross-file edges have different `from_file` / `to_file`
+- `tier_hint` present if response truncated by `token_limit`
 
 ---
 

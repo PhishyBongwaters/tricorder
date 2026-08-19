@@ -245,3 +245,115 @@ def repo_budget(project_root: str, token_estimate: int,
         "full_repo_estimate": int(full),
         "savings_pct": savings,
     }
+
+
+# =============================================================================
+# Graph Query DSL Parser (M0.10)
+# =============================================================================
+
+@dataclass
+class QueryModifiers:
+    """Modifiers for a single traversal step."""
+    depth: int = 1
+    exclude_globs: List[str] = None
+    include_globs: List[str] = None
+    symbol_type: Optional[str] = None  # function, class, method, variable
+    limit: int = 100
+
+    def __post_init__(self):
+        if self.exclude_globs is None:
+            self.exclude_globs = []
+        if self.include_globs is None:
+            self.include_globs = []
+
+
+@dataclass
+class TraversalStep:
+    """A single traversal step in the query."""
+    kind: str  # "callers", "callees", "refs", "defs"
+    target: str  # symbol name to start from
+    modifiers: QueryModifiers
+
+
+@dataclass
+class ParsedQuery:
+    """Complete parsed query with multiple chained steps."""
+    steps: List[TraversalStep]
+
+
+def parse_query_dsl(dsl: str) -> ParsedQuery:
+    """Parse graph query DSL into structured form.
+
+    Grammar:
+        query := traversal (pipe traversal)*
+        traversal := kind '(' target ')' modifiers?
+        kind := "callers" | "callees" | "refs" | "defs"
+        target := quoted string (single or double quotes)
+        modifiers := (modifier)*
+        modifier := "depth=" INT | "exclude=" GLOB | "include=" GLOB
+                  | "type=" ("function"|"class"|"method"|"variable") | "limit=" INT
+        pipe := "|"
+
+    Examples:
+        "callers('authenticate') depth=2"
+        "callees('main') depth=1 exclude=tests/**"
+        "refs('Config') type=class limit=50"
+        "callers('foo') | callees('bar') depth=3"
+    """
+    if not dsl or not dsl.strip():
+        raise ValueError("Empty query string")
+
+    steps = []
+    # Split by pipe for chained traversals
+    traversal_strs = [s.strip() for s in dsl.split('|')]
+
+    for trav_str in traversal_strs:
+        if not trav_str:
+            continue
+
+        # Match kind and target: kind('target') or kind("target")
+        match = re.match(r'^(callers|callees|refs|defs)\s*\(\s*([\'"])(.*?)\2\s*\)(.*)$', trav_str)
+        if not match:
+            raise ValueError(f"Invalid traversal syntax: {trav_str}")
+
+        kind, _, target, modifiers_str = match.groups()
+
+        # Parse modifiers
+        mods = QueryModifiers()
+
+        # depth=N
+        depth_match = re.search(r'depth\s*=\s*(\d+)', modifiers_str)
+        if depth_match:
+            mods.depth = int(depth_match.group(1))
+
+        # exclude=glob (can be multiple, comma-separated or repeated)
+        # Match exclude=value where value can contain commas if quoted, or single values
+        exclude_str = re.search(r'exclude\s*=\s*([^\s|]+)', modifiers_str)
+        if exclude_str:
+            # Split by comma but respect quoted strings
+            val = exclude_str.group(1)
+            # Simple split by comma for now - handles tests/**,vendor/**
+            mods.exclude_globs = [g.strip() for g in val.split(',') if g.strip()]
+
+        # include=glob
+        include_str = re.search(r'include\s*=\s*([^\s|]+)', modifiers_str)
+        if include_str:
+            val = include_str.group(1)
+            mods.include_globs = [g.strip() for g in val.split(',') if g.strip()]
+
+        # type=function|class|method|variable
+        type_match = re.search(r'type\s*=\s*(function|class|method|variable)', modifiers_str)
+        if type_match:
+            mods.symbol_type = type_match.group(1)
+
+        # limit=N
+        limit_match = re.search(r'limit\s*=\s*(\d+)', modifiers_str)
+        if limit_match:
+            mods.limit = int(limit_match.group(1))
+
+        steps.append(TraversalStep(kind=kind, target=target, modifiers=mods))
+
+    return ParsedQuery(steps=steps)
+
+
+import re

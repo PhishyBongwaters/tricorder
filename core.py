@@ -4,6 +4,7 @@ Tricorder class for generating repository maps.
 
 import os
 import sys
+import fnmatch
 from pathlib import Path
 from collections import namedtuple, defaultdict
 from typing import List, Dict, Set, Optional, Tuple, Callable, Any, Union
@@ -13,7 +14,7 @@ from dataclasses import dataclass
 import diskcache
 import networkx as nx
 from grep_ast import TreeContext
-from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang
+from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget
 from scm import get_scm_fname
 from importance import filter_important_files
 
@@ -751,6 +752,200 @@ class Tricorder:
                 "references": refs,
             }
         return graph
+
+    def query_graph(self, parsed_query: 'ParsedQuery', token_limit: int = 2048) -> Dict[str, Any]:
+        """Execute a parsed graph query and return subgraph.
+
+        Args:
+            parsed_query: ParsedQuery object from parse_query_dsl
+            token_limit: Maximum tokens for response (used for truncation hint)
+
+        Returns:
+            dict with keys: nodes, edges, token_estimate, full_repo_estimate,
+            savings_pct, tier_hint (if truncated), stats
+        """
+        from utils import count_tokens, ParsedQuery, TraversalStep, QueryModifiers
+
+        if not parsed_query.steps:
+            return {"nodes": [], "edges": [], "token_estimate": 0, "full_repo_estimate": 0,
+                    "savings_pct": 0.0, "stats": {"nodes_visited": 0, "edges_traversed": 0}}
+
+        # Build full cross-file index (definitions and references)
+        defs, refs = self._build_cross_file_index()
+
+        # Discover all files for filtering
+        all_files = self._discover_files()
+        file_set = set(all_files)
+
+        # Helper: filter file by exclude/include globs
+        def file_allowed(filepath: str, mods: QueryModifiers) -> bool:
+            if not mods.exclude_globs and not mods.include_globs:
+                return True
+            rel = self.get_rel_fname(filepath).replace('\\', '/')
+            if mods.exclude_globs:
+                if any(fnmatch.fnmatch(rel, pat) for pat in mods.exclude_globs):
+                    return False
+            if mods.include_globs:
+                if not any(fnmatch.fnmatch(rel, pat) for pat in mods.include_globs):
+                    return False
+            return True
+
+        # Helper: get symbol type for filtering
+        def get_symbol_type(filepath: str, symbol_name: str) -> Optional[str]:
+            rel = self.get_rel_fname(filepath)
+            symbols = self.get_symbols(filepath, rel)
+            for sym in symbols:
+                sym_name = sym.name
+                if '(' in sym_name:
+                    sym_name = sym_name.split('(', 1)[0]
+                elif sym_name.endswith('()'):
+                    sym_name = sym_name[:-2]
+                if sym_name == symbol_name:
+                    return sym.type
+            return None
+
+        # Track visited nodes and edges
+        nodes = []  # List of {name, file, line, type, kind}
+        edges = []  # List of {from, to, type} where type is 'calls'|'called_by'|'refers'|'defines'
+        seen_nodes = set()  # (name, file, line)
+        total_nodes_found = 0
+
+        # Start with the first step's target
+        current_targets = []  # List of (name, file, line)
+
+        for step_idx, step in enumerate(parsed_query.steps):
+            kind = step.kind
+            target_name = step.target
+            mods = step.modifiers
+
+            if step_idx == 0:
+                # First step: find all definitions matching target_name
+                for def_file, def_line in defs.get(target_name, []):
+                    if not file_allowed(def_file, mods):
+                        continue
+                    if mods.symbol_type:
+                        sym_type = get_symbol_type(def_file, target_name)
+                        if sym_type != mods.symbol_type:
+                            continue
+                    current_targets.append((target_name, def_file, def_line))
+            else:
+                # Subsequent steps: current_targets already populated from previous step
+                pass
+
+            # BFS traversal for this step
+            step_nodes = []
+            step_edges = []
+            visited = set()  # (name, file, line)
+            queue = [(name, file, line, 0) for name, file, line in current_targets]  # (name, file, line, depth)
+
+            while queue and len(step_nodes) < mods.limit:
+                name, file, line, depth = queue.pop(0)
+                if depth > mods.depth:
+                    continue
+                key = (name, file, line)
+                if key in visited:
+                    continue
+                visited.add(key)
+
+                # Add node if not already in global nodes
+                global_key = (name, file, line)
+                if global_key not in seen_nodes:
+                    sym_type = get_symbol_type(file, name)
+                    node = {"name": name, "file": file, "line": line, "type": sym_type or "unknown"}
+                    step_nodes.append(node)
+                    nodes.append(node)
+                    seen_nodes.add(global_key)
+                    total_nodes_found += 1
+
+                # Get neighbors based on traversal kind
+                neighbors = []
+                if kind in ("callers", "refs"):
+                    # Find callers/references TO this symbol
+                    # Use cross-file refs index (includes resolved qualified names)
+                    for ref_file, ref_line in refs.get(name, []):
+                        if not file_allowed(ref_file, mods):
+                            continue
+                        if ref_file == file and ref_line == line:
+                            continue  # Skip self-reference
+                        if mods.symbol_type:
+                            sym_type = get_symbol_type(ref_file, name)
+                            if sym_type != mods.symbol_type:
+                                continue
+                        neighbors.append((name, ref_file, ref_line, "called_by" if kind == "callers" else "refers"))
+
+                if kind in ("callees", "defs"):
+                    # Find callees/definitions FROM this symbol
+                    # Use cross-file defs index
+                    # First get references FROM this file that match this name
+                    file_refs = self.get_all_references(file, self.get_rel_fname(file))
+                    seen_callees = set()
+                    for ref in file_refs:
+                        if ref["name"] == name and ref["line"] != line:
+                            # This is a reference to the same name in the same file (skip)
+                            continue
+                        # For defs, we want symbols this symbol calls
+                        # For callees, we want symbols this symbol calls
+                        callee_name = ref["name"]
+                        if callee_name in seen_callees:
+                            continue
+                        seen_callees.add(callee_name)
+                        # Find definitions of this callee
+                        for def_file, def_line in defs.get(callee_name, []):
+                            if not file_allowed(def_file, mods):
+                                continue
+                            if def_file == file and def_line == line:
+                                continue
+                            if mods.symbol_type:
+                                sym_type = get_symbol_type(def_file, callee_name)
+                                if sym_type != mods.symbol_type:
+                                    continue
+                            neighbors.append((callee_name, def_file, def_line, "calls" if kind == "callees" else "defines"))
+
+                # Add neighbors to queue and edges
+                for n_name, n_file, n_line, edge_type in neighbors:
+                    n_key = (n_name, n_file, n_line)
+                    if n_key not in visited and n_key not in seen_nodes:
+                        queue.append((n_name, n_file, n_line, depth + 1))
+                    if len(step_edges) < mods.limit * 2:  # Reasonable edge limit
+                        step_edges.append({"from": name, "to": n_name, "from_file": file, "to_file": n_file,
+                                           "from_line": line, "to_line": n_line, "type": edge_type})
+
+            # Add step edges to global edges
+            edges.extend(step_edges)
+
+            # For next step, use nodes found in this step as starting points
+            if step_idx < len(parsed_query.steps) - 1:
+                current_targets = [(n["name"], n["file"], n["line"]) for n in step_nodes]
+
+        # Build response
+        # Estimate token count of response
+        import json as _json
+        resp_dict = {"nodes": nodes, "edges": edges}
+        token_est = count_tokens(_json.dumps(resp_dict))
+
+        # Get full repo estimate using shared budget function
+        budget = repo_budget(self.root, 0)
+        full_repo = budget.get("full_repo_estimate", 0)
+
+        savings = 0.0
+        if full_repo:
+            savings = round(max(0.0, 1 - token_est / full_repo) * 100, 1)
+
+        # Check if truncated
+        tier_hint = None
+        if token_est > token_limit:
+            tier_hint = f"Response truncated: {token_est} tokens > limit {token_limit}. Consider increasing token_limit or reducing depth/limit."
+
+        return {
+            "nodes": nodes[:token_limit // 50],  # Rough cap: ~50 tokens per node
+            "edges": edges[:token_limit // 30],   # Rough cap: ~30 tokens per edge
+            "token_estimate": token_est,
+            "full_repo_estimate": full_repo,
+            "savings_pct": savings,
+            "tier_hint": tier_hint,
+            "stats": {"nodes_visited": total_nodes_found, "edges_traversed": len(edges)}
+        }
+
 
     def get_symbol_detail(self, file_path: str, symbol_name: str, line: int = 0) -> Optional[SymbolRecord]:
         """Get full details for a single symbol by file + name + optional line.

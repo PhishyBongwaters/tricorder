@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastmcp import FastMCP, settings
 from core import Tricorder
-from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget
+from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery
 from scm import get_scm_fname
 from importance import filter_important_files
 
@@ -595,6 +595,73 @@ async def tricorder_detail(
     except Exception as e:
         log.exception(f"Error getting symbol details for '{name}' in '{file_path}': {e}")
         return {"error": f"Error getting symbol details: {str(e)}"}
+
+
+@mcp.tool()
+async def tricorder_query(
+    project_root: str,
+    query: str,
+    token_limit: int = 2048,
+) -> Dict[str, Any]:
+    """Execute a graph traversal query on the codebase.
+
+    DSL Grammar:
+        query := traversal ('|' traversal)*
+        traversal := kind '(' target ')' modifiers?
+        kind := "callers" | "callees" | "refs" | "defs"
+        target := quoted string (single or double quotes)
+        modifiers := (modifier)*
+        modifier := "depth=" INT | "exclude=" GLOB | "include=" GLOB
+                  | "type=" ("function"|"class"|"method"|"variable") | "limit=" INT
+
+    Examples:
+        "callers('authenticate') depth=2"              # all callers up to 2 hops
+        "callees('main') depth=1 exclude=tests/**"     # direct callees, skip tests
+        "refs('Config') type=class limit=50"           # all references to class Config
+        "callers('foo') | callees('bar') depth=3"      # chained traversals
+
+    Args:
+        project_root: Root directory of the project (must be absolute path!)
+        query: Graph query DSL string
+        token_limit: Maximum tokens for response (default 2048)
+
+    Returns:
+        Dictionary with:
+        - nodes: list of {name, file, line, type}
+        - edges: list of {from, to, from_file, to_file, from_line, to_line, type}
+        - token_estimate, full_repo_estimate, savings_pct
+        - tier_hint (if response truncated)
+        - stats: {nodes_visited, edges_traversed}
+    """
+    if not os.path.isdir(project_root):
+        return {"error": f"Project root directory not found: {project_root}"}
+
+    project_root = str(Path(project_root).resolve())
+
+    # Parse query DSL
+    try:
+        parsed = parse_query_dsl(query)
+    except ValueError as e:
+        return {"error": f"Invalid query syntax: {e}"}
+
+    if not parsed.steps:
+        return {"error": "Empty query"}
+
+    try:
+        repo_map = Tricorder(
+            root=project_root,
+            token_counter_func=lambda text: count_tokens(text, "gpt-4"),
+            file_reader_func=read_text,
+            output_handler_funcs={'info': log.info, 'warning': log.warning, 'error': log.error},
+            verbose=False,
+        )
+
+        result = repo_map.query_graph(parsed, token_limit=token_limit)
+        return result
+
+    except Exception as e:
+        log.exception(f"Error executing graph query '{query}' on project '{project_root}': {e}")
+        return {"error": f"Error executing graph query: {str(e)}"}
 
 # --- Main Entry Point ---
 def main():
