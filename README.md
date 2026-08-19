@@ -231,6 +231,7 @@ The server listens over STDIO. Clients call tools with `project_root` as an abso
 | `tricorder_detect` | Search for identifiers by name across the codebase. Case-insensitive; returns file, line, def/ref kind, context. Params `query`, `max_results`, `context_lines`, `include_definitions`, `include_references`. |
 | `tricorder_symbols` | Structured symbol query with type + file filters. Returns full symbol records (name, type, file, line range, signature, docstring, language, tree-sitter kind). Params `query`, `type`, `file`, `limit` (default 50, cap 200). |
 | `tricorder_detail` | Deep-dive on a specific symbol — body, callers (cross-file refs), callees. Params `name`, `file`, `line`. |
+| `tricorder_query` | Graph traversal on the call graph. DSL: `callers('sym') depth=2 exclude=tests/** \| callees('other') type=class`. Returns `{nodes, edges, token_estimate, savings_pct}`. Replaces 5+ round-trips for call graph exploration. |
 
 Example `tricorder_scan` (mermaid):
 
@@ -249,6 +250,8 @@ Example `tricorder_scan` (mermaid):
 Returns `{"map": "<mermaid flowchart>", "report": {...}}`. Chat files highlighted in pink.
 
 Example `tricorder_symbols`: find auth-related functions → `query="auth", type="function"`; showcase a class → `query="User", type="class"`; all functions in a file → `file="auth.py"`; full repo scan → `query=""`.
+
+Example `tricorder_query`: find all callers of authenticate up to 2 hops → `query="callers('authenticate') depth=2"`; direct callees of main excluding tests → `query="callees('main') depth=1 exclude=tests/**"`; chained traversal → `query="callers('foo') | callees('bar') depth=3"`.
 
 ## License
 

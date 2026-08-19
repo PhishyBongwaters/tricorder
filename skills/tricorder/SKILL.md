@@ -20,6 +20,7 @@ It is surfaced two ways:
 | Module/component dependency view | `mcp_tricorder_scan` with `output_format: mermaid` |
 | "Where is `<symbol>` defined?" | `mcp_tricorder_detect` or `mcp_tricorder_symbols` |
 | Callers / callees of one symbol | `mcp_tricorder_detail` |
+| Graph traversal: callers/callees up to N hops, filtered | `mcp_tricorder_query` — `callers('sym') depth=2 exclude=tests/**` |
 
 Don't scan for a known symbol — go straight to `detect`/`symbols`. Scan only for structure.
 
@@ -29,9 +30,10 @@ The point of tricorder is to NOT read every file. Climb the ladder; stop at the 
 
 1. **T0 map (auto-injected)** — the `[tricorder]` digest at turn 0 already gives you the repo skeleton: file paths + symbol names + line numbers. Often enough to know *which* file. **Don't re-scan** — the digest is current.
 2. **Locate** — `mcp_tricorder_detect {query}` (case-insensitive, token-cheap) or `mcp_tricorder_symbols {query, file?, type?}` for a definition + signature + line. Returns the what/where without reading the file.
-3. **Deep-dive** — `mcp_tricorder_detail {name, file, line}` returns the **full symbol body** + cross-file callers/callees. For most "how does X work" questions this is enough — you get the implementation, not just the signature, at a fraction of a full-file read.
-4. **Escalate the map tier** — still missing context? `mcp_tricorder_scan {project_root, tier: 1, context_lines: 3}` gives definitions + surrounding lines (~350 tokens/tag, ~25x T0). Use `output_format: "mermaid"` for a module dependency graph. Narrow with `chat_files`/`mentioned_files` to keep it small.
-5. **Full file read — last resort** — `read_file` only when all of the above left genuine ambiguity (a bug spans half a file, you need a comment block far from any symbol, etc). Read the *specific line range* found in step 2/3, not the whole file blindly. A whole-file pull is a confession that the ladder failed.
+3. **Graph query** — need callers/callees up to N hops? `mcp_tricorder_query {query: "callers('sym') depth=2 exclude=tests/**"}` returns the exact subgraph in one call (nodes + edges), replacing 5+ round-trips.
+4. **Deep-dive** — `mcp_tricorder_detail {name, file, line}` returns the **full symbol body** + cross-file callers/callees. For most "how does X work" questions this is enough — you get the implementation, not just the signature, at a fraction of a full-file read.
+5. **Escalate the map tier** — still missing context? `mcp_tricorder_scan {project_root, tier: 1, context_lines: 3}` gives definitions + surrounding lines (~350 tokens/tag, ~25x T0). Use `output_format: "mermaid"` for a module dependency graph. Narrow with `chat_files`/`mentioned_files` to keep it small.
+6. **Full file read — last resort** — `read_file` only when all of the above left genuine ambiguity (a bug spans half a file, you need a comment block far from any symbol, etc). Read the *specific line range* found in step 2/3, not the whole file blindly. A whole-file pull is a confession that the ladder failed.
 
 **Token economics**: T0 ≈ 14 tokens/tag. T1 ≈ 350 tokens/tag. `detail` returns one symbol body (typically 50-400 tokens). A full file read is thousands. Escalate deliberately.
 
