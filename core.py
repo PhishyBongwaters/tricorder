@@ -94,23 +94,34 @@ class Tricorder:
         cache_dir = self.root / TAGS_CACHE_DIR
         try:
             self.TAGS_CACHE = diskcache.Cache(str(cache_dir))
-        except Exception as e:
-            self.output_handlers['warning'](f"Failed to load tags cache: {e}")
+        except Exception:
+            # Silently fall back to in-memory cache — common on Windows with
+            # read-only cache files from previous runs.
             self.TAGS_CACHE = {}
     
-    def save_tags_cache(self):
-        """Save the tags cache (no-op as diskcache handles persistence)."""
-        pass
+    def _make_writable(self, path: Path):
+        """Try to make a file/directory writable on Windows."""
+        try:
+            import stat
+            path.chmod(path.stat().st_mode | stat.S_IWRITE)
+        except Exception:
+            pass
     
     def tags_cache_error(self):
         """Handle tags cache errors."""
         try:
             cache_dir = self.root / TAGS_CACHE_DIR
             if cache_dir.exists():
+                # Make all files writable before removing
+                for root, dirs, files in os.walk(cache_dir, topdown=False):
+                    for name in files:
+                        self._make_writable(Path(root) / name)
+                    for name in dirs:
+                        self._make_writable(Path(root) / name)
+                self._make_writable(cache_dir)
                 shutil.rmtree(cache_dir)
             self.load_tags_cache()
         except Exception:
-            self.output_handlers['warning']("Failed to recreate tags cache, using in-memory cache")
             self.TAGS_CACHE = {}
     
     def token_count(self, text: str) -> int:

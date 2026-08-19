@@ -94,12 +94,19 @@ _BINARY_MEDIA_EXTS = {
     '.mp4', '.mov', '.mkv', '.avi', '.webm', '.mp3', '.wav', '.flac', '.ogg',
     '.pdf', '.svg',
 }
+# Archive/compressed formats — not source code, never wants to be in a code map.
+_ARCHIVE_EXTS = {
+    '.tar', '.gz', '.zip', '.bz2', '.xz', '.7z', '.rar', '.tgz', '.tbz2',
+}
 # Data/asset text formats — not source code, never wants to be in a code map.
 _DATA_EXTS = {
     '.milk',          # projectM presets
     '.json', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.config',
     '.csv', '.tsv',
+    '.md', '.txt', '.rst',  # Documentation, not source code
 }
+# Skip files larger than this (bytes) — likely generated/binary/not source
+_MAX_SOURCE_FILE_SIZE = 1024 * 1024  # 1MB
 _BUILTIN_SKIP_DIRS = {'node_modules', '__pycache__', 'venv', 'env', 'build', 'dist', '.tox', '.eggs'}
 
 
@@ -135,9 +142,15 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
                 continue
             # Case-insensitive ext check: .Jpg slides past .jpg otherwise.
             low = f.lower()
-            if any(low.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS | _DATA_EXTS):
+            if any(low.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS | _ARCHIVE_EXTS | _DATA_EXTS):
                 continue
             full = os.path.join(r, f)
+            # Skip large files (likely generated/binary/not source)
+            try:
+                if os.path.getsize(full) > _MAX_SOURCE_FILE_SIZE:
+                    continue
+            except OSError:
+                pass
             if exclude_globs:
                 rel = os.path.relpath(full, directory).replace(os.sep, '/')
                 if any(fnmatch.fnmatch(rel, pat) for pat in exclude_globs):
