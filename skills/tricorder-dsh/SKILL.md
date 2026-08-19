@@ -23,6 +23,23 @@ Tricorder is registered as an MCP server named `tricorder` via `dsh-mcp-client`
 - `mcp__tricorder__tricorder_symbols` — definition + signature + line
 - `mcp__tricorder__tricorder_detail` — full symbol body + cross-file callers/callees
 
+## Install (reproducible)
+
+This skill hybrid-installs: the file lives in-repo under `skills/tricorder-dsh/`
+and is copied into dsh's skill dir (dsh can't symlink into a repo checkout).
+
+```bash
+# 1. pip-install tricorder (builds the `tricorder-mcp` console script)
+pip install -e "D:/Projects/tricorder"
+
+# 2. install this skill into dsh
+mkdir -p ~/.dsh/skills/tricorder
+cp "D:/Projects/tricorder/skills/tricorder-dsh/SKILL.md" ~/.dsh/skills/tricorder/SKILL.md
+```
+
+That yields one skill, version-controlled. Repo copy is source of truth; the
+`~/.dsh/skills/tricorder/` copy is a build artifact. Re-copy after edits.
+
 ## cordis.yml wiring
 
 Add to the dsh Cordis config (the row that mounts the MCP client):
@@ -37,7 +54,12 @@ Add to the dsh Cordis config (the row that mounts the MCP client):
 ```
 
 `tricorder-mcp` is the console-script entry point from this project's
-`pyproject.toml`; it must be on PATH (pip-installed).
+`pyproject.toml`. **It must be resolvable**: pip-install puts it under
+`%APPDATA%\Python\Python3xx\Scripts\` (e.g.
+`C:/Users/macdo/AppData/Roaming/Python/Python314/Scripts/tricorder-mcp.exe`)
+which is often NOT on PATH. Either that dir is on PATH, or set
+`command: C:/Users/macdo/AppData/Roaming/Python/Python314/Scripts/tricorder-mcp.exe`
+(the absolute path — robust, recommended).
 
 ## When to use
 
