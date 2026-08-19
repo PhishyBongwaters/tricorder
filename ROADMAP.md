@@ -125,17 +125,6 @@ requires git to map a codebase. Incremental rebuilds are out of scope.
 
 ---
 
-### M1.4 — Editor-Triggered Incremental Refresh
-**Scope**: `tricorder refresh <file> --root <project>` invalidates single-file cache entry, re-parses, rebuilds map. Editor integration via on-save hooks (VS Code task, Neovim autocmd, Zed task, shell alias). No daemon, no watchdog, no polling.
-**Files**: `tricorder.py` (new `refresh` subcommand), `core.py` (`refresh_files()`), `docs/editor-integration.md`
-**Validation Gate**:
-```bash
-# tricorder refresh file.py --root /project --quiet
-# Editor save → sub-second map update
-# tricorder refresh --all --root /project → full cache refresh
-```
-**Test**: `python -m pytest tests/test_refresh_mode.py -v`
-
 ---
 
 ## Milestone 1.1 — Polish (P2)

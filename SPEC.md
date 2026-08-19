@@ -298,65 +298,14 @@ Stop at the first tier that answers the question.
 
 ---
 
-## Editor-Triggered Incremental Refresh (`tricorder refresh`)
-
-Instead of a background daemon polling the filesystem, tricorder provides a lightweight `refresh` command that editors call on file save. No daemon, no watchdog, no polling — the editor already knows when a file changes.
-
-### Usage
-
-```bash
-# Refresh a single file (most common — editor calls this on save)
-tricorder refresh src/auth/login.py --root /home/user/myproject --map-tokens 2048
-
-# Refresh multiple files
-tricorder refresh file1.py file2.py --root /project
-
-# Refresh all cached files (post git pull, language pack upgrade)
-tricorder refresh --all --root /project
-
-# Dry run: show what would be refreshed
-tricorder refresh file.py --root /project --dry-run
-```
-
-### How It Works (sub-second)
-
-1. **Invalidate** only the changed file's entry in the per-file tag cache (`.repomap.tags.cache.v1/`)
-2. **Re-parse** the single file (populates cache via existing mtime check in `get_tags()`)
-3. **Rebuild map** from cache (reads all cached tags — fast, no full directory walk)
-
-### Editor Integration
-
-The editor triggers `tricorder refresh` on save. Zero background processes.
-
-| Editor | Configuration |
-|--------|---------------|
-| **VS Code** | `.vscode/tasks.json` with `triggerTaskOnSave` extension, or `runOn: "save"` |
-| **Neovim** | `autocmd BufWritePost *` → `vim.fn.jobstart({ "tricorder", "refresh", file, "--root", root, "--quiet" }, { detach = true })` |
-| **Zed** | `.zed/tasks.json` with `"trigger": "on_save"` |
-| **Any shell** | Alias: `trr() { tricorder refresh "$1" --root "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" --quiet; }` |
-
-See `docs/editor-integration.md` for complete configs.
-
-### Cache Sharing
+## Cache Sharing
 
 | Component | Cache Role |
 |-----------|------------|
-| `tricorder` (CLI) | **Writer** — builds initial cache |
-| `tricorder refresh` | **Writer** — incremental invalidation + re-parse |
-| `tricorder-mcp` | **Reader** — queries cache via MCP tools |
-| `tricorder-lsp` | **Reader** — queries cache for editor LSP |
+| `tricorder` (CLI) | **Writer** — builds `TAGS_CACHE`, import index, call graph |
+| `tricorder-mcp` | **Reader** — queries cache via `Tricorder` methods (MCP tools) |
 
 The `diskcache` backend handles concurrent readers + single writer safely.
-
-### Why Not a Daemon?
-
-| Watch Daemon | `refresh` (editor-triggered) |
-|--------------|------------------------------|
-| 1 process per repo (always running) | 0 processes (on-demand) |
-| Polls filesystem continuously | Zero idle CPU |
-| Breaks with multiple repos | Works per-repo, per-save |
-| Battery drain on laptops | Neutral |
-| Watchdog edge cases (symlinks, network fs) | Explicit, deterministic |
 
 ---
 
