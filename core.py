@@ -773,9 +773,9 @@ class Tricorder:
         # Build full cross-file index (definitions and references)
         defs, refs = self._build_cross_file_index()
 
-        # Discover all files for filtering
+        # Build per-file call graphs for in-file traversal
         all_files = self._discover_files()
-        file_set = set(all_files)
+        file_graphs = self.build_call_graph(all_files)
 
         # Helper: filter file by exclude/include globs
         def file_allowed(filepath: str, mods: QueryModifiers) -> bool:
@@ -804,9 +804,29 @@ class Tricorder:
                     return sym.type
             return None
 
+        # Helper: find containing symbol at a given line in a file
+        def find_containing_symbol(filepath: str, line: int) -> Optional[Dict]:
+            """Find the function/class that contains the given line."""
+            rel = self.get_rel_fname(filepath)
+            symbols = self.get_symbols(filepath, rel)
+            best_match = None
+            for sym in symbols:
+                sym_end = sym.end_line if sym.end_line and sym.end_line > sym.line else sym.line + 10
+                if sym.line <= line <= sym_end:
+                    span = sym_end - sym.line
+                    if best_match is None or span < (best_match["end_line"] - best_match["line"]):
+                        best_match = {"name": sym.name, "type": sym.type, "line": sym.line, "end_line": sym_end}
+            return best_match
+
+        # Helper: get all symbols in a file for quick lookup
+        def get_file_symbols(filepath: str) -> List[Dict]:
+            rel = self.get_rel_fname(filepath)
+            symbols = self.get_symbols(filepath, rel)
+            return [{"name": s.name, "type": s.type, "line": s.line, "end_line": s.end_line} for s in symbols]
+
         # Track visited nodes and edges
-        nodes = []  # List of {name, file, line, type, kind}
-        edges = []  # List of {from, to, type} where type is 'calls'|'called_by'|'refers'|'defines'
+        nodes = []  # List of {name, file, line, type}
+        edges = []  # List of {from, to, from_file, to_file, from_line, to_line, type}
         seen_nodes = set()  # (name, file, line)
         total_nodes_found = 0
 
@@ -858,10 +878,10 @@ class Tricorder:
                     total_nodes_found += 1
 
                 # Get neighbors based on traversal kind
-                neighbors = []
-                if kind in ("callers", "refs"):
-                    # Find callers/references TO this symbol
-                    # Use cross-file refs index (includes resolved qualified names)
+                neighbors = []  # List of (neighbor_name, neighbor_file, neighbor_line, edge_type)
+
+                if kind == "callers":
+                    # Find callers: references TO this symbol in ANY file
                     for ref_file, ref_line in refs.get(name, []):
                         if not file_allowed(ref_file, mods):
                             continue
@@ -871,44 +891,95 @@ class Tricorder:
                             sym_type = get_symbol_type(ref_file, name)
                             if sym_type != mods.symbol_type:
                                 continue
-                        neighbors.append((name, ref_file, ref_line, "called_by" if kind == "callers" else "refers"))
+                        # Find the caller (containing symbol) at this reference location
+                        caller = find_containing_symbol(ref_file, ref_line)
+                        if caller:
+                            neighbors.append((caller["name"], ref_file, caller["line"], "calls"))
+                        else:
+                            # Fallback: use the reference name as caller
+                            neighbors.append((name, ref_file, ref_line, "calls"))
 
-                if kind in ("callees", "defs"):
-                    # Find callees/definitions FROM this symbol
-                    # Use cross-file defs index
-                    # First get references FROM this file that match this name
-                    file_refs = self.get_all_references(file, self.get_rel_fname(file))
-                    seen_callees = set()
-                    for ref in file_refs:
-                        if ref["name"] == name and ref["line"] != line:
-                            # This is a reference to the same name in the same file (skip)
+                elif kind == "callees":
+                    # Find callees: symbols that THIS symbol calls (references FROM this symbol's body)
+                    # Use the per-file call graph
+                    file_graph = file_graphs.get(file, {"definitions": {}, "references": []})
+                    file_refs = file_graph.get("references", [])
+                    # Find references made BY this symbol (at or near its line)
+                    file_symbols = get_file_symbols(file)
+                    containing = None
+                    for sym in file_symbols:
+                        if sym["line"] <= line <= sym["end_line"]:
+                            containing = sym
+                            break
+                    if containing:
+                        # Find references in this containing symbol's body
+                        for ref in file_refs:
+                            if containing["line"] <= ref["line"] <= containing["end_line"]:
+                                callee_name = ref["name"]
+                                if callee_name == name:
+                                    continue  # Skip self-reference
+                                # Find definitions of this callee
+                                for def_file, def_line in defs.get(callee_name, []):
+                                    if not file_allowed(def_file, mods):
+                                        continue
+                                    if mods.symbol_type:
+                                        sym_type = get_symbol_type(def_file, callee_name)
+                                        if sym_type != mods.symbol_type:
+                                            continue
+                                    neighbors.append((callee_name, def_file, def_line, "calls"))
+
+                elif kind == "refs":
+                    # Find all references TO this symbol
+                    for ref_file, ref_line in refs.get(name, []):
+                        if not file_allowed(ref_file, mods):
                             continue
-                        # For defs, we want symbols this symbol calls
-                        # For callees, we want symbols this symbol calls
-                        callee_name = ref["name"]
-                        if callee_name in seen_callees:
+                        if ref_file == file and ref_line == line:
                             continue
-                        seen_callees.add(callee_name)
-                        # Find definitions of this callee
-                        for def_file, def_line in defs.get(callee_name, []):
-                            if not file_allowed(def_file, mods):
+                        if mods.symbol_type:
+                            sym_type = get_symbol_type(ref_file, name)
+                            if sym_type != mods.symbol_type:
                                 continue
-                            if def_file == file and def_line == line:
+                        neighbors.append((name, ref_file, ref_line, "refers"))
+
+                elif kind == "defs":
+                    # Find all definitions OF this symbol
+                    for def_file, def_line in defs.get(name, []):
+                        if not file_allowed(def_file, mods):
+                            continue
+                        if def_file == file and def_line == line:
+                            continue
+                        if mods.symbol_type:
+                            sym_type = get_symbol_type(def_file, name)
+                            if sym_type != mods.symbol_type:
                                 continue
-                            if mods.symbol_type:
-                                sym_type = get_symbol_type(def_file, callee_name)
-                                if sym_type != mods.symbol_type:
-                                    continue
-                            neighbors.append((callee_name, def_file, def_line, "calls" if kind == "callees" else "defines"))
+                        neighbors.append((name, def_file, def_line, "defines"))
 
                 # Add neighbors to queue and edges
                 for n_name, n_file, n_line, edge_type in neighbors:
                     n_key = (n_name, n_file, n_line)
                     if n_key not in visited and n_key not in seen_nodes:
                         queue.append((n_name, n_file, n_line, depth + 1))
-                    if len(step_edges) < mods.limit * 2:  # Reasonable edge limit
-                        step_edges.append({"from": name, "to": n_name, "from_file": file, "to_file": n_file,
-                                           "from_line": line, "to_line": n_line, "type": edge_type})
+                    if len(step_edges) < mods.limit * 2:
+                        # Edge: from current node TO neighbor
+                        # For callers: caller calls callee (current), so edge is caller -> callee
+                        # For callees: current calls callee, so edge is current -> callee
+                        if kind in ("callers", "refs", "defs"):
+                            # For callers/refs/defs, we're traversing TO the current node
+                            # So the neighbor is the "from" and current is "to"
+                            step_edges.append({
+                                "from": n_name, "to": name,
+                                "from_file": n_file, "to_file": file,
+                                "from_line": n_line, "to_line": line,
+                                "type": edge_type
+                            })
+                        else:
+                            # For callees, we're traversing FROM current TO neighbor
+                            step_edges.append({
+                                "from": name, "to": n_name,
+                                "from_file": file, "to_file": n_file,
+                                "from_line": line, "to_line": n_line,
+                                "type": edge_type
+                            })
 
             # Add step edges to global edges
             edges.extend(step_edges)
@@ -918,12 +989,10 @@ class Tricorder:
                 current_targets = [(n["name"], n["file"], n["line"]) for n in step_nodes]
 
         # Build response
-        # Estimate token count of response
         import json as _json
         resp_dict = {"nodes": nodes, "edges": edges}
         token_est = count_tokens(_json.dumps(resp_dict))
 
-        # Get full repo estimate using shared budget function
         budget = repo_budget(self.root, 0)
         full_repo = budget.get("full_repo_estimate", 0)
 
@@ -931,14 +1000,13 @@ class Tricorder:
         if full_repo:
             savings = round(max(0.0, 1 - token_est / full_repo) * 100, 1)
 
-        # Check if truncated
         tier_hint = None
         if token_est > token_limit:
             tier_hint = f"Response truncated: {token_est} tokens > limit {token_limit}. Consider increasing token_limit or reducing depth/limit."
 
         return {
-            "nodes": nodes[:token_limit // 50],  # Rough cap: ~50 tokens per node
-            "edges": edges[:token_limit // 30],   # Rough cap: ~30 tokens per edge
+            "nodes": nodes[:token_limit // 50],
+            "edges": edges[:token_limit // 30],
             "token_estimate": token_est,
             "full_repo_estimate": full_repo,
             "savings_pct": savings,
