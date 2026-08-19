@@ -298,6 +298,123 @@ Stop at the first tier that answers the question.
 
 ---
 
+## Incremental Watch Mode (`tricorder --watch`)
+
+The CLI supports a file-watch mode that incrementally updates the cache on file changes, enabling near-instant map updates during active development.
+
+### Usage
+
+```bash
+# Foreground watch (blocks, logs updates)
+tricorder . --watch --map-tokens 2048
+
+# Background daemon (detached)
+tricorder . --watch --daemon --map-tokens 2048
+
+# Stop background daemon
+tricorder . --watch --stop
+```
+
+### How It Works
+
+1. **Filesystem events**: Uses `watchdog` (cross-platform) to monitor the project root recursively.
+2. **Debouncing**: Coalesces rapid events (e.g., editor atomic writes) with a 100ms timer.
+3. **Incremental invalidation**: On file change, evicts only that file's entry from the per-file tag cache (`.repomap.tags.cache.v1/`).
+4. **Re-parse on demand**: Next map generation reads from cache — changed files re-parse automatically via mtime check.
+5. **No git dependence**: Works on any directory; uses the same stat-based signature as session-start cache validation.
+
+### Cache Sharing
+
+| Component | Cache Role |
+|-----------|------------|
+| `tricorder` (CLI) | **Writer** — builds initial cache |
+| `tricorder --watch` | **Writer** — incremental updates |
+| `tricorder-mcp` | **Reader** — queries cache via MCP tools |
+| `tricorder-lsp` | **Reader** — queries cache for editor LSP |
+
+The `diskcache` backend handles concurrent readers + single writer safely.
+
+### Configuration
+
+- `--exclude-globs` respected (vendor noise filtered from watch)
+- Language detection filters non-code files automatically
+- Daemon PID stored at `.tricorder/watch.pid` in project root
+
+---
+
+## Language Server Protocol (LSP) Server (`tricorder-lsp`)
+
+A standard LSP server exposing tricorder's code intelligence to any editor (VS Code, Neovim, Zed, Helix, Emacs, etc.). Runs independently of the MCP server and CLI; reads from the same on-disk cache.
+
+### Capabilities (MVP)
+
+| LSP Method | Feature | Source |
+|------------|---------|--------|
+| `textDocument/definition` | Go to Definition (cross-file) | Call graph + symbol index |
+| `textDocument/references` | Find All References (cross-file) | Call graph callers |
+| `textDocument/hover` | Hover: signature + docstring + body | SymbolRecord |
+| `textDocument/documentSymbol` | Document outline | Symbol index per file |
+| `workspace/symbol` | Workspace symbol search (fuzzy) | Symbol index global |
+
+### Usage
+
+```bash
+# Start over stdio (for editor integration)
+tricorder-lsp --root /absolute/path/to/project --stdio
+
+# Start over TCP (for debugging)
+tricorder-lsp --root /absolute/path/to/project --tcp --port 9229
+```
+
+### Editor Configuration
+
+**VS Code** (`.vscode/settings.json`):
+```json
+{
+  "tricorder.lsp.enabled": true,
+  "tricorder.lsp.projectRoot": "${workspaceFolder}"
+}
+```
+
+**Neovim** (`nvim-lspconfig`):
+```lua
+require'lspconfig'.tricorder.setup{
+  cmd = {'tricorder-lsp', '--root', vim.fn.getcwd(), '--stdio'},
+  filetypes = {'python', 'javascript', 'typescript', 'rust', 'go', 'cpp', 'java'},
+  root_dir = require'lspconfig'.util.root_pattern('.git', 'pyproject.toml', 'Cargo.toml', 'go.mod'),
+}
+```
+
+**Zed** (`settings.json`):
+```json
+{
+  "lsp": {
+    "tricorder": {
+      "command": "tricorder-lsp",
+      "args": ["--root", "{{project_root}}", "--stdio"]
+    }
+  }
+}
+```
+
+### Architecture
+
+- **Read-only on cache**: LSP server never triggers parses; `tricorder` / `tricorder --watch` builds the cache.
+- **Shared core**: Uses `Tricorder` class methods (`get_tags`, `get_symbol_detail`, `get_symbols`) directly.
+- **Entry point**: `tricorder-lsp` console script (installed via `pip install -e .[lsp]` or `pip install -e .` with `pygls`/`lsprotocol` in requirements).
+
+### Cache Freshness
+
+| Scenario | Behavior |
+|----------|----------|
+| Fresh cache | LSP serves immediately |
+| Cache stale (files changed) | Run `tricorder .` or `tricorder --watch` to refresh |
+| Watch mode active | Cache updates automatically on save; LSP reflects on next request |
+
+No LSP restart needed after cache updates — each request reads current cache state.
+
+---
+
 ## License
 
 MIT — same as Aider and RepoMapper. Fully open source.

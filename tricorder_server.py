@@ -496,8 +496,8 @@ async def tricorder_symbols(
         for file_path in all_files:
             rel_path = str(Path(file_path).relative_to(project_root))
 
-            # File filter
-            if file and file.lower() not in file_path.lower():
+            # File filter - match against relative path (POSIX normalized)
+            if file and file.lower() not in rel_path.replace('\\', '/').lower():
                 continue
 
             symbols = repo_map.get_symbols(file_path, rel_path)

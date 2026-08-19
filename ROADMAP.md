@@ -138,6 +138,22 @@ requires git to map a codebase. Incremental rebuilds are out of scope.
 
 ---
 
+### M1.5 — Language Server Protocol (LSP) Server
+**Scope**: New entry point `tricorder-lsp` exposing code intelligence via standard LSP — Go to Definition, Find References, Hover, Document Symbols, Workspace Symbols. Read-only on tricorder cache; editors (VS Code, Neovim, Zed, Helix) work out of the box.
+**Files**: `tricorder_lsp.py` (new), `pyproject.toml` (entry point), `requirements.txt` (+pygls, lsprotocol), `docs/lsp-setup.md`
+**Validation Gate**:
+```bash
+# tricorder-lsp --root /project --stdio
+# Editor: gd → jumps to definition (cross-file)
+# Editor: gr → lists all references (cross-file)
+# Editor: hover → signature + docstring + body preview
+# Editor: outline → document symbols
+# Editor: workspace symbol search → fuzzy finds across project
+```
+**Test**: `python -m pytest tests/test_lsp.py -v`
+
+---
+
 ## Milestone 1.1 — Polish (P2)
 
 *Target: Quality-of-life, no mission-critical impact.*
@@ -196,7 +212,6 @@ requires git to map a codebase. Incremental rebuilds are out of scope.
 - Auto-tier selection by query heuristics
 - Semantic/vector code search
 - Package manager dependency resolution (npm, cargo, go.mod, pip)
-- IDE integration (LSP, VS Code extension)
 - Cloud/remote scanning
 
 ---
