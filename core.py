@@ -65,7 +65,10 @@ class Tricorder:
         exclude_unranked: bool = False,
         context_lines: int = 0,
         exclude_untagged: bool = False,
-        exclude_globs: Optional[List[str]] = None
+        exclude_globs: Optional[List[str]] = None,
+        cache_size_limit: int = 100 * 1024 * 1024,  # 100MB default
+        cache_eviction_policy: str = "least-recently-used",
+        cache_ttl: Optional[int] = None
     ):
         """Initialize Tricorder instance."""
         self.map_tokens = map_tokens
@@ -82,6 +85,9 @@ class Tricorder:
         self.context_lines = context_lines
         self.exclude_untagged = exclude_untagged
         self.exclude_globs = exclude_globs
+        self.cache_size_limit = cache_size_limit
+        self.cache_eviction_policy = cache_eviction_policy
+        self.cache_ttl = cache_ttl
         
         # Set up output handlers
         if output_handler_funcs is None:
@@ -104,7 +110,11 @@ class Tricorder:
         """Load the persistent tags cache."""
         cache_dir = self.root / TAGS_CACHE_DIR
         try:
-            self.TAGS_CACHE = diskcache.Cache(str(cache_dir))
+            self.TAGS_CACHE = diskcache.Cache(
+                str(cache_dir),
+                size_limit=self.cache_size_limit,
+                eviction_policy=self.cache_eviction_policy,
+            )
         except Exception as e:
             # Fall back to in-memory cache — common on Windows with
             # read-only cache files from previous runs.
