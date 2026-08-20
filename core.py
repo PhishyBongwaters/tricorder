@@ -5,6 +5,7 @@ Tricorder class for generating repository maps.
 import os
 import sys
 import fnmatch
+import threading
 from pathlib import Path
 from collections import namedtuple, defaultdict
 from typing import List, Dict, Set, Optional, Tuple, Callable, Any, Union
@@ -102,6 +103,12 @@ class Tricorder:
         self.tree_cache = {}
         self.tree_context_cache = {}
         self.map_cache = {}
+        self._cross_file_index_cache: Optional[Tuple[Dict, Dict]] = None
+        
+        # Thread safety locks for cache access
+        self._tags_cache_lock = threading.RLock()
+        self._import_index_lock = threading.RLock()
+        self._cross_file_index_lock = threading.RLock()
         
         # Load persistent tags cache
         self.load_tags_cache()
@@ -201,24 +208,26 @@ class Tricorder:
         if file_mtime is None:
             return []
         
-        try:
-            # Both diskcache.Cache and dict have .get() method
-            cached_entry = self.TAGS_CACHE.get(fname)
-                
-            if cached_entry and cached_entry.get("mtime") == file_mtime:
-                return cached_entry["data"]
-        except SQLITE_ERRORS:
-            self.tags_cache_error()
-        
-        # Cache miss or file changed
-        tags = self.get_tags_raw(fname, rel_fname)
-        
-        try:
-            self.TAGS_CACHE[fname] = {"mtime": file_mtime, "data": tags}
-        except SQLITE_ERRORS:
-            self.tags_cache_error()
-        
-        return tags
+        # Use lock to prevent TOCTOU race condition in check-then-write
+        with self._tags_cache_lock:
+            try:
+                # Both diskcache.Cache and dict have .get() method
+                cached_entry = self.TAGS_CACHE.get(fname)
+                    
+                if cached_entry and cached_entry.get("mtime") == file_mtime:
+                    return cached_entry["data"]
+            except SQLITE_ERRORS:
+                self.tags_cache_error()
+            
+            # Cache miss or file changed
+            tags = self.get_tags_raw(fname, rel_fname)
+            
+            try:
+                self.TAGS_CACHE[fname] = {"mtime": file_mtime, "data": tags}
+            except SQLITE_ERRORS:
+                self.tags_cache_error()
+            
+            return tags
     
     def get_tags_raw(self, fname: str, rel_fname: str) -> List[Tag]:
         """Parse file to extract tags using Tree-sitter."""
@@ -661,46 +670,53 @@ class Tricorder:
         ponytail: one pass over all files, cached on the instance — Tricorder is
         per-call in the MCP server, so no cross-project stale-cache risk.
         """
+        # Fast path: cache hit (no lock needed for read)
         if self._import_index_cache is not None:
             return self._import_index_cache
-        from import_parser import parse_imports
-        from name_resolver import NameResolver
+        
+        # Lock for write - double-checked locking
+        with self._import_index_lock:
+            # Double-check after acquiring lock
+            if self._import_index_cache is not None:
+                return self._import_index_cache
+            from import_parser import parse_imports
+            from name_resolver import NameResolver
 
-        resolver = NameResolver()
-        file_imports = {}
+            resolver = NameResolver()
+            file_imports = {}
 
-        for fpath in self._discover_files():
-            if not os.path.isfile(fpath):
-                continue
-            try:
-                from grep_ast.tsl import get_parser
-            except ImportError:
-                continue
+            for fpath in self._discover_files():
+                if not os.path.isfile(fpath):
+                    continue
+                try:
+                    from grep_ast.tsl import get_parser
+                except ImportError:
+                    continue
 
-            lang = detect_lang(fpath)
-            if not lang:
-                continue
+                lang = detect_lang(fpath)
+                if not lang:
+                    continue
 
-            try:
-                parser = get_parser(lang)
-            except Exception:
-                continue
+                try:
+                    parser = get_parser(lang)
+                except Exception:
+                    continue
 
-            code = self.read_text_func_internal(fpath)
-            if not code or not code.strip():
-                continue
+                code = self.read_text_func_internal(fpath)
+                if not code or not code.strip():
+                    continue
 
-            try:
-                bindings = parse_imports(fpath, lang, parser, bytes(code, "utf-8"))
-                if bindings:
-                    file_imports[fpath] = bindings
-                    resolver.add_file(fpath, bindings)
-            except Exception:
-                pass
+                try:
+                    bindings = parse_imports(fpath, lang, parser, bytes(code, "utf-8"))
+                    if bindings:
+                        file_imports[fpath] = bindings
+                        resolver.add_file(fpath, bindings)
+                except Exception:
+                    pass
 
-        result = {'resolver': resolver, 'file_imports': file_imports}
-        self._import_index_cache = result
-        return result
+            result = {'resolver': resolver, 'file_imports': file_imports}
+            self._import_index_cache = result
+            return result
 
     def _build_cross_file_index(self) -> Tuple[Dict[str, List[Tuple[str, int]]], Dict[str, List[Tuple[str, int]]]]:
         """Build cross-file definition and reference indexes.
@@ -709,43 +725,55 @@ class Tricorder:
         ponytail: one pass over all files, O(n) total.
         Uses import tracking to resolve qualified names where possible.
         """
-        defs: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
-        refs: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
+        # Fast path: check if we have a cached cross-file index
+        if hasattr(self, '_cross_file_index_cache') and self._cross_file_index_cache is not None:
+            return self._cross_file_index_cache
+        
+        # Lock for write - double-checked locking
+        with self._cross_file_index_lock:
+            # Double-check after acquiring lock
+            if hasattr(self, '_cross_file_index_cache') and self._cross_file_index_cache is not None:
+                return self._cross_file_index_cache
+            
+            defs: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
+            refs: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
 
-        # Build import index for qualified name resolution
-        import_data = self._build_import_index()
-        resolver = import_data['resolver']
-        file_imports = import_data['file_imports']
+            # Build import index for qualified name resolution
+            import_data = self._build_import_index()
+            resolver = import_data['resolver']
+            file_imports = import_data['file_imports']
 
-        for fpath in self._discover_files():
-            if not os.path.isfile(fpath):
-                continue
-            rel = self.get_rel_fname(fpath)
+            for fpath in self._discover_files():
+                if not os.path.isfile(fpath):
+                    continue
+                rel = self.get_rel_fname(fpath)
 
-            # Definitions
-            for sym in self.get_symbols(fpath, rel):
-                defs[sym.name].append((fpath, sym.line))
+                # Definitions
+                for sym in self.get_symbols(fpath, rel):
+                    defs[sym.name].append((fpath, sym.line))
 
-            # References — resolve qualified names via import tracking
-            file_refs = self.get_all_references(fpath, rel)
-            for ref in file_refs:
-                bare_name = ref["name"]
-                # Try to resolve to a qualified name
-                resolution = resolver.resolve(bare_name, fpath)
-                if resolution.confidence > 0:
-                    # Use qualified name for the reference
-                    resolved_name = resolution.qualified_name
-                    # Only use qualified name if it differs from bare name
-                    # (avoids polluting the index with redundant entries)
-                    if resolved_name != bare_name:
-                        refs[resolved_name].append((fpath, ref["line"]))
-                    # Always index the bare name too (for backward compat)
-                    refs[bare_name].append((fpath, ref["line"]))
-                else:
-                    # No import mapping — use bare name
-                    refs[bare_name].append((fpath, ref["line"]))
+                # References — resolve qualified names via import tracking
+                file_refs = self.get_all_references(fpath, rel)
+                for ref in file_refs:
+                    bare_name = ref["name"]
+                    # Try to resolve to a qualified name
+                    resolution = resolver.resolve(bare_name, fpath)
+                    if resolution.confidence > 0:
+                        # Use qualified name for the reference
+                        resolved_name = resolution.qualified_name
+                        # Only use qualified name if it differs from bare name
+                        # (avoids polluting the index with redundant entries)
+                        if resolved_name != bare_name:
+                            refs[resolved_name].append((fpath, ref["line"]))
+                        # Always index the bare name too (for backward compat)
+                        refs[bare_name].append((fpath, ref["line"]))
+                    else:
+                        # No import mapping — use bare name
+                        refs[bare_name].append((fpath, ref["line"]))
 
-        return dict(defs), dict(refs)
+            result = (dict(defs), dict(refs))
+            self._cross_file_index_cache = result
+            return result
 
     def build_call_graph(self, file_paths: List[str]) -> Dict[str, Dict]:
         """Build a per-file call graph from reference captures.
