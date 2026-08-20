@@ -1585,16 +1585,35 @@ class Tricorder:
         # Binary search for optimal number of tags
         left, right = 0, len(ranked_tags)
         best_tree = None
-        
+        best_num = 0
+
         while left <= right:
             mid = (left + right) // 2
             tree_output, tokens = try_tags(mid)
-            
+
             if tree_output and tokens <= max_map_tokens:
                 best_tree = tree_output
+                best_num = mid
                 left = mid + 1
             else:
                 right = mid - 1
+
+        # Coverage: distinct source files that actually made it into the map,
+                # vs. how many the scanner considered. Low coverage means the token
+                # budget rendered a thin slice --- an agent must NOT mistake it for
+                # the whole repo. Emit a warning so "small map" stays honest (issue
+                # #18). Threshold is a knob (_COVERAGE_WARN_THRESHOLD).
+                tagged_files = set(self.get_rel_fname(t.fname) for t in ranked_tags[:best_num])
+                covered = len(tagged_files)
+                total_considered = file_report.total_files_considered
+                coverage_pct = round(covered / total_considered * 100, 1) if total_considered else 100.0
+                self.last_coverage_pct = coverage_pct
+                if coverage_pct < _COVERAGE_WARN_THRESHOLD:
+                    self.output_handlers['warning'](
+                        f"Low map coverage: {covered}/{total_considered} source files ({coverage_pct}%). "
+                        f"The answer to a task may live in an uncovered file — raise --map-tokens "
+                        f"or drill in with detect/symbols/query."
+                    )
         
         # Add untagged files section to final output (not counted in token budget)
         if best_tree and file_report.untagged_files and not self.exclude_untagged and self.context_lines == 0:
