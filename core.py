@@ -192,11 +192,8 @@ class Tricorder:
             return []
         
         try:
-            # Handle both diskcache Cache and in-memory dict
-            if isinstance(self.TAGS_CACHE, dict):
-                cached_entry = self.TAGS_CACHE.get(fname)
-            else:
-                cached_entry = self.TAGS_CACHE.get(fname)
+            # Both diskcache.Cache and dict have .get() method
+            cached_entry = self.TAGS_CACHE.get(fname)
                 
             if cached_entry and cached_entry.get("mtime") == file_mtime:
                 return cached_entry["data"]
