@@ -28,7 +28,9 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import subprocess
+import sys
 import fnmatch
 from pathlib import Path
 from typing import Any, Optional
@@ -42,16 +44,88 @@ from hermes_constants import get_hermes_home
 _CACHE_DIR = get_hermes_home() / "tricorder"
 _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Path to the tricorder CLI in its own venv. Detect once at import.
-_TRICORDER_CLI = None
-_VENVS = [
-    Path(r"D:/Projects/tricorder/.venv/Scripts/tricorder.exe"),
-    Path(r"D:/Projects/tricorder/.venv/bin/tricorder"),
-]
-for _cand in _VENVS:
-    if _cand.exists():
-        _TRICORDER_CLI = str(_cand)
-        break
+# Path to the tricorder CLI in its own venv. Lazy-initialized on first use.
+_TRICORDER_CLI: Optional[str] = None
+
+
+def _find_tricorder_cli() -> Optional[str]:
+    """Discover tricorder CLI executable using multiple strategies.
+
+    Priority order:
+    1. PATH lookup (works if installed globally or venv activated)
+    2. Hermes config override (plugins.entries.tricorder.cli_path)
+    3. Relative to this plugin file (.venv, venv, env)
+    4. Relative to tricorder package (editable install)
+    5. Relative to sys.executable (if running in tricorder's venv)
+    """
+    # 1. PATH lookup (works if installed globally or venv activated)
+    cli = shutil.which("tricorder")
+    if cli:
+        return cli
+
+    # 2. Hermes config override
+    try:
+        from hermes_cli.config import load_config
+        cfg = load_config() or {}
+        cli_path = (
+            ((cfg.get("plugins") or {}).get("entries") or {})
+            .get("tricorder", {})
+            .get("cli_path")
+        )
+        if cli_path and Path(cli_path).exists():
+            return cli_path
+    except Exception:
+        pass
+
+    # 3. Relative to this plugin file
+    plugin_dir = Path(__file__).resolve().parent
+    for venv_name in (".venv", "venv", "env"):
+        venv_path = plugin_dir / venv_name
+        if sys.platform == "win32":
+            candidates = [venv_path / "Scripts" / "tricorder.exe"]
+        else:
+            candidates = [venv_path / "bin" / "tricorder"]
+        for c in candidates:
+            if c.exists():
+                return str(c)
+
+    # 4. Relative to tricorder package (editable install)
+    try:
+        import tricorder
+        pkg_dir = Path(tricorder.__file__).resolve().parent
+        for venv_name in (".venv", "venv", "env"):
+            venv_path = pkg_dir / venv_name
+            if sys.platform == "win32":
+                candidates = [venv_path / "Scripts" / "tricorder.exe"]
+            else:
+                candidates = [venv_path / "bin" / "tricorder"]
+            for c in candidates:
+                if c.exists():
+                    return str(c)
+    except Exception:
+        pass
+
+    # 5. Relative to sys.executable (if running in tricorder's venv)
+    try:
+        exe_dir = Path(sys.executable).resolve().parent
+        if sys.platform == "win32":
+            candidate = exe_dir / "tricorder.exe"
+        else:
+            candidate = exe_dir / "tricorder"
+        if candidate.exists():
+            return str(candidate)
+    except Exception:
+        pass
+
+    return None
+
+
+def _get_tricorder_cli() -> Optional[str]:
+    """Get tricorder CLI path, initializing on first call."""
+    global _TRICORDER_CLI
+    if _TRICORDER_CLI is None:
+        _TRICORDER_CLI = _find_tricorder_cli()
+    return _TRICORDER_CLI
 
 
 # ---------------------------------------------------------------------------
@@ -265,9 +339,10 @@ def _read_meta(project_root: str) -> dict:
 
 def _project_signature(project_root: str) -> str:
     """Shell to CLI for the stat-hash. Returns 16 hex chars or '' on failure."""
-    if not _TRICORDER_CLI:
+    cli = _get_tricorder_cli()
+    if not cli:
         return ""
-    cmd = [_TRICORDER_CLI, "--root", project_root, "--signature-only", "."]
+    cmd = [cli, "--root", project_root, "--signature-only", "."]
     globs = _exclude_globs()
     if globs:
         cmd += ["--exclude-globs"] + globs
@@ -284,9 +359,10 @@ def _cli_budget(project_root: str, map_file) -> dict:
     cached map, shelled from the CLI (--stats-only). The plugin runs in Hermes'
     Python without tricorder deps (tiktoken), so it delegates the estimate to
     the CLI's own venv. Returns {} on any failure — callers fall back."""
-    if not _TRICORDER_CLI:
+    cli = _get_tricorder_cli()
+    if not cli:
         return {}
-    cmd = [_TRICORDER_CLI, "--root", project_root, "--stats-only", str(map_file)]
+    cmd = [cli, "--root", project_root, "--stats-only", str(map_file)]
     globs = _exclude_globs()
     if globs:
         cmd += ["--exclude-globs"] + globs
@@ -358,12 +434,13 @@ def build_map(project_root: str) -> Optional[dict]:
     (map_file, token_estimate, symbol counts) or None on failure. Best-effort,
     never raises."""
     # Always rebuild on explicit scan - cache is for auto lifecycle only
-    if not _TRICORDER_CLI:
+    cli = _get_tricorder_cli()
+    if not cli:
         logger.debug("tricorder: CLI not found; skipping map")
         return None
     out = _cache_file(project_root)
     cmd = [
-        _TRICORDER_CLI, "--root", project_root,
+        cli, "--root", project_root,
         "--tier", "0",
         "--map-tokens", str(_MAP_TOKENS),
         "--exclude-untagged",
