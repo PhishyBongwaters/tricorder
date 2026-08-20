@@ -19,6 +19,16 @@ from scm import get_scm_fname
 from importance import filter_important_files
 
 
+class TricorderError(Exception):
+    """Base exception for Tricorder errors."""
+    pass
+
+
+class GrepAstNotAvailableError(TricorderError):
+    """Raised when grep-ast is not available."""
+    pass
+
+
 @dataclass
 class FileReport:
     excluded: Dict[str, str]        # File -> exclusion reason with status
@@ -205,8 +215,7 @@ class Tricorder:
             from grep_ast.tsl import get_language, get_parser
             from tree_sitter import Query, QueryCursor
         except ImportError:
-            print("Error: grep-ast is required. Install with: pip install grep-ast")
-            sys.exit(1)
+            raise GrepAstNotAvailableError("grep-ast is required. Install with: pip install grep-ast")
             
         lang = detect_lang(fname)
         if not lang:
