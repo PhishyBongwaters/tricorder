@@ -214,7 +214,8 @@ def detect_lang(fname: str) -> Optional[str]:
 
 def repo_budget(project_root: str, token_estimate: int,
                 model_name: str = "gpt-4",
-                exclude_globs: Optional[List[str]] = None) -> dict:
+                exclude_globs: Optional[List[str]] = None,
+                coverage_pct: Optional[float] = None) -> dict:
     """Budget fields shared by CLI, MCP, and plugin: how many tokens a piece
     of tricorder output costs vs. reading the whole repo.
 
@@ -223,7 +224,7 @@ def repo_budget(project_root: str, token_estimate: int,
     more than reading the repo, so savings_pct clamps at 0, never negative).
 
     Returns: {"token_estimate": int, "full_repo_estimate": int,
-              "savings_pct": float}
+              "savings_pct": float, "coverage_pct": float (optional)}
     """
     files = discover_src_files(project_root, use_gitignore=True,
                                exclude_globs=exclude_globs)
@@ -239,11 +240,14 @@ def repo_budget(project_root: str, token_estimate: int,
         savings = 0.0
     else:
         savings = round(max(0.0, 1 - token_estimate / full) * 100, 1)
-    return {
+    result = {
         "token_estimate": int(token_estimate),
         "full_repo_estimate": int(full),
         "savings_pct": savings,
     }
+    if coverage_pct is not None:
+        result["coverage_pct"] = round(coverage_pct, 1)
+    return result
 
 
 # =============================================================================

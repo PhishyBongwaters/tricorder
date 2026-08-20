@@ -46,6 +46,8 @@ CACHE_VERSION = 1
 TAGS_CACHE_DIR = f".repomap.tags.cache.v{CACHE_VERSION}"
 SQLITE_ERRORS = (sqlite3.OperationalError, sqlite3.DatabaseError)
 
+_COVERAGE_WARN_THRESHOLD = 60.0  # percentage; can be overridden via config
+
 
 
 class Tricorder:
@@ -222,6 +224,9 @@ class Tricorder:
             # Cache miss or file changed
             tags = self.get_tags_raw(fname, rel_fname)
             
+            # Post-process tags to add class context to method names
+            tags = self._add_class_context_to_tags(tags)
+            
             try:
                 self.TAGS_CACHE[fname] = {"mtime": file_mtime, "data": tags}
             except SQLITE_ERRORS:
@@ -229,6 +234,48 @@ class Tricorder:
             
             return tags
     
+    def _add_class_context_to_tags(self, tags: List[Tag]) -> List[Tag]:
+        """Post-process tags to add class context to method names.
+        
+        For C++ methods inside a class, prefix the method name with the class name
+        (e.g., 'AddToBuffer' becomes 'PCM::AddToBuffer').
+        """
+        if not tags:
+            return tags
+        
+        # Sort tags by line number to process in source order
+        sorted_tags = sorted(tags, key=lambda t: t.line)
+        
+        result = []
+        current_class = None
+        
+        for tag in sorted_tags:
+            if tag.kind == "def" and tag.name and tag.name[0].isupper():
+                # Heuristic: class names typically start with uppercase
+                # Check if this looks like a class definition (no parentheses)
+                if '(' not in tag.name and '::' not in tag.name:
+                    current_class = tag.name
+                    result.append(tag)
+                    continue
+            
+            # For methods/functions, if we're in a class context, prefix with class name
+            if tag.kind == "def" and current_class and '(' in tag.name:
+                # This looks like a method definition
+                new_name = f"{current_class}::{tag.name}"
+                # Create new tag with updated name
+                new_tag = Tag(
+                    rel_fname=tag.rel_fname,
+                    fname=tag.fname,
+                    line=tag.line,
+                    name=f"{current_class}::{tag.name}",
+                    kind=tag.kind
+                )
+                result.append(new_tag)
+            else:
+                result.append(tag)
+        
+        return result
+
     def get_tags_raw(self, fname: str, rel_fname: str) -> List[Tag]:
         """Parse file to extract tags using Tree-sitter."""
         try:
@@ -1586,6 +1633,10 @@ class Tricorder:
         left, right = 0, len(ranked_tags)
         best_tree = None
         best_num = 0
+        # Fallback: track the smallest tree even if it exceeds budget
+        fallback_tree = None
+        fallback_num = 0
+        fallback_tokens = float('inf')
 
         while left <= right:
             mid = (left + right) // 2
@@ -1596,24 +1647,38 @@ class Tricorder:
                 best_num = mid
                 left = mid + 1
             else:
+                # Track fallback: smallest tree that exceeds budget
+                if tree_output and tokens < fallback_tokens:
+                    fallback_tree = tree_output
+                    fallback_num = mid
+                    fallback_tokens = tokens
                 right = mid - 1
 
+        # Fallback: if no valid tree found, use the smallest one that exceeded budget
+        if best_tree is None and fallback_tree is not None:
+            best_tree = fallback_tree
+            best_num = fallback_num
+            self.output_handlers['warning'](
+                f"Map exceeds token budget ({fallback_tokens} > {max_map_tokens} tokens) "
+                f"with {fallback_num} tag(s). Consider increasing --map-tokens."
+            )
+
         # Coverage: distinct source files that actually made it into the map,
-                # vs. how many the scanner considered. Low coverage means the token
-                # budget rendered a thin slice --- an agent must NOT mistake it for
-                # the whole repo. Emit a warning so "small map" stays honest (issue
-                # #18). Threshold is a knob (_COVERAGE_WARN_THRESHOLD).
-                tagged_files = set(self.get_rel_fname(t.fname) for t in ranked_tags[:best_num])
-                covered = len(tagged_files)
-                total_considered = file_report.total_files_considered
-                coverage_pct = round(covered / total_considered * 100, 1) if total_considered else 100.0
-                self.last_coverage_pct = coverage_pct
-                if coverage_pct < _COVERAGE_WARN_THRESHOLD:
-                    self.output_handlers['warning'](
-                        f"Low map coverage: {covered}/{total_considered} source files ({coverage_pct}%). "
-                        f"The answer to a task may live in an uncovered file — raise --map-tokens "
-                        f"or drill in with detect/symbols/query."
-                    )
+        # vs. how many the scanner considered. Low coverage means the token
+        # budget rendered a thin slice --- an agent must NOT mistake it for
+        # the whole repo. Emit a warning so "small map" stays honest (issue
+        # #18). Threshold is a knob (_COVERAGE_WARN_THRESHOLD).
+        tagged_files = set(self.get_rel_fname(t[1].fname) for t in ranked_tags[:best_num])
+        covered = len(tagged_files)
+        total_considered = file_report.total_files_considered
+        coverage_pct = round(covered / total_considered * 100, 1) if total_considered else 100.0
+        self.last_coverage_pct = coverage_pct
+        if coverage_pct < _COVERAGE_WARN_THRESHOLD:
+            self.output_handlers['warning'](
+                f"Low map coverage: {covered}/{total_considered} source files ({coverage_pct}%). "
+                f"The answer to a task may live in an uncovered file — raise --map-tokens "
+                f"or drill in with detect/symbols/query."
+            )
         
         # Add untagged files section to final output (not counted in token budget)
         if best_tree and file_report.untagged_files and not self.exclude_untagged and self.context_lines == 0:

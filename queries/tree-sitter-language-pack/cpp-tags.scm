@@ -1,3 +1,4 @@
+; --- Definitions ---
 (struct_specifier name: (type_identifier) @name.definition.class body: (_)) @definition.class
 
 (declaration type: (union_specifier name: (type_identifier) @name.definition.class)) @definition.class
@@ -6,7 +7,10 @@
 
 (function_declarator declarator: (field_identifier) @name.definition.function) @definition.function
 
-(function_declarator declarator: (qualified_identifier scope: (namespace_identifier) @local.scope name: (identifier) @name.definition.method)) @definition.method
+; Qualified member functions: Class::method() or ns::func()
+; Capture the full qualified name (e.g., PCM::AddToBuffer) from the declarator
+(function_declarator
+  declarator: (qualified_identifier) @name.definition.function.full) @definition.method
 
 (type_definition declarator: (type_identifier) @name.definition.type) @definition.type
 
