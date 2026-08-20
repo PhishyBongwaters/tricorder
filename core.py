@@ -105,9 +105,13 @@ class Tricorder:
         cache_dir = self.root / TAGS_CACHE_DIR
         try:
             self.TAGS_CACHE = diskcache.Cache(str(cache_dir))
-        except Exception:
-            # Silently fall back to in-memory cache — common on Windows with
+        except Exception as e:
+            # Fall back to in-memory cache — common on Windows with
             # read-only cache files from previous runs.
+            self.output_handlers['warning'](
+                f"Failed to initialize diskcache at {cache_dir}: {e}. "
+                f"Falling back to in-memory cache (not persistent)."
+            )
             self.TAGS_CACHE = {}
     
     def _make_writable(self, path: Path):
