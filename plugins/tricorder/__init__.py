@@ -475,13 +475,9 @@ def build_map(project_root: str) -> Optional[dict]:
         ".",
     ]
     globs = _exclude_globs()
-    if not globs and "linux" in project_root.lower():
-        globs = ["drivers/**", "arch/**", "fs/**", "net/**", "sound/**"]
     if globs:
         cmd += ["--exclude-globs"] + globs
     max_files = _max_files()
-    if not _config_entry().get("max_files") and "linux" in project_root.lower():
-        max_files = 200
     if max_files:
         cmd += ["--max-files", str(max_files)]
     try:
