@@ -80,15 +80,15 @@ class TricorderClient:
         else:
             self.tricorder_exe = tricorder_exe
     
-    def _run(self, args: list[str]) -> subprocess.CompletedProcess:
+    def _run(self, args: list[str], timeout: int = 300) -> subprocess.CompletedProcess:
         """Run tricorder CLI with given args."""
         return subprocess.run(
             [self.tricorder_exe, *args],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=timeout,
         )
-    
+
     def scan(
         self,
         project_root: str,

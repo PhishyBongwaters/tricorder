@@ -472,7 +472,7 @@ def build_map(project_root: str) -> Optional[dict]:
         # The CLI needs at least one paths positional; resolve against --root.
         subprocess.run(
             cmd,
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, timeout=300,
             check=False,
         )
     except Exception as exc:
