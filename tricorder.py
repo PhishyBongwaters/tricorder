@@ -249,6 +249,13 @@ Examples:
              "Used by the lifecycle plugin to enrich cache meta."
     )
     
+    parser.add_argument(
+        "--max-files",
+        type=int,
+        default=1000,
+        help="Cap on files during auto-discovery when no paths given (default: 1000)"
+    )
+
     args = parser.parse_args()
 
     # --signature-only: stat-hash, no map build. Early exit.
@@ -331,6 +338,20 @@ Examples:
     chat_files = [str(Path(f).resolve()) for f in chat_files_from_args]
     # other_files for Tricorder are the effective_other_files, resolved after expansion.
     other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
+
+    # Auto-discover when no explicit/positional paths were provided, matching
+    # MCP server behavior (tricorder_server.py:143-153). Turn-0 injection from
+    # the DSH plugin calls the CLI with no file specs.
+    if not other_files:
+        output_handlers['info'](f"No explicit files provided, auto-scanning {root_path}...")
+        effective_other_files_unresolved = find_src_files(
+            str(root_path), exclude_globs=args.exclude_globs)
+        if len(effective_other_files_unresolved) > args.max_files:
+            output_handlers['warning'](
+                f"Auto-scanned {len(effective_other_files_unresolved)} files, "
+                f"capping to {args.max_files}")
+            effective_other_files_unresolved = effective_other_files_unresolved[:args.max_files]
+        other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
 
     # chat files resolved above
     

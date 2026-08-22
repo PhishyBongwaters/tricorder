@@ -96,6 +96,9 @@ tricorder --chat-files main.py --other-files src/
 
 # Mentioned files and identifiers
 tricorder --mentioned-files config.py --mentioned-idents "main_function"
+
+# No paths given? Auto-discovers source files under --root (capped at 1000).
+tricorder --root . --map-tokens 2048
 ```
 
 File priority order:
@@ -119,6 +122,7 @@ tricorder . --mermaid --mermaid-top 30
 tricorder . --exclude-untagged
 tricorder . --quiet
 tricorder . --dry-run --map-tokens 2048
+tricorder . --max-files 5000  # raise auto-discovery cap (default 1000)
 ```
 
 ### Optimal Agent Workflow (Lowest Token Cost)

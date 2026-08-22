@@ -56,6 +56,7 @@ tricorder src/ --tier 1 --context-lines 3    # T1 with context
 tricorder --chat-files main.py --other-files src/ --mermaid
 tricorder --force-refresh .                  # bust stale tag cache
 tricorder --exclude-globs vendor/** third_party/** .  # skip vendored code
+tricorder --root . --map-tokens 2048           # no paths → auto-discover --root (--max-files, default 1000)
 ```
 
 Tier tokens: T0 ≈ 14 tokens/tag (definitions), T1 ≈ 350 tokens/tag (with context).
