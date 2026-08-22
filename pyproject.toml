@@ -29,3 +29,6 @@ tricorder-mcp = "tricorder_server:main"
 
 [tool.setuptools]
 py-modules = ["tricorder", "tricorder_server", "core", "utils", "importance", "scm", "name_resolver", "import_parser"]
+
+[tool.pytest.ini_options]
+norecursedirs = ["tests/fixtures"]
