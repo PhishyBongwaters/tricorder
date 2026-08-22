@@ -19,7 +19,7 @@ Leverages **tree-sitter** for accurate code parsing and the **PageRank** algorit
 
 ## Benchmark: Tricorder vs Full Repo Scan
 
-|| Approach | Chars | Tokens |
+| Approach | Chars | Tokens |
 |----------|-------|--------|
 | Tricorder (definitions only) | 1,702 | 491 |
 | Full repo (all files) | 133,432 | 32,620 |
