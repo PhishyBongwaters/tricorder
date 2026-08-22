@@ -12,7 +12,8 @@ from dataclasses import dataclass, asdict
 try:
     import tiktoken
 except ImportError:
-    raise RuntimeError("tiktoken is required. Install with: pip install tiktoken")
+    sys.stderr.write("tiktoken is required. Install with: pip install tiktoken\n")
+    sys.exit(1)
 
 # Tag namedtuple for storing parsed code definitions and references
 Tag = namedtuple("Tag", "rel_fname fname line name kind".split())
