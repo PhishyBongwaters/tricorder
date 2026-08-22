@@ -97,6 +97,7 @@ class TricorderClient:
         tier: int = 0,
         exclude_untagged: bool = True,
         exclude_globs: Optional[list[str]] = None,
+        max_files: Optional[int] = None,
         output_format: str = "text",
     ) -> ScanResult:
         """
@@ -109,6 +110,7 @@ class TricorderClient:
             tier: 0 = definitions only, 1 = definitions + context.
             exclude_untagged: Skip untagged files section.
             exclude_globs: Glob patterns to exclude from scan.
+            max_files: Maximum files to parse (default: CLI default).
             output_format: "text" or "mermaid".
         
         Returns:
@@ -124,6 +126,8 @@ class TricorderClient:
             args.append("--exclude-untagged")
         if exclude_globs:
             args.extend(["--exclude-globs", *exclude_globs])
+        if max_files is not None:
+            args.extend(["--max-files", str(max_files)])
         if scan_path:
             args.append(scan_path)
         
@@ -312,7 +316,7 @@ class TricorderMCPClient:
 
 
 # Convenience function for turn-0 injection
-def inject_turn0_map(session, project_root: str, token_limit: int = 2048) -> bool:
+def inject_turn0_map(session, project_root: str, token_limit: int = 2048, exclude_globs: Optional[list[str]] = None, max_files: Optional[int] = None) -> bool:
     """
     Inject T0 map into a session at turn 0.
     
@@ -320,6 +324,8 @@ def inject_turn0_map(session, project_root: str, token_limit: int = 2048) -> boo
         session: dsh Session object (must have .events, .header.cwd, .append())
         project_root: Absolute path to project root.
         token_limit: Token budget for T0 map.
+        exclude_globs: Glob patterns to exclude from scan.
+        max_files: Maximum files to parse.
     
     Returns:
         True if injection succeeded, False otherwise.
@@ -334,7 +340,7 @@ def inject_turn0_map(session, project_root: str, token_limit: int = 2048) -> boo
     
     try:
         client = TricorderClient()
-        result = client.scan(cwd, token_limit=token_limit, tier=0, exclude_untagged=True)
+        result = client.scan(cwd, token_limit=token_limit, tier=0, exclude_untagged=True, exclude_globs=exclude_globs, max_files=max_files)
         
         if not result.map.strip():
             return False
