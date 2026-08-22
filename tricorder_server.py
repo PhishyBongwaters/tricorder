@@ -49,6 +49,31 @@ mcp = FastMCP("tricorder")
 # Bounded LRU cache prevents unbounded growth across many project roots.
 _MAX_TIER_HISTORY = 128
 
+
+def _validate_project_root(project_root: str) -> tuple[Optional[str], Optional[Path]]:
+    """
+    Validate and resolve project_root.
+
+    Returns:
+        (error_message, resolved_path)
+        - If valid: (None, Path)
+        - If invalid: (error_string, None)
+    """
+    try:
+        # Resolve absolute path, resolving symlinks
+        root_path = Path(project_root).resolve(strict=True)
+    except (OSError, FileNotFoundError):
+        return (f"Project root not found or inaccessible: {project_root}", None)
+
+    if not root_path.is_dir():
+        return (f"Project root is not a directory: {project_root}", None)
+
+    # Ensure path is readable
+    if not os.access(root_path, os.R_OK):
+        return (f"Project root not readable (permission denied): {project_root}", None)
+
+    return (None, root_path)
+
 @lru_cache(maxsize=_MAX_TIER_HISTORY)
 def _tier_history_get(project_root: str) -> Optional[dict]:
     """Get tier history for a project root (LRU-bounded)."""
@@ -137,8 +162,9 @@ async def tricorder_scan(
         - If output_file is None: 'map' (the full map string), 'report' (dict) — backward compatible.
         Or an 'error' key if an error occurred.
     """
-    if not os.path.isdir(project_root):
-        return {"error": f"Project root directory not found: {project_root}"}
+    err, root_path = _validate_project_root(project_root)
+    if err:
+        return {"error": err}
 
     # 1. Handle and validate parameters
     # Convert token_limit to integer with fallback
@@ -387,10 +413,11 @@ async def tricorder_detect(
     Returns:
         Dictionary containing search results or error message
     """
-    if not os.path.isdir(project_root):
-        return {"error": f"Project root directory not found: {project_root}"}
+    err, root_path = _validate_project_root(project_root)
+    if err:
+        return {"error": err}
 
-    project_root = str(Path(project_root).resolve())
+    project_root = str(root_path)
 
     try:
         # Initialize Tricorder with search-specific settings
@@ -482,10 +509,11 @@ async def tricorder_symbols(
     Returns:
         Dictionary containing 'symbols' (list of symbol records) or 'error' key.
     """
-    if not os.path.isdir(project_root):
-        return {"error": f"Project root directory not found: {project_root}"}
+    err, root_path = _validate_project_root(project_root)
+    if err:
+        return {"error": err}
 
-    project_root = str(Path(project_root).resolve())
+    project_root = str(root_path)
 
     # Enforce limit cap
     limit = min(max(limit, 1), 200)
