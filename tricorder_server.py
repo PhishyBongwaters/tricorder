@@ -3,6 +3,7 @@ import json
 import os
 import logging
 import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Set
 import dataclasses
@@ -45,7 +46,21 @@ mcp = FastMCP("tricorder")
 
 # ponytail: advisory tier tracker — survives across calls within a server process.
 # Can't enforce agent behavior (MCP is stateless per call) but can warn in the response.
-_tier_history: Dict[str, dict] = {}  # {project_root: {"last_tier": int, "last_format": str, "map_file": str}}
+# Bounded LRU cache prevents unbounded growth across many project roots.
+_MAX_TIER_HISTORY = 128
+
+@lru_cache(maxsize=_MAX_TIER_HISTORY)
+def _tier_history_get(project_root: str) -> Optional[dict]:
+    """Get tier history for a project root (LRU-bounded)."""
+    return _tier_history_store.get(project_root)
+
+_tier_history_store: Dict[str, dict] = {}  # {project_root: {"last_tier": int, "last_format": str, "map_file": str}}
+
+def _tier_history_set(project_root: str, value: dict) -> None:
+    """Set tier history for a project root (LRU-bounded via cache eviction on get)."""
+    _tier_history_store[project_root] = value
+    # Touch the cache to keep this entry fresh
+    _tier_history_get(project_root)
 
 
 def _savings_pct(token_estimate: int, full_repo_estimate: int) -> float:
@@ -290,7 +305,7 @@ async def tricorder_scan(
                 pct = round(tags_at_budget / len(ranked_tags) * 100, 1)
                 result["tier_hint"] = f"T0 incomplete: {tags_at_budget}/{len(ranked_tags)} tags fit ({pct}%). Consider tier=1 or higher token_limit."
             # Advisory tier hint: upgrade from previous tier
-            prev = _tier_history.get(project_root)
+            prev = _tier_history_get(project_root)
             if prev:
                 if tier > prev["last_tier"] and prev.get("map_file"):
                     result["tier_hint"] = (
@@ -298,7 +313,7 @@ async def tricorder_scan(
                         f"The T{prev['last_tier']} map at {prev['map_file']} may have been sufficient — "
                         f"only escalate tiers if the previous tier genuinely failed to answer your question."
                     )
-            _tier_history[project_root] = {"last_tier": tier, "last_format": output_format, "map_file": str(out_path)}
+            _tier_history_set(project_root, {"last_tier": tier, "last_format": output_format, "map_file": str(out_path)})
             return result
 
         # Stdout path (backward compat — no output_file, no dry_run)

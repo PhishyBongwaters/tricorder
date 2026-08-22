@@ -91,8 +91,8 @@ class TestMCPOutputFile(unittest.TestCase):
     def test_output_file_writes_map_and_returns_metadata(self):
         """repo_map with output_file writes map to disk and returns no 'map' key."""
         import asyncio
-        from tricorder_server import tricorder_scan, _tier_history
-        _tier_history.clear()  # fresh state
+        from tricorder_server import tricorder_scan, _tier_history_store
+        _tier_history_store.clear()  # fresh state
 
         out_file = str(Path(self.tmpdir) / "T0.txt")
         result = asyncio.run(tricorder_scan(
@@ -117,8 +117,8 @@ class TestMCPOutputFile(unittest.TestCase):
     def test_output_file_tier_hint_on_upgrade(self):
         """Calling T0 then T1 with output_file produces a tier_hint advisory."""
         import asyncio
-        from tricorder_server import tricorder_scan, _tier_history
-        _tier_history.clear()
+        from tricorder_server import tricorder_scan, _tier_history_store
+        _tier_history_store.clear()
 
         t0_file = str(Path(self.tmpdir) / "T0.txt")
         t1_file = str(Path(self.tmpdir) / "T1.txt")
@@ -146,8 +146,8 @@ class TestMCPOutputFile(unittest.TestCase):
     def test_stdout_path_still_returns_map(self):
         """Without output_file, the response still contains the full 'map' string (backward compat)."""
         import asyncio
-        from tricorder_server import tricorder_scan, _tier_history
-        _tier_history.clear()
+        from tricorder_server import tricorder_scan, _tier_history_store
+        _tier_history_store.clear()
 
         result = asyncio.run(tricorder_scan(
             project_root=self.project_root,
