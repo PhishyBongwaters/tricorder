@@ -28,6 +28,7 @@ Leverages **tree-sitter** for accurate code parsing and the **PageRank** algorit
 Tricorder output is ~1.5% of full repo size. Savings grow with repo size since the map captures definitions (and optionally reference context), not full file contents.
 
 ## Table of Contents
+
 - [Lineage & Attribution](#lineage--attribution)
 - [Features](#features)
 - [Installation](#installation)
@@ -264,7 +265,7 @@ Returns `{"map": "<mermaid flowchart>", "report": {...}}`. Chat files highlighte
 
 Example `tricorder_symbols`: find auth-related functions → `query="auth", type="function"`; showcase a class → `query="User", type="class"`; all functions in a file → `file="auth.py"`; full repo scan → `query=""`.
 
-Example `tricorder_query`: find all callers of authenticate up to 2 hops → `query="callers('authenticate') depth=2"`; direct callees of main excluding tests → `query="callees('main') depth=1 exclude=tests/**"`; chained traversal → `query="callers('foo') | callees('bar') depth=3"`.
+Example `tricorder_query`: find all callers of authenticate up to 2 hops → `query="callers('authenticate') depth=2"`; direct callees of main excluding tests → `query="callees('main') depth=1 exclude=tests/**"`; chained traversal → `query="callers('foo') \| callees('bar') depth=3"`.
 
 ## Hermes Lifecycle Plugin
 
