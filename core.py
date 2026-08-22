@@ -37,6 +37,7 @@ class FileReport:
     reference_matches: int          # Total reference tags
     total_files_considered: int     # Total files provided as input
     untagged_files: List[str] = None # Files with no tree-sitter symbols
+    coverage_pct: float = 100.0      # % of source files represented in map (issue #18)
 
 
 
@@ -1697,6 +1698,9 @@ class Tricorder:
             if other_lines:
                 best_tree = best_tree + "\n\nOther files:\n" + "\n".join(other_lines)
         
+        # Attach coverage_pct to file_report so MCP/CLI can surface it (issue #18)
+        file_report.coverage_pct = coverage_pct
+        
         return best_tree, file_report
     
     def get_repo_map(
@@ -1712,7 +1716,7 @@ class Tricorder:
         other_files = other_files or []
             
         # Create empty report for error cases
-        empty_report = FileReport({}, 0, 0, 0, untagged_files=[])
+        empty_report = FileReport({}, 0, 0, 0, untagged_files=[], coverage_pct=100.0)
         
         if self.max_map_tokens <= 0 or not other_files:
             return None, empty_report
@@ -1736,7 +1740,7 @@ class Tricorder:
         except RecursionError:
             self.output_handlers['error']("Disabling repo map, git repo too large?")
             self.max_map_tokens = 0
-            return None, FileReport({}, 0, 0, 0, untagged_files=[])  # Ensure consistent return type
+            return None, FileReport({}, 0, 0, 0, untagged_files=[], coverage_pct=100.0)  # Ensure consistent return type
         
         if map_string is None:
             return None, file_report

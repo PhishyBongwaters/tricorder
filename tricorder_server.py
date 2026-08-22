@@ -101,18 +101,21 @@ def _full_repo_tokens(project_root: str) -> int:
     return repo_budget(project_root, 0)["full_repo_estimate"]
 
 
-def _budget_fields(resp: dict, full_repo_tokens: int) -> dict:
+def _budget_fields(resp: dict, full_repo_tokens: int, coverage_pct: Optional[float] = None) -> dict:
     """Add token_estimate/full_repo_estimate/savings_pct to a search-tool response.
 
     token_estimate = tokens of the serialized (non-error) response body.
     savings_pct = context saved vs reading the full repo. 0 when repo is empty.
     """
     tok = count_tokens(json.dumps(resp), "gpt-4")
-    return {
+    result = {
         "token_estimate": tok,
         "full_repo_estimate": full_repo_tokens,
         "savings_pct": _savings_pct(tok, full_repo_tokens),
     }
+    if coverage_pct is not None:
+        result["coverage_pct"] = coverage_pct
+    return result
 
 
 @mcp.tool()
@@ -304,7 +307,8 @@ async def tricorder_scan(
                     "excluded_total": len(file_report.excluded),
                     "definition_matches": file_report.definition_matches,
                     "reference_matches": file_report.reference_matches,
-                    "total_files_considered": file_report.total_files_considered
+                    "total_files_considered": file_report.total_files_considered,
+                    "coverage_pct": file_report.coverage_pct,
                 }
 
             token_estimate = count_tokens(map_content or "", "gpt-4")
@@ -325,6 +329,7 @@ async def tricorder_scan(
                 "tier": tier,
                 "format": output_format,
                 "report": report_dict,
+                "coverage_pct": file_report.coverage_pct,
             }
             # Advisory tier hint: T0 incomplete (truncated at budget)
             if tags_at_budget < len(ranked_tags):
@@ -376,14 +381,16 @@ async def tricorder_scan(
                 "excluded_total": len(file_report.excluded),
                 "definition_matches": file_report.definition_matches,
                 "reference_matches": file_report.reference_matches,
-                "total_files_considered": file_report.total_files_considered
+                "total_files_considered": file_report.total_files_considered,
+                "coverage_pct": file_report.coverage_pct,
             }
         _tok = count_tokens(map_content or "", "gpt-4")
         _full = _full_repo_tokens(project_root)
         return {"map": map_content, "report": report_dict,
                 "token_estimate": _tok,
                 "full_repo_estimate": _full,
-                "savings_pct": _savings_pct(_tok, _full)}
+                "savings_pct": _savings_pct(_tok, _full),
+                "coverage_pct": file_report.coverage_pct}
 
     except Exception as e:
         log.exception(f"Error generating repository map for project '{project_root}': {e}")
