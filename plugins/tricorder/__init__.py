@@ -140,6 +140,7 @@ def _get_tricorder_cli() -> Optional[str]:
 # config if a project genuinely needs a fat scaffold (ponytail: constant, not
 # config knob — raise when a real project overflows 2048).
 _MAP_TOKENS = 2048  # default; overridable via config plugins.entries.tricorder.map_tokens
+_MAX_FILES = 1000   # default; overridable via config plugins.entries.tricorder.max_files
 _INJECT_MIN_FILES = 200
 
 
@@ -150,6 +151,14 @@ def _map_tokens() -> int:
     if isinstance(val, int) and val > 0:
         return val
     return _MAP_TOKENS
+
+
+def _max_files() -> int:
+    """Max files to parse, overridable via config."""
+    val = _config_entry().get("max_files")
+    if isinstance(val, int) and val > 0:
+        return val
+    return _MAX_FILES
 
 # Extensions tricorder can parse (via grep_ast filename_to_lang).  The probe
 # uses this to distinguish code files from noise without importing tree-sitter.
@@ -468,6 +477,9 @@ def build_map(project_root: str) -> Optional[dict]:
     globs = _exclude_globs()
     if globs:
         cmd += ["--exclude-globs"] + globs
+    max_files = _max_files()
+    if max_files:
+        cmd += ["--max-files", str(max_files)]
     try:
         # The CLI needs at least one paths positional; resolve against --root.
         subprocess.run(
