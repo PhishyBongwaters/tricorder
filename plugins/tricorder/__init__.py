@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import fnmatch
+import functools as ft
 from pathlib import Path
 from typing import Any, Optional
 
@@ -41,8 +42,14 @@ logger = logging.getLogger(__name__)
 # Same layout as Hermes' own HERMES_HOME/ state dirs.
 from hermes_constants import get_hermes_home
 
-_CACHE_DIR = get_hermes_home() / "tricorder"
-_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+@ft.lru_cache(maxsize=1)
+def _cache_dir() -> Path:
+    """On-disk cache dir (maps the plugin produces). Lazily created on first
+    use so importing the plugin has no side effects. Same layout as Hermes'
+    HERMES_HOME/state dirs."""
+    d = get_hermes_home() / "tricorder"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 # Path to the tricorder CLI in its own venv. Lazy-initialized on first use.
 _TRICORDER_CLI: Optional[str] = None
@@ -65,13 +72,7 @@ def _find_tricorder_cli() -> Optional[str]:
 
     # 2. Hermes config override
     try:
-        from hermes_cli.config import load_config
-        cfg = load_config() or {}
-        cli_path = (
-            ((cfg.get("plugins") or {}).get("entries") or {})
-            .get("tricorder", {})
-            .get("cli_path")
-        )
+        cli_path = _config_entry().get("cli_path")
         if cli_path and Path(cli_path).exists():
             return cli_path
     except Exception:
@@ -138,8 +139,17 @@ def _get_tricorder_cli() -> Optional[str]:
 # the scaffold only needs the top definitions, not the whole repo. Bump via
 # config if a project genuinely needs a fat scaffold (ponytail: constant, not
 # config knob — raise when a real project overflows 2048).
-_MAP_TOKENS = 2048
+_MAP_TOKENS = 2048  # default; overridable via config plugins.entries.tricorder.map_tokens
 _INJECT_MIN_FILES = 200
+
+
+def _map_tokens() -> int:
+    """Map token budget, overridable via config. Kept as a function so the
+    plugin can be reconfigured at runtime without an import-time read."""
+    val = _config_entry().get("map_tokens")
+    if isinstance(val, int) and val > 0:
+        return val
+    return _MAP_TOKENS
 
 # Extensions tricorder can parse (via grep_ast filename_to_lang).  The probe
 # uses this to distinguish code files from noise without importing tree-sitter.
@@ -280,12 +290,20 @@ def _active_project() -> Optional[str]:
     return None
 
 
-def _exclude_globs() -> list:
-    """Return the configured exclude_globs list (vendor/third-party patterns), or []."""
+def _config_entry() -> dict:
+    """The tricorder entry from Hermes config (plugins.entries.tricorder), or {}."""
     try:
         from hermes_cli.config import load_config
         cfg = load_config() or {}
-        entry = ((cfg.get("plugins") or {}).get("entries") or {}).get("tricorder") or {}
+        return ((cfg.get("plugins") or {}).get("entries") or {}).get("tricorder") or {}
+    except Exception:
+        return {}
+
+
+def _exclude_globs() -> list:
+    """Return the configured exclude_globs list (vendor/third-party patterns), or []."""
+    try:
+        entry = _config_entry()
         val = entry.get("exclude_globs")
         if isinstance(val, list):
             return [str(g) for g in val if g]
@@ -321,7 +339,7 @@ def _set_active_project_config(path: str) -> None:
 
 def _cache_file(project_root: str) -> Path:
     digest = hashlib.sha256(os.path.normcase(project_root).encode("utf-8")).hexdigest()[:12]
-    return _CACHE_DIR / f"{digest}.map"
+    return _cache_dir() / f"{digest}.map"
 
 
 def _meta_file(project_root: str) -> Path:
@@ -408,7 +426,7 @@ def _list_cached_projects() -> list:
     """List all cached projects (path, age_str, lines) excluding active."""
     root = _active_project()
     result = []
-    for meta_file in _CACHE_DIR.glob("*.json"):
+    for meta_file in _cache_dir().glob("*.json"):
         try:
             info = json.loads(meta_file.read_text(encoding="utf-8"))
             proj = info.get("project_root", "")
@@ -442,7 +460,7 @@ def build_map(project_root: str) -> Optional[dict]:
     cmd = [
         cli, "--root", project_root,
         "--tier", "0",
-        "--map-tokens", str(_MAP_TOKENS),
+        "--map-tokens", str(_map_tokens()),
         "--exclude-untagged",
         "--output", str(out),
         ".",

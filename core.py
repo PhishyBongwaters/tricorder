@@ -784,6 +784,7 @@ class Tricorder:
             
             defs: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
             refs: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
+            file_refs_index: Dict[str, List[dict]] = {}
 
             # Build import index for qualified name resolution
             import_data = self._build_import_index()
@@ -801,6 +802,7 @@ class Tricorder:
 
                 # References — resolve qualified names via import tracking
                 file_refs = self.get_all_references(fpath, rel)
+                file_refs_index[fpath.replace("\\", "/")] = file_refs
                 for ref in file_refs:
                     bare_name = ref["name"]
                     # Try to resolve to a qualified name
@@ -820,6 +822,7 @@ class Tricorder:
 
             result = (dict(defs), dict(refs))
             self._cross_file_index_cache = result
+            self._file_refs_index = file_refs_index
             return result
 
     def build_call_graph(self, file_paths: List[str]) -> Dict[str, Dict]:
@@ -1157,10 +1160,11 @@ class Tricorder:
         body_text = "\n".join(body_lines)
         target.body = body_text[:500]
 
-        # Build in-file call graph for callers/callees
-        graph = self.build_call_graph([file_path])
-        file_graph = graph.get(file_path, {"definitions": {}, "references": []})
-        file_refs = file_graph["references"]
+        # Build in-file call graph for callers/callees from the single
+        # cross-file index pass (issue #15: avoid re-parsing the file).
+        self._build_cross_file_index()  # populates self._file_refs_index
+        _np = file_path.replace("\\", "/")
+        file_refs = self._file_refs_index.get(_np) or []
 
         # In-file callers: lines in this file that reference this symbol's name
         callers = []
@@ -1179,7 +1183,6 @@ class Tricorder:
         # Cross-file callers: references to this symbol in OTHER files
         # ponytail: normalize path separators — cross-file index uses os.path
         # (backslashes on Windows) but file_path may have forward slashes.
-        _np = file_path.replace("\\", "/")
         defs, refs = self._build_cross_file_index()
         for ref_file, ref_line in refs.get(symbol_name, []):
             if ref_file.replace("\\", "/") != _np:

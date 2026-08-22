@@ -104,8 +104,9 @@ _DATA_EXTS = {
     '.csv', '.tsv',
     '.md', '.txt', '.rst',  # Documentation, not source code
 }
-# Skip files larger than this (bytes) — likely generated/binary/not source
-_MAX_SOURCE_FILE_SIZE = 1024 * 1024  # 1MB
+# Skip files larger than this (bytes) — likely generated/binary/not source.
+# Overridable via env TRICORDER_MAX_SOURCE_FILE_SIZE (bytes).
+_MAX_SOURCE_FILE_SIZE = int(os.environ.get("TRICORDER_MAX_SOURCE_FILE_SIZE", 1024 * 1024)) or (1024 * 1024)
 _BUILTIN_SKIP_DIRS = {'node_modules', '__pycache__', 'venv', 'env', 'build', 'dist', '.tox', '.eggs'}
 
 
