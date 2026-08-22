@@ -18,7 +18,7 @@ Usage:
   python bench_validity.py            # all repos
   python bench_validity.py projectm   # one repo
 """
-import json, os, subprocess, sys, tempfile, shutil
+import json, os, re, subprocess, sys, tempfile, shutil
 from pathlib import Path
 
 TRICORDER_EXE = r"D:\Projects\tricorder\.venv\Scripts\tricorder.exe"
@@ -72,7 +72,7 @@ def run(exe, args) -> subprocess.CompletedProcess:
 def stats(root, scan_path, map_file, map_tokens, exclude_globs):
     """Return (map_tokens_actual, full_repo_estimate, coverage_pct) for the repo."""
     args = ["--root", str(root), "--map-tokens", str(map_tokens),
-            "--exclude-untagged", "--output", str(map_file), scan_path]
+            "--exclude-untagged", "--verbose", "--output", str(map_file), scan_path]
     if exclude_globs:
         args += ["--exclude-globs", *exclude_globs]
     r = run(TRICORDER_EXE, args)
@@ -81,10 +81,11 @@ def stats(root, scan_path, map_file, map_tokens, exclude_globs):
     # Parse the CLI output for actual map tokens and coverage
     if r.returncode == 0:
         # Parse output like "Repo-map: 2.1 k-tokens" and "Warning: Low map coverage: ..."
-        for line in r.stdout.split('\n'):
+        # Check both stdout and stderr for the Repo-map line
+        output = r.stdout + "\n" + r.stderr
+        for line in output.split('\n'):
             if "Repo-map:" in line and "k-tokens" in line:
                 # Parse "Repo-map: 2.1 k-tokens"
-                import re
                 match = re.search(r'Repo-map:\s*([\d.]+)\s*k-tokens', line)
                 if match:
                     map_tokens_actual = int(float(match.group(1)) * 1024)
