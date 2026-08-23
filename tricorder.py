@@ -14,6 +14,11 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+# Bind the script's own dir ahead of sys.path so `from utils import ...` always
+# resolves to THIS project's modules, not a same-named module in another
+# venv/site-packages (e.g. the Hermes agent's own utils.py when tricorder is
+# launched through an editable install that shares a process's sys.path).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget
 from scm import get_scm_fname
 from importance import filter_important_files
