@@ -87,7 +87,7 @@ Tricorder is a rebranded fork of the **RepoMapper** fork of **Aider's RepoMap**:
 
 1. **Gen 1 — Aider `RepoMap`** (Paul Gauthier): tree-sitter symbol extraction + PageRank ranking.
 2. **Gen 2 — RepoMapper** (Paul Davis `/ pdavis68`): standalone CLI + MCP server, built with Aider + Claude 3.7 + Cline + Gemini 2.5 Pro. Upstream: https://github.com/pdavis68/RepoMapper
-3. **Gen 3 — tricorder**: our fork — 8 bug fixes, 115 tests, 10-language signature extraction, cross-file call graph, Windows compatibility, full rebrand to tricorder.
+- **Gen 3 — tricorder**: our fork — 8 bug fixes, 118 tests, 10-language signature extraction, cross-file call graph, Windows compatibility, full rebrand to tricorder.
 
 Lineage is intentionally kept visible. MIT Licensed.
 

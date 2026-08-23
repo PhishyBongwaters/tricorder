@@ -9,17 +9,15 @@
 ## Completed
 
 ### M0.9.1 - Token Budget Fields ✅ DONE
-- MCP tools: `token_estimate`, `full_repo_estimate`, `savings_pct` added to all 4 tools
+- MCP tools: `token_estimate`, `full_repo_estimate`, `savings_pct` added to all 5 tools
 - CLI: `--stats-only <map>` + `--format json` budget fields implemented
 - Plugin: `/tricorder status` surfaces savings vs full-repo via venv delegation
-- Tests: 84/84 pass
 
 ### M0.9.2 - Tier Escalation Signal ✅ DONE
 - `tricorder_scan` returns `tier_hint` in `dry_run` and `output_file` paths when `tags_at_budget < total_tags`
 - `tier_hint` message: "T0 incomplete: X/Y tags fit (Z%). Consider tier=1 or higher token_limit."
 - Also retains upgrade advisory from `_tier_history` (T0→T1)
-- Test: `tests/test_mcp.py::TestMCPOutputFile::test_output_file_tier_hint_on_upgrade` passes
-- All 87 tests pass.
+- Test: `tests/test_mcp.py::TestMCPOutputFile::test_output_file_tier_hint_on_upgrade` passes.
 
 ---
 
