@@ -338,7 +338,14 @@ Examples:
         if not p.is_absolute():
             p = root_path / path_spec_str
         effective_other_files_unresolved.extend(find_src_files(str(p), exclude_globs=args.exclude_globs))
-    
+
+    # ponytail: apply max_files cap to explicit paths too (matches auto-discovery branch)
+    if len(effective_other_files_unresolved) > args.max_files:
+        output_handlers['warning'](
+            f"Explicit paths yielded {len(effective_other_files_unresolved)} files, "
+            f"capping to {args.max_files}")
+        effective_other_files_unresolved = effective_other_files_unresolved[:args.max_files]
+
     # chat_files for Tricorder are from --chat-files argument, resolved.
     chat_files = [str(Path(f).resolve()) for f in chat_files_from_args]
     # other_files for Tricorder are the effective_other_files, resolved after expansion.
