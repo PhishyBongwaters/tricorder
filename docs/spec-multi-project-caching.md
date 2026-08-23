@@ -47,7 +47,7 @@ status`. Drop `_MAP_FRESH_SECONDS` entirely — no mtime TTL, no
 ```json
 {
   "project_root": "D:/Projects/tricorder",
-  "map_file": "C:\\Users\\macdo\\AppData\\Local\\hermes\\tricorder\\c09c29b32c48.map",
+  "map_file": "<your-cache-dir>/tricorder/c09c29b32c48.map",
   "lines": 200,
   "tokens_approx": 2800,
   "project_sig": "a1b2c3d4e5f6a1b2"

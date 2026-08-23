@@ -55,14 +55,19 @@ Add to the dsh Cordis config (the row that mounts the MCP client). The
       config:
         serverName: tricorder
         transport: stdio
-        command: C:/Users/macdo/AppData/Roaming/Python/Python314/Scripts/tricorder-mcp.exe
+        # Point command at YOUR tricorder-mcp console script. Find it with:
+        #   pip show tricorder   # look for "Location", then <Location>/../Scripts/tricorder-mcp.exe  (Windows)
+        #   which tricorder-mcp  # Linux/macOS
+        command: <path-to-your-python>/Scripts/tricorder-mcp.exe   # Windows
+        #        or <path-to-your-python>/bin/tricorder-mcp            # Linux/macOS
         args: []
 ```
 
 `tricorder-mcp` is the console-script entry point from the tricorder
 `pyproject.toml`. **It is usually not on PATH**: pip-install puts it under
-`%APPDATA%\Python\Python3xx\Scripts\` (here
-`C:/Users/macdo/AppData/Roaming/Python/Python314/Scripts/tricorder-mcp.exe`).
+`<your-python>/Scripts/` (Windows) or `<your-python>/bin/` (Linux/macOS),
+e.g. `%APPDATA%\Python\Python3xx\Scripts\tricorder-mcp.exe`.
+Find the exact path with `pip show tricorder` (note "Location") or `which tricorder-mcp`.
 Use that absolute path as `command` — robust, recommended. `serverName` must
 match `[A-Za-z0-9_-]{1,32}`; `tricorder` is valid.
 

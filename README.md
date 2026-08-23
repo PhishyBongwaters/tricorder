@@ -362,7 +362,11 @@ Configure `cordis.patch.yml`:
       config:
         serverName: tricorder
         transport: stdio
-        command: C:/Users/macdo/AppData/Roaming/Python/Python314/Scripts/tricorder-mcp.exe
+        # Point command at YOUR tricorder-mcp console script. Find it with:
+        #   pip show tricorder   # look for "Location", then <Location>/../Scripts/tricorder-mcp.exe  (Windows)
+        #   which tricorder-mcp  # Linux/macOS
+        command: <path-to-your-python>/Scripts/tricorder-mcp.exe   # Windows
+        #        or <path-to-your-python>/bin/tricorder-mcp            # Linux/macOS
         args: []
 ```
 
