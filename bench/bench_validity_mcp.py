@@ -17,15 +17,19 @@ Usage:
   python bench_validity_mcp.py            # all repos
   python bench_validity_mcp.py projectm   # one repo
 """
-import asyncio
+import argparse, asyncio
+import os
 import sys
 from pathlib import Path
 
-# Add tricorder to path for server module
-sys.path.insert(0, r"D:\Projects\tricorder")
+# Add tricorder to path for server module. Override with TRICORDER_SRC env var
+# if your layout differs.
+SRC = Path(os.environ.get("TRICORDER_SRC", r"D:\Projects\tricorder"))
+sys.path.insert(0, str(SRC))
 
 from tricorder_server import tricorder_detect, tricorder_symbols, tricorder_scan, _full_repo_tokens, _budget_fields
 
+# Default parent dir of the benchmarked repos. Override per-run with --root.
 ROOT = Path(r"D:\Projects")
 
 # Each task: a realistic question an agent would answer while "working" on the
@@ -112,12 +116,22 @@ async def run_repo(repo: dict) -> dict:
 
 
 async def main():
-    only = sys.argv[1] if len(sys.argv) > 1 else None
+    p = argparse.ArgumentParser(description="tricorder MCP tools vs blind navigation benchmark")
+    p.add_argument("repo", nargs="?", default=None,
+                   help="run only this repo (projectm|vaultwarden)")
+    p.add_argument("--root", default=None,
+                   help="override the parent dir the benchmarked repos live in "
+                        "(default: D:\\Projects); each repo is <root>/<name>")
+    args = p.parse_args()
+    only = args.repo
+    root_override = Path(args.root) if args.root else ROOT
     reports = []
     for repo in REPOS:
         if only and only != repo["name"]:
             continue
-        reports.append(await run_repo(repo))
+        r = dict(repo)
+        r["root"] = root_override / repo["name"]
+        reports.append(await run_repo(r))
         print(f"ran {repo['name']}")
 
     print()

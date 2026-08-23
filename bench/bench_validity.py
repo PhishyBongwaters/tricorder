@@ -15,13 +15,19 @@ Exit 0 if all tasks PASS (map contains every required identifier).
 Exit 1 otherwise. Prints a table.
 
 Usage:
-  python bench_validity.py            # all repos
-  python bench_validity.py projectm   # one repo
+  python bench_validity.py                  # all repos
+  python bench_validity.py projectm         # one repo
+  python bench_validity.py --root /my/repos # override repo parent dir
 """
-import json, os, re, subprocess, sys, tempfile, shutil
+import argparse, json, os, re, subprocess, sys, tempfile, shutil
 from pathlib import Path
 
-TRICORDER_EXE = r"D:\Projects\tricorder\.venv\Scripts\tricorder.exe"
+# When run from the project's venv, tricorder.exe lives next to python.exe.
+# Override with the TRICORDER_EXE env var if your layout differs.
+TRICORDER_EXE = os.environ.get(
+    "TRICORDER_EXE", str(Path(sys.executable).with_name("tricorder.exe"))
+)
+# Default parent dir of the benchmarked repos. Override per-run with --root.
 ROOT = Path(r"D:\Projects")
 
 # Each task: a realistic question an agent would answer while "working" on the
@@ -175,12 +181,23 @@ def run_repo(repo) -> dict:
 
 
 def main():
-    only = sys.argv[1] if len(sys.argv) > 1 else None
+    p = argparse.ArgumentParser(description="tricorder vs blind navigation benchmark")
+    p.add_argument("repo", nargs="?", default=None,
+                   help="run only this repo (projectm|vaultwarden)")
+    p.add_argument("--root", default=None,
+                   help="override the parent dir the benchmarked repos live in "
+                        "(default: D:\\Projects); each repo is <root>/<name>")
+    args = p.parse_args()
+    only = args.repo
+    root_override = Path(args.root) if args.root else ROOT
     reports = []
     for repo in REPOS:
         if only and only != repo["name"]:
             continue
-        reports.append(run_repo(repo))
+        # Apply --root override so external users can point at their own checkouts
+        r = dict(repo)
+        r["root"] = root_override / repo["name"]
+        reports.append(run_repo(r))
         print(f"ran {repo['name']}")
 
     print()

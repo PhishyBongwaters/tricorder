@@ -40,6 +40,21 @@ Proven across 2 real repos with 8 realistic agent tasks using two benchmark suit
 
 **RESULT: ALL TASKS PASS** — both benches confirm the tricorder T0 map (and MCP tools) steer agents to correct code without reading the full repo.
 
+#### Provenance & how to reproduce
+
+- **Repos:** [projectm](https://github.com/projectM-team/projectm) (libprojectM, C++) and [vaultwarden](https://github.com/dani-garcia/vaultwarden) (Rust). Check out both and place them under one parent dir (default `D:\Projects` → `D:\Projects\projectm`, `D:\Projects\vaultwarden`).
+- **Run the benches:**
+  ```bash
+  # from the tricorder repo root, in its venv
+  python bench/bench_validity.py          # CLI surface
+  python bench/bench_validity_mcp.py      # MCP surface
+  # point at your own checkouts of the same repos:
+  python bench/bench_validity.py --root /path/to/your/repos
+  ```
+- **Task definitions:** live in `bench/bench_validity*.py` (`REPOS` list — realistic agent questions + `ground_truth` identifiers that must appear in the map for a PASS).
+- **Date of measurement:** 2026-09-09 (Gen 3 tricorder fork, 10-language extraction, 115+ tests).
+- Numbers above are reproducible within noise on the same public repos; savings scale with repo size. No CI benchmark machinery — run locally when you want to re-verify.
+
 - **projectm** (~5,800 files, ~1.126K lines): ~100% token savings; 2K-token map covers all required identifiers (PCM::AddToBuffer, Loudness, CurrentRelative, AverageRelative)
 - **vaultwarden** (~200 Rust files): ~96-99.8% token savings; 33K-token map covers all required identifiers (generate_invite, delete_user, admin_page, hash_password, verify_password_hash, routes, catchers)
 
