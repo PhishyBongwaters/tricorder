@@ -88,7 +88,7 @@ signature differs and a rebuild happens automatically.
 
 ## Pitfalls
 
-- **Stale cache → empty/odd maps**: after installing new tree-sitter parsers or an upgrade, maps can look wrong from a cached parse. Run `--force-refresh` (MCP: `force_refresh: true`) or delete the `.repomap.tags.cache.v1/` dir.
+- **Stale cache → empty/odd maps**: after installing new tree-sitter parsers or an upgrade, maps can look wrong from a cached parse. Run `--force-refresh` (MCP: `force_refresh: true`) or delete the `.tricorder.tags.cache.v1/` dir.
 - **Cache is per-project**: it lives in the scanned project's root, not tricorder's — don't ship or commit it.
 - `project_root` must be absolute; relative paths are not trusted.
 - `tricorder_detect` is case-insensitive and token-cheap — prefer it over a full scan to find an identifier.

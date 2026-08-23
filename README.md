@@ -214,7 +214,7 @@ Nodes = files, edges = symbol references. Chat files highlighted in pink.
 
 ## Caching
 
-- Cache directory: `.repomap.tags.cache.v1/` (in the scanned project's root)
+- Cache directory: `.tricorder.tags.cache.v1/` (in the scanned project's root)
 - Auto-invalidated when files change via content-aware signatures (sha256 of path+size+mtime per source file); cleared with `--force-refresh`
 - **Gotcha:** after installing new tree-sitter parsers, maps may be empty from a stale cache — use `--force-refresh` or delete the cache dir.
 - `--signature-only` prints the 16-char content signature for debugging cache validity.

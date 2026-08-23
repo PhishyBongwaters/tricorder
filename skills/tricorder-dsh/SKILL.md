@@ -124,7 +124,7 @@ Tier tokens: T0 ≈ 14 tokens/tag (definitions), T1 ≈ 350 tokens/tag (with con
 ## Multi-project caching
 
 The scanner caches maps per-project in the **scanned project's root** as
-`.repomap.tags.cache.v1/`. Cache validity is **content-aware**: a stat-based
+`.tricorder.tags.cache.v1/`. Cache validity is **content-aware**: a stat-based
 signature (path + size + mtime per source file, sha256'd) is stored in the meta
 JSON. On the next access, if the signature matches current stats, the cache is
 reused — no rebuild. If files changed, the signature differs and a rebuild
@@ -143,7 +143,7 @@ different signature → auto-rebuild.
 
 ## Pitfalls
 
-- **Stale cache → empty/odd maps**: after installing new tree-sitter parsers or an upgrade, maps can look wrong from a cached parse. Pass `force_refresh: true` or delete the `.repomap.tags.cache.v1/` dir.
+- **Stale cache → empty/odd maps**: after installing new tree-sitter parsers or an upgrade, maps can look wrong from a cached parse. Pass `force_refresh: true` or delete the `.tricorder.tags.cache.v1/` dir.
 - **Cache is per-project**: it lives in the scanned project's root, not tricorder's — don't ship or commit it.
 - `project_root` must be absolute; relative paths are not trusted.
 - `tricorder_detect` is case-insensitive and token-cheap — prefer it over a full scan to find an identifier.

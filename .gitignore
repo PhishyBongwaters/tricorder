@@ -5,7 +5,7 @@ __pycache__/
 .eggs/
 dist/
 build/
-.repomap.tags.cache.v1
+.tricorder.tags.cache.v1
 .env
 .venv/
 venv/

@@ -313,7 +313,7 @@ Examples:
     # ponytail: auto-detect git repo root FIRST, so relative path specs
     # can be resolved against --root before find_src_files tries to walk them.
     # Previously find_src_files ran on raw relative paths (resolved against CWD,
-    # not the repo root), which made `repomap.py src/ --root /other/repo` silently
+    # not the repo root), which made `tricorder.py src/ --root /other/repo` silently
     # find 0 files and emit a misleading "No tags extracted" parser-missing warning.
     if args.root in (None, '.', ''):
         git_root = find_git_root(unresolved_paths_for_other_files_specs[0] if unresolved_paths_for_other_files_specs else '.')

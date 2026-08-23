@@ -51,7 +51,7 @@ class TestTricorderCache(unittest.TestCase):
         root = '/tmp/test_root'
         resolved = Path(root) / TAGS_CACHE_DIR
         resolved_str = os.path.normpath(str(resolved))
-        self.assertIn('.repomap.tags.cache.v1', resolved_str)
+        self.assertIn('.tricorder.tags.cache.v1', resolved_str)
 
 
 class TestTricorderT1Context(unittest.TestCase):

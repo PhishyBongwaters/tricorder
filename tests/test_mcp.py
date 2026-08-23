@@ -84,7 +84,7 @@ class TestMCPOutputFile(unittest.TestCase):
     def setUp(self):
         self.project_root = str(Path(__file__).parent.parent)
         import tempfile
-        self.tmpdir = tempfile.mkdtemp(prefix="repomap_test_")
+        self.tmpdir = tempfile.mkdtemp(prefix="tricorder_test_")
         import shutil
         self.addCleanup(shutil.rmtree, self.tmpdir, True)
 

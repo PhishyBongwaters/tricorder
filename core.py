@@ -44,7 +44,7 @@ class FileReport:
 # Constants
 CACHE_VERSION = 1
 
-TAGS_CACHE_DIR = f".repomap.tags.cache.v{CACHE_VERSION}"
+TAGS_CACHE_DIR = f".tricorder.tags.cache.v{CACHE_VERSION}"
 SQLITE_ERRORS = (sqlite3.OperationalError, sqlite3.DatabaseError)
 
 _COVERAGE_WARN_THRESHOLD = 60.0  # percentage; can be overridden via config
