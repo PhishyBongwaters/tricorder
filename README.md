@@ -8,7 +8,7 @@ Leverages **tree-sitter** for accurate code parsing and the **PageRank** algorit
 
 **Release Candidate 1** — Full rebrand of the maintained, bug-fixed RepoMapper fork. All upstream bugs resolved; test suite passes.
 
-- **Test Coverage:** 115 tests passing (token_count, Tricorder, caching, MCP path handling, T0/T1 context, noise filter, mermaid-top, exclude-untagged, quiet mode, gitignore filtering, search, import tracking, graph query DSL, CLI autodiscovery, cross-surface budget parity, token budget fields) — `pytest tests/ -q`
+- **Test Coverage:** 118 tests passing (token_count, Tricorder, caching, MCP path handling, T0/T1 context, noise filter, mermaid-top, exclude-untagged, quiet mode, gitignore filtering, search, import tracking, graph query DSL, CLI autodiscovery, cross-surface budget parity, token budget fields, **per-language signature contract matrix**) — `pytest tests/ -q`
 - **Python 3.11+** compatible
 - **Fixed:** 8 critical upstream bugs (NameError, TypeError, cache path, duplicate definitions, dead variables, redundant checks, dedup edge cases, relative_to crash)
 - **Language Coverage:** 10 languages with signature extraction + return types (Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby)
