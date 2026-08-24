@@ -347,26 +347,13 @@ Examples:
 
     root_path = Path(args.root).resolve()
 
-    # Resolve relative path specs against root_path, not CWD
-    effective_other_files_unresolved = []
-    for path_spec_str in unresolved_paths_for_other_files_specs:
-        p = Path(path_spec_str)
-        if not p.is_absolute():
-            p = root_path / path_spec_str
-        effective_other_files_unresolved.extend(find_src_files(str(p), exclude_globs=args.exclude_globs))
-
-    if len(effective_other_files_unresolved) > args.max_files:
-        output_handlers['warning'](
-            f"Explicit paths yielded {len(effective_other_files_unresolved)} files, "
-            f"capping to {args.max_files}")
-        effective_other_files_unresolved = effective_other_files_unresolved[:args.max_files]
-
+    # Pre-index probe runs FIRST, before any full-tree walk: the probe is
+    # instant (rg-streamed) and gives the authoritative narrow set. Only if
+    # --pre-index is absent OR the probe finds nothing do we walk the tree.
     chat_files = [str(Path(f).resolve()) for f in chat_files_from_args]
-    other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
-
-    # Pre-index probe: if --pre-index SYMBOL is given, run ctags probe to narrow other_files
-    if not other_files and args.pre_index:
-        output_handlers['info'](f"Probing ctags for symbol '{args.pre_index}' in {root_path}...")
+    other_files = []
+    if args.pre_index:
+        output_handlers['info'](f"Probing symbol '{args.pre_index}' in {root_path}...")
         probed_rel_files = probe_and_narrow(
             str(root_path),
             args.pre_index,
@@ -374,22 +361,38 @@ Examples:
             include_parents=args.pre_index_include_parents
         )
         if probed_rel_files:
-            output_handlers['info'](f"Ctags probe matched {len(probed_rel_files)} files.")
+            output_handlers['info'](f"Probe matched {len(probed_rel_files)} files.")
             other_files = [str((root_path / rel).resolve()) for rel in probed_rel_files]
         else:
-            output_handlers['warning'](f"Ctags probe found no matches for '{args.pre_index}', falling back to auto-scan.")
+            output_handlers['warning'](f"Probe found no matches for '{args.pre_index}', falling back to discovered paths.")
 
-    # Auto-discover when no explicit/positional paths were provided
     if not other_files:
-        output_handlers['info'](f"No explicit files provided, auto-scanning {root_path}...")
-        effective_other_files_unresolved = find_src_files(
-            str(root_path), exclude_globs=args.exclude_globs)
+        # Resolve relative path specs against root_path, not CWD
+        effective_other_files_unresolved = []
+        for path_spec_str in unresolved_paths_for_other_files_specs:
+            p = Path(path_spec_str)
+            if not p.is_absolute():
+                p = root_path / path_spec_str
+            effective_other_files_unresolved.extend(find_src_files(str(p), exclude_globs=args.exclude_globs))
+
         if len(effective_other_files_unresolved) > args.max_files:
             output_handlers['warning'](
-                f"Auto-scanned {len(effective_other_files_unresolved)} files, "
+                f"Explicit paths yielded {len(effective_other_files_unresolved)} files, "
                 f"capping to {args.max_files}")
             effective_other_files_unresolved = effective_other_files_unresolved[:args.max_files]
         other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
+
+        # Auto-discover when no explicit/positional paths were provided
+        if not other_files:
+            output_handlers['info'](f"No explicit files provided, auto-scanning {root_path}...")
+            effective_other_files_unresolved = find_src_files(
+                str(root_path), exclude_globs=args.exclude_globs)
+            if len(effective_other_files_unresolved) > args.max_files:
+                output_handlers['warning'](
+                    f"Auto-scanned {len(effective_other_files_unresolved)} files, "
+                    f"capping to {args.max_files}")
+                effective_other_files_unresolved = effective_other_files_unresolved[:args.max_files]
+            other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
     
     mentioned_fnames = set(args.mentioned_files) if args.mentioned_files else None
     mentioned_idents = set(args.mentioned_idents) if args.mentioned_idents else None

@@ -85,10 +85,12 @@ def test_rg_fallback(repo):
 
 
 def test_probe_empty_when_no_ctags(repo):
-    """When ctags absent, probe_and_narrow returns [] (fallback signal)."""
-    if shutil.which("ctags"):
-        pytest.skip("ctags installed; skipping empty fallback test")
-    assert probe_and_narrow(str(repo), "add") == []
+    """rg-first probe works WITHOUT ctags (rg is the fast path, no index needed)."""
+    if not shutil.which("rg"):
+        pytest.skip("rg not installed")
+    rel = probe_and_narrow(str(repo), "add")
+    assert isinstance(rel, list)
+    assert any("lib.c" in f or "lib.h" in f for f in rel), f"expected lib files, got {rel}"
 
 
 def test_probe_and_narrow_happy_path(repo):

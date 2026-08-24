@@ -108,6 +108,7 @@ _DATA_EXTS = {
 # Skip files larger than this (bytes) — likely generated/binary/not source.
 # Overridable via env TRICORDER_MAX_SOURCE_FILE_SIZE (bytes).
 _MAX_SOURCE_FILE_SIZE = int(os.environ.get("TRICORDER_MAX_SOURCE_FILE_SIZE", 1024 * 1024)) or (1024 * 1024)
+_MAX_SCAN_FILES = int(os.environ.get("TRICORDER_MAX_SCAN_FILES", 20000)) or 20000
 _BUILTIN_SKIP_DIRS = {'node_modules', '__pycache__', 'venv', 'env', 'build', 'dist', '.tox', '.eggs'}
 
 
@@ -157,6 +158,11 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
                 if any(fnmatch.fnmatch(rel, pat) for pat in exclude_globs):
                     continue
             src_files.append(full)
+            # Early-stop the walk past the cap so a giant tree (e.g. the Linux
+            # kernel, 37k+ files) never gets fully enumerated. The pre-index
+            # probe is required to go deeper than this.
+            if len(src_files) >= _MAX_SCAN_FILES:
+                return src_files
     return src_files
 
 
