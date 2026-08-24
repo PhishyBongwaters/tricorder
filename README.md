@@ -11,7 +11,7 @@ It leverages **tree-sitter** for accurate code parsing and the **PageRank** algo
 - **Test coverage:** 123 tests passing (`pytest tests/ -q`) — token counting, T0/T1 context, caching, MCP path handling, noise filter, mermaid-top, exclude-untagged, quiet mode, gitignore filtering, search, import tracking, ctags/rg pre-index probe, graph query DSL, CLI autodiscovery, cross-surface budget parity, token budget fields, per-language signature contract matrix.
 - **Python 3.11+** compatible.
 - **Fixed:** 8 critical upstream bugs (NameError, TypeError, cache path, duplicate definitions, dead variables, redundant checks, dedup edge cases, `relative_to` crash).
-- **Language coverage:** 10 languages with signature extraction + return types (Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby).
+- **Language coverage:** 11 grammars with signature extraction + return types (Python, JS, TS, C, C++, Java, Go, Rust, Swift, C#, Ruby); 28 languages total via the tree-sitter-language-pack + tree-sitter-languages grammar sets (see [Supported Languages](#supported-languages)).
 - **Cross-file call graph** with import resolution across files.
 - **MCP server** with 5 tools: `tricorder_scan`, `tricorder_symbols`, `tricorder_detect`, `tricorder_detail`, `tricorder_query`.
 - **Hermes lifecycle plugin** — auto-injects a turn-0 nav digest on session start, registers `/tricorder` slash commands.
@@ -236,6 +236,20 @@ Tricorder's whole point is token savings: a compact map steers an agent to the r
 Both CLI and MCP surfaces are effective; savings scale with repo size.
 
 **MCP `tricorder_detect` now supports `pre_index`** (mirrors CLI's `--pre-index` family: `pre_index`, `pre_index_max_files`, `pre_index_include_parents`) so per-symbol searches on huge repos (e.g. the Linux kernel) can be scoped to files containing a probe symbol instead of walking every file. The linux MCP slot uses `pre_index="pick_next_task"` to narrow to `kernel/sched/*` — runtime dropped from ~168s (full-tree walk) to ~64s, and it is no longer cold-cache-flaky.
+
+### Pre-requisites (system-level)
+
+Tricorder is a Python package; its runtime deps are pip-installed into a venv. These **external system tools** must be on `PATH`:
+
+| Tool | Required? | Used for |
+|------|-----------|----------|
+| `python` (3.11+) | yes | running tricorder, MCP server, tests, bench |
+| `git` | yes | `.gitignore` honoring + `.git` root auto-discovery |
+| `rg` (ripgrep) | optional | the `--pre-index` probe / `pre_index` MCP param (fast path for huge trees). If absent, tricorder falls back to a full tree walk — the linux MCP slot works but is slower (no probe scoping). |
+| `ctags` (UniversalCtags) | optional | fallback index for `tricorder_detect` when `rg` is absent and `rg`-based probe hits its 100-file ceiling. Rare on this codebase (rg is the primary path). |
+| `tree-sitter` (CLI) | **not required** | only for building *custom* grammar repos from source. The vendored query sets under `queries/tree-sitter-language-pack/` and `queries/tree-sitter-languages/` ship as `.scm` files; Python tree-sitter bindings are pip-installed at run time. |
+
+Verify with: `python bench/bench_validity.py --check-env` (prints presence/absence of rg, ctags, git, tree-sitter).
 
 ### How to reproduce
 

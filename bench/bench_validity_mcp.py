@@ -136,6 +136,26 @@ async def run_repo(repo: dict) -> dict:
     return report
 
 
+def check_env():
+    """Report presence/absence of the external system tools tricorder shells out to."""
+    import shutil
+    tools = {
+        "python":     "required",
+        "git":        "required",
+        "rg":         "optional (fast path for huge trees)",
+        "ctags":      "optional (fallback when rg is absent)",
+        "tree-sitter": "not required (only for custom grammar builds)",
+    }
+    print("Pre-requisites (system-level):")
+    for name, note in tools.items():
+        where = shutil.which(name) or shutil.which(name + ".exe")
+        status = "FOUND   " if where else "MISSING"
+        print(f"  {name:<13} {status}  ({note})")
+        if where:
+            print(f"               -> {where}")
+    return 0
+
+
 async def main():
     p = argparse.ArgumentParser(description="tricorder MCP tools vs blind navigation benchmark")
     p.add_argument("repo", nargs="?", default=None,
@@ -143,7 +163,12 @@ async def main():
     p.add_argument("--root", default=None,
                    help="override the parent dir the benchmarked repos live in "
                         "(default: D:\\Projects); each repo is <root>/<name>")
+    p.add_argument("--check-env",
+                   action="store_true", default=False,
+                   help="print presence/absence of rg, ctags, git, tree-sitter and exit")
     args = p.parse_args()
+    if args.check_env:
+        return check_env()
     only = args.repo
     root_override = Path(args.root) if args.root else ROOT
     reports = []
