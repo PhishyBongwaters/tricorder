@@ -197,6 +197,14 @@ tricorder D:/Projects/linux --pre-index "schedule" --pre-index-max-files 20 --ma
 
 When `--pre-index` is given, the probe runs **before** any path-walk and is authoritative (path-only walks are skipped entirely). If it finds nothing, tricorder falls back to the normal auto-scan. The same `pre_index`/`pre_index_max_files`/`pre_index_include_parents` args are available on the MCP `tricorder_scan` tool and the plugin.
 
+### Turn-0 Probe Digest (`--probe-digest`)
+
+```
+tricorder --root D:/Projects/linux --probe-digest
+```
+
+Prints a cheap **navigation digest** — language tally + total code files + rough line estimate + a pointer to the MCP tools — and exits. It runs a fast `os.walk`-based extension tally (milliseconds, even on the Linux kernel) and **never builds a map or computes a token budget**. This is the exact text the Hermes and DSH plugins inject at turn 0 (single shared code path: `utils.probe_project` + `utils.format_probe_digest`). Repos with fewer than 200 code files print nothing.
+
 ## How It Works
 
 1. **File Discovery**: scans source files, skipping `.gitignore`d dirs (plus `build/`, `dist/`, `node_modules/`, `__pycache__/`, etc.). Discovery **early-stops** after 20,000 files (`TRICORDER_MAX_SCAN_FILES`) so a giant tree is never fully enumerated; a `--pre-index SYMBOL` probe runs first and skips the tree-walk entirely (see [Pre-Index Probe](#pre-index-probe-rg--ctags--fast-path-for-huge-repos)).
@@ -321,7 +329,9 @@ Example `tricorder_query`: find all callers of authenticate up to 2 hops → `qu
 
 ## Hermes Lifecycle Plugin
 
-The plugin (`plugins/tricorder/`) is a real Hermes plugin (manifest + `__init__.py` with `register(ctx)`) installed to `~/.hermes/plugins/tricorder/` via `hermes plugins install`. It wires the `on_session_start` + `pre_llm_call` hooks so the active project's T0 map is built once and a compact digest is injected into the first turn's user message — the agent gets the codebase skeleton *before* it acts. It also registers `/tricorder` slash commands and the `tricorder:tricorder` skill.
+The plugin (`plugins/tricorder/`) is a real Hermes plugin (manifest + `__init__.py` with `register(ctx)`) installed to `~/.hermes/plugins/tricorder/` via `hermes plugins install`. It wires the `on_session_start` + `pre_llm_call` hooks to inject a **turn-0 probe digest** into the first turn's user message — a cheap navigation item (language tally + file count + rough line estimate + a pointer to the MCP tools for depth). It **never builds the full repo map on turn 0** (on a kernel-scale tree that would block/timeout); maps are built on demand via `/tricorder scan` or the MCP tools. It also registers `/tricorder` slash commands and the `tricorder:tricorder` skill.
+
+The digest text is produced by the shared CLI flag `--probe-digest` (single source of truth: `utils.probe_project` + `utils.format_probe_digest`), which the DSH plugin (`plugins/dsh-tricorder-inject`) calls too — so Hermes and DSH inject **byte-identical** turn-0 content. Repos with fewer than 200 code files get no digest.
 
 ### Slash Commands
 
@@ -359,7 +369,10 @@ hermes config set plugins.entries.tricorder.active_project D:/Projects/<repo>
 
 ## DSH Integration
 
-For deepseek-harness (dsh), use the downstream skill at `skills/tricorder-dsh/SKILL.md`. The MCP server is registered as `tricorder` via `dsh-mcp-client`, exposing tools as `mcp__tricorder__tricorder_scan`, `mcp__tricorder__tricorder_detect`, `mcp__tricorder__tricorder_symbols`, `mcp__tricorder__tricorder_detail`, `mcp__tricorder__tricorder_query`.
+There are two pieces for deepseek-harness (dsh):
+
+1. **Turn-0 probe-digest injector** — `plugins/dsh-tricorder-inject/` (vendored Cordis plugin, `@deepseek-ai/dsh-tricorder-inject`). On session create it runs `tricorder --root <cwd> --probe-digest` and injects the **same** navigation digest Hermes injects (identical text, single shared code path). It never builds the full repo map on turn 0. Install by copying `plugins/dsh-tricorder-inject` into your dsh profile's `node_modules/@deepseek-ai/dsh-tricorder-inject` (or `pnpm add` from that path) and enabling it in `cordis.patch.yml`.
+2. **MCP tools + skill** — the downstream skill at `skills/tricorder-dsh/SKILL.md`. The MCP server is registered as `tricorder` via `dsh-mcp-client`, exposing tools as `mcp__tricorder__tricorder_scan`, `mcp__tricorder__tricorder_detect`, `mcp__tricorder__tricorder_symbols`, `mcp__tricorder__tricorder_detail`, `mcp__tricorder__tricorder_query`.
 
 Install:
 
@@ -370,6 +383,10 @@ pip install -e "D:/Projects/tricorder"
 # 2. install this skill into dsh
 mkdir -p ~/.dsh/skills/tricorder
 cp "D:/Projects/tricorder/skills/tricorder-dsh/SKILL.md" ~/.dsh/skills/tricorder/SKILL.md
+
+# 3. (optional) install the turn-0 probe-digest injector
+mkdir -p "$HOME/.dsh/<profile>/node_modules/@deepseek-ai"
+cp -r "D:/Projects/tricorder/plugins/dsh-tricorder-inject" "$HOME/.dsh/<profile>/node_modules/@deepseek-ai/dsh-tricorder-inject"
 ```
 
 Configure `cordis.patch.yml`:
@@ -387,6 +404,12 @@ Configure `cordis.patch.yml`:
         command: <path-to-your-python>/Scripts/tricorder-mcp.exe   # Windows
         #        or <path-to-your-python>/bin/tricorder-mcp            # Linux/macOS
         args: []
+
+    - id: tricorder-inject
+      name: '@deepseek-ai/dsh-tricorder-inject'
+      config:
+        tricorderExe: 'D:/Projects/tricorder/.venv/Scripts/tricorder.exe'  # optional
+        verbose: false
 ```
 
 ## License
