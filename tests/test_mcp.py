@@ -185,6 +185,9 @@ class TestMCPOutputFile(unittest.TestCase):
         self.assertNotIn("map_file", result)
         if "error" not in result:
             self.assertIsInstance(result["map"], str)
+        # TC-005: trust metadata on stdout success responses
+        self.assertEqual(result.get("source"), "scanned_repository")
+        self.assertEqual(result.get("trust"), "untrusted_repository_content")
 
 
 class TestMCPDryRun(unittest.TestCase):
@@ -214,6 +217,9 @@ class TestMCPDryRun(unittest.TestCase):
         # No map content returned
         self.assertNotIn("map", result)
         self.assertNotIn("map_file", result)
+        # TC-005: trust metadata on success responses
+        self.assertEqual(result.get("source"), "scanned_repository")
+        self.assertEqual(result.get("trust"), "untrusted_repository_content")
 
     def test_dry_run_respects_token_limit(self):
         """Lower token_limit → fewer tags_at_budget."""
@@ -300,6 +306,52 @@ class TestMCPPathContainment(unittest.TestCase):
             name="anything",
         ))
         self.assertIn("error", result)
+
+
+class TestMCPTrustMetadata(unittest.TestCase):
+    """TC-005: all success responses include source/trust metadata."""
+
+    def setUp(self):
+        self.project_root = str(Path(__file__).parent.parent)
+
+    def test_detect_has_trust_metadata(self):
+        """tricorder_detect stamps trust metadata on results."""
+        import asyncio
+        from tricorder_server import tricorder_detect
+        result = asyncio.run(tricorder_detect(
+            project_root=self.project_root,
+            query="Tricorder",
+            max_results=5,
+        ))
+        if "error" not in result:
+            self.assertEqual(result.get("source"), "scanned_repository")
+            self.assertEqual(result.get("trust"), "untrusted_repository_content")
+
+    def test_symbols_has_trust_metadata(self):
+        """tricorder_symbols stamps trust metadata on results."""
+        import asyncio
+        from tricorder_server import tricorder_symbols
+        result = asyncio.run(tricorder_symbols(
+            project_root=self.project_root,
+            query="Tricorder",
+            limit=5,
+        ))
+        if "error" not in result:
+            self.assertEqual(result.get("source"), "scanned_repository")
+            self.assertEqual(result.get("trust"), "untrusted_repository_content")
+
+    def test_query_has_trust_metadata(self):
+        """tricorder_query stamps trust metadata on results."""
+        import asyncio
+        from tricorder_server import tricorder_query
+        result = asyncio.run(tricorder_query(
+            project_root=self.project_root,
+            query='defs("Tricorder") depth=1 limit=10',
+            token_limit=2048,
+        ))
+        if "error" not in result:
+            self.assertEqual(result.get("source"), "scanned_repository")
+            self.assertEqual(result.get("trust"), "untrusted_repository_content")
 
 
 if __name__ == '__main__':
