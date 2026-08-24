@@ -505,7 +505,15 @@ def _handle_tricorder(raw_args: str) -> Optional[str]:
         return f"Active project set to {p}.\n  Scan failed — run /tricorder scan."
 
     if cmd == "scan":
-        if len(argv) > 1 and not argv[1].startswith("-"):
+        unknown = [a for a in argv[1:] if a.startswith("-")]
+        if unknown:
+            return (
+                "/tricorder scan takes no flags. Flags are silently ignored, "
+                "so this is rejected rather than faking depth. Use "
+                "mcp_tricorder_scan (tier / exclude_globs / max tokens) or the "
+                "CLI: `tricorder <path> --tier 1 --exclude-globs 'arch/arm64/**'`."
+            )
+        if len(argv) > 1:
             target = str(Path(argv[1]).resolve())
         elif root:
             target = root
