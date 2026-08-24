@@ -43,15 +43,17 @@ class TestTricorderRankedTags(unittest.TestCase):
 
 
 class TestTricorderCache(unittest.TestCase):
-    def test_cache_dir_is_relative(self):
-        self.assertFalse(os.path.isabs(TAGS_CACHE_DIR))
-        self.assertNotIn(os.getcwd(), TAGS_CACHE_DIR)
+    def test_cache_dir_is_outside_repo(self):
+        # TC-003: cache must live outside the repository, not repo-relative.
+        repo = Tricorder(root='/tmp/test_root')
+        cache_dir = repo._cache_dir()
+        self.assertFalse(str(cache_dir).endswith(TAGS_CACHE_DIR))
+        self.assertNotIn('/tmp/test_root', str(cache_dir))
 
-    def test_cache_resolves_correctly(self):
-        root = '/tmp/test_root'
-        resolved = Path(root) / TAGS_CACHE_DIR
-        resolved_str = os.path.normpath(str(resolved))
-        self.assertIn('.tricorder.tags.cache.v1', resolved_str)
+    def test_cache_identity_is_content_derived(self):
+        a = Tricorder(root='/tmp/test_root')._cache_dir()
+        b = Tricorder(root='/tmp/other_root')._cache_dir()
+        self.assertNotEqual(a, b)
 
 
 class TestTricorderT1Context(unittest.TestCase):
