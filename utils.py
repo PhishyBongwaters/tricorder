@@ -2,7 +2,7 @@
 Utility functions for Tricorder.
 """
 
-import os, fnmatch
+import os, fnmatch, time
 import sys
 from pathlib import Path
 from typing import Optional, List
@@ -106,22 +106,53 @@ _DATA_EXTS = {
     '.md', '.txt', '.rst',  # Documentation, not source code
 }
 # Skip files larger than this (bytes) — likely generated/binary/not source.
-# Overridable via env TRICORDER_MAX_SOURCE_FILE_SIZE (bytes).
-_MAX_SOURCE_FILE_SIZE = int(os.environ.get("TRICORDER_MAX_SOURCE_FILE_SIZE", 1024 * 1024)) or (1024 * 1024)
-_MAX_SCAN_FILES = int(os.environ.get("TRICORDER_MAX_SCAN_FILES", 20000)) or 20000
+# Overridable via env TRICORDER_MAX_SOURCE_FILE_SIZE (bytes). Read at call time
+# (see _env_int/_env_float) so tests and runtime tuning don't require re-import.
+_MAX_SOURCE_FILE_SIZE = 1024 * 1024
+_MAX_SCAN_FILES = 20000
+# TC-002: missing envelope pieces — directory-depth, total-byte, and scan-time
+# budgets so a hostile repo can't drive unbounded CPU/memory/disk. All
+# overridable via env; discovery already early-stops at _MAX_SCAN_FILES.
+_MAX_SCAN_DEPTH = 25
+_MAX_TOTAL_BYTES = 500 * 1024 * 1024
+_MAX_SCAN_TIME_S = 300.0
 _BUILTIN_SKIP_DIRS = {'node_modules', '__pycache__', 'venv', 'env', 'build', 'dist', '.tox', '.eggs'}
 
 
-def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs: Optional[List[str]] = None) -> List[str]:
+def _env_int(name: str, default: int) -> int:
+    """Read an int env override at call time (TC-002 live tuning)."""
+    try:
+        return int(os.environ.get(name, default)) or default
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, default)) or default
+    except (TypeError, ValueError):
+        return default
+
+
+def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs: Optional[List[str]] = None, report: Optional[dict] = None) -> List[str]:
     """Walk a directory and return source files, skipping noise.
 
     Shared by tricorder_server.find_src_files and Tricorder._discover_files.
     ponytail: one implementation, two callers — no drift.
 
+    TC-002 resource envelope: a single global budget bounds the walk so a
+    hostile repo can't drive unbounded CPU/memory/disk. Files are skipped (not
+    silently truncated) when they breach a single-file cap, and the walk stops
+    cleanly when it hits the file-count / total-byte / directory-depth / time
+    limits. If `report` is provided, it is populated with a human-readable
+    partial-scan warning instead of raising.
+
     exclude_globs: optional list of glob patterns matched against the path
-    (as POSIX-normalized, relative to `directory`). Excludes third-party/
+    is POSIX-normalized, relative to `directory`. Excludes third-party/
     vendored subtrees from ranking, e.g. exclude_globs=["vendor/**"].
     """
+    if report is not None:
+        report.clear()
     if not os.path.isdir(directory):
         return [directory] if os.path.isfile(directory) else []
     # Find git root for .gitignore parsing
@@ -137,8 +168,26 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
         gitignore_dirs = parse_gitignore(git_root or directory)
     skip_dirs = gitignore_dirs | _BUILTIN_SKIP_DIRS | {'vendor'}
     src_files = []
+    total_bytes = 0
+    oversized_skipped = 0
+    depth_skipped = 0
+    start = time.monotonic()
+    root_depth = Path(directory).resolve().parts.__len__()
+    # TC-002: read envelope budgets at call time so env overrides (incl. tests) work.
+    max_scan_depth = _env_int("TRICORDER_MAX_SCAN_DEPTH", _MAX_SCAN_DEPTH)
+    max_total_bytes = _env_int("TRICORDER_MAX_TOTAL_BYTES", _MAX_TOTAL_BYTES)
+    max_scan_files = _env_int("TRICORDER_MAX_SCAN_FILES", _MAX_SCAN_FILES)
+    max_scan_time_s = _env_float("TRICORDER_MAX_SCAN_TIME_S", _MAX_SCAN_TIME_S)
+    max_source_file_size = _env_int("TRICORDER_MAX_SOURCE_FILE_SIZE", _MAX_SOURCE_FILE_SIZE)
     for r, d, f_list in os.walk(directory):
-        d[:] = [dn for dn in d if not dn.startswith('.') and dn not in skip_dirs]
+        # TC-002: directory-depth budget.
+        depth = Path(r).resolve().parts.__len__() - root_depth
+        if depth > max_scan_depth:
+            depth_skipped += len(d)
+            d[:] = []
+            continue
+        d[:] = [dn for dn in d if not dn.startswith('.') and dn not in skip_dirs
+                and (Path(r).resolve().parts.__len__() - root_depth + 1) <= max_scan_depth]
         for f in f_list:
             if f.startswith('.'):
                 continue
@@ -149,20 +198,43 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
             full = os.path.join(r, f)
             # Skip large files (likely generated/binary/not source)
             try:
-                if os.path.getsize(full) > _MAX_SOURCE_FILE_SIZE:
-                    continue
+                sz = os.path.getsize(full)
             except OSError:
-                pass
+                sz = 0
+            if sz > max_source_file_size:
+                oversized_skipped += 1
+                continue
             if exclude_globs:
                 rel = os.path.relpath(full, directory).replace(os.sep, '/')
                 if any(fnmatch.fnmatch(rel, pat) for pat in exclude_globs):
                     continue
             src_files.append(full)
-            # Early-stop the walk past the cap so a giant tree (e.g. the Linux
-            # kernel, 37k+ files) never gets fully enumerated. The pre-index
-            # probe is required to go deeper than this.
-            if len(src_files) >= _MAX_SCAN_FILES:
+            total_bytes += sz
+            # TC-002: total-byte + file-count + scan-time budgets. Return a
+            # clean partial result with a warning rather than failing
+            # unpredictably. The pre-index probe is required to go deeper.
+            hit_limit = None
+            if len(src_files) >= max_scan_files:
+                hit_limit = f"reached file-count limit ({max_scan_files})"
+            elif total_bytes >= max_total_bytes:
+                hit_limit = f"reached total-byte limit ({max_total_bytes} bytes)"
+            elif (time.monotonic() - start) >= max_scan_time_s:
+                hit_limit = f"reached scan-time limit ({max_scan_time_s}s)"
+            if hit_limit:
+                if report is not None:
+                    report["warning"] = (
+                        f"Scan completed with limits: skipped {oversized_skipped} "
+                        f"oversized files, {depth_skipped} files beyond depth "
+                        f"{max_scan_depth}; {hit_limit}."
+                    )
+                    report["files_considered"] = len(src_files)
+                    report["oversized_skipped"] = oversized_skipped
+                    report["depth_skipped"] = depth_skipped
                 return src_files
+    if report is not None:
+        report["files_considered"] = len(src_files)
+        report["oversized_skipped"] = oversized_skipped
+        report["depth_skipped"] = depth_skipped
     return src_files
 
 

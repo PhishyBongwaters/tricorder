@@ -22,7 +22,15 @@ from ctags_probe import probe_and_narrow
 
 # Thin wrapper kept for backward compat (tests import this name).
 def find_src_files(directory: str, exclude_globs: Optional[List[str]] = None) -> List[str]:
-    return discover_src_files(directory, use_gitignore=True, exclude_globs=exclude_globs)
+    # TC-002: surface the resource-envelope partial-scan report on the module
+    # so callers (tricorder_scan auto-discovery) can warn the agent.
+    return discover_src_files(directory, use_gitignore=True, exclude_globs=exclude_globs,
+                              report=_last_scan_report)
+
+
+# TC-002: populated by find_src_files() so the scan envelope warning can be
+# attached to the response when the walk hit a resource budget.
+_last_scan_report: dict = {}
 
 # Configure logging - only show errors
 root_logger = logging.getLogger()
@@ -144,6 +152,27 @@ _TRUST_METADATA = {
 def _mark_untrusted(resp: dict) -> dict:
     """TC-005: stamp repository-content trust metadata on response dicts."""
     resp.update(_TRUST_METADATA)
+    return resp
+
+
+# TC-001: explicit boundary markers around raw repo-derived text so an agent
+# can't mistake injected comments/filenames/instructions for its own prompt.
+_TRUST_BEGIN = "BEGIN UNTRUSTED REPOSITORY CONTEXT"
+_TRUST_END = "END UNTRUSTED REPOSITORY CONTEXT"
+
+
+def wrap_untrusted_content(text: str) -> str:
+    """Wrap raw repo-derived text in explicit trust-boundary markers (TC-001)."""
+    if not text:
+        return text
+    return f"{_TRUST_BEGIN}\n{text}\n{_TRUST_END}"
+
+
+def _attach_scan_warning(resp: dict) -> dict:
+    """TC-002: attach the resource-envelope partial-scan warning if any."""
+    warn = _last_scan_report.get("warning")
+    if warn:
+        resp["scan_warning"] = warn
     return resp
 
 
@@ -333,7 +362,7 @@ async def tricorder_scan(
                 if tags_at_budget < len(ranked_tags):
                     pct = round(tags_at_budget / len(ranked_tags) * 100, 1)
                     result["tier_hint"] = f"T0 incomplete: {tags_at_budget}/{len(ranked_tags)} tags fit ({pct}%). Consider tier=1 or higher token_limit."
-                return _mark_untrusted(result)
+                return _attach_scan_warning(_mark_untrusted(result))
 
             # output_file path — generate the actual map, write to disk, return metadata
             if output_format == "mermaid":
@@ -412,7 +441,7 @@ async def tricorder_scan(
                         f"only escalate tiers if the previous tier genuinely failed to answer your question."
                     )
             _tier_history_set(project_root, {"last_tier": tier, "last_format": output_format, "map_file": str(out_path)})
-            return _mark_untrusted(result)
+            return _attach_scan_warning(_mark_untrusted(result))
 
         # Stdout path (backward compat — no output_file, no dry_run)
         if output_format == "mermaid":
@@ -453,11 +482,11 @@ async def tricorder_scan(
             }
         _tok = count_tokens(map_content or "", "gpt-4")
         _full = _full_repo_tokens(project_root)
-        return _mark_untrusted({"map": map_content, "report": report_dict,
+        return _attach_scan_warning(_mark_untrusted({"map": wrap_untrusted_content(map_content), "report": report_dict,
                 "token_estimate": _tok,
                 "full_repo_estimate": _full,
                 "savings_pct": _savings_pct(_tok, _full),
-                "coverage_pct": file_report.coverage_pct})
+                "coverage_pct": file_report.coverage_pct}))
 
     except Exception as e:
         log.exception(f"Error generating repository map for project '{project_root}': {e}")

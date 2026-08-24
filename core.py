@@ -6,6 +6,7 @@ import os
 import sys
 import fnmatch
 import threading
+import hashlib
 from pathlib import Path
 # Pin project dir ahead of sys.path (mirror tricorder.py) so utils/scm resolve to THIS repo.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -50,6 +51,10 @@ TAGS_CACHE_DIR = f".tricorder.tags.cache.v{CACHE_VERSION}"
 SQLITE_ERRORS = (sqlite3.OperationalError, sqlite3.DatabaseError)
 
 _COVERAGE_WARN_THRESHOLD = 60.0  # percentage; can be overridden via config
+
+# TC-004: hard wall-clock budget for a single tree-sitter parse. A pathological
+# file can hang in-process parsing with no native timeout; we bound it.
+_PARSER_TIMEOUT_S = float(os.environ.get("TRICORDER_PARSER_TIMEOUT_S", "5"))
 
 
 
@@ -118,9 +123,26 @@ class Tricorder:
         # Load persistent tags cache
         self.load_tags_cache()
     
+    def _cache_dir(self) -> Path:
+        """TC-003: store the persistent tags cache OUTSIDE the repository.
+
+        A repo must not control security-sensitive cache state (stale reuse,
+        poisoning, metadata contamination). Identity is derived from the
+        resolved repo path + tricorder version + config hash, so distinct
+        repos never share a cache and one repo can't poison another's.
+        ponytail: ~/.tricorder/cache/<sha1(root|version|config)>.
+        """
+        base = Path(os.environ.get(
+            "TRICORDER_CACHE_HOME",
+            str(Path.home() / ".tricorder" / "cache"),
+        ))
+        key = f"{self.root.resolve()}|v{CACHE_VERSION}|{self.cache_size_limit}"
+        h = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+        return base / h
+
     def load_tags_cache(self):
-        """Load the persistent tags cache."""
-        cache_dir = self.root / TAGS_CACHE_DIR
+        """Load the persistent tags cache from outside the repo (TC-003)."""
+        cache_dir = self._cache_dir()
         try:
             self.TAGS_CACHE = diskcache.Cache(
                 str(cache_dir),
@@ -135,7 +157,7 @@ class Tricorder:
                 f"Falling back to in-memory cache (not persistent)."
             )
             self.TAGS_CACHE = {}
-    
+
     def _make_writable(self, path: Path):
         """Try to make a file/directory writable on Windows."""
         try:
@@ -143,11 +165,11 @@ class Tricorder:
             path.chmod(path.stat().st_mode | stat.S_IWRITE)
         except Exception:
             pass
-    
+
     def tags_cache_error(self):
         """Handle tags cache errors."""
         try:
-            cache_dir = self.root / TAGS_CACHE_DIR
+            cache_dir = self._cache_dir()
             if cache_dir.exists():
                 # Make all files writable before removing
                 for root, dirs, files in os.walk(cache_dir, topdown=False):
@@ -279,6 +301,41 @@ class Tricorder:
         
         return result
 
+    def _parse_with_timeout(self, parser, code: str, fname: str):
+        """TC-004: parse in a worker thread with a hard wall-clock timeout.
+
+        tree-sitter has no native parse timeout; a pathological file can hang
+        parsing in-process and stall the agent workflow. We run the parse in a
+        daemon worker thread and join with _PARSER_TIMEOUT_S; on timeout (or
+        error) we return None so the caller skips the file gracefully.
+
+        ponytail: one worker thread per parse, join-timeout. Bounded hang
+        window; memory bounded by the single file. Crash-isolation (a C-level
+        parser fault) needs a subprocess — upgrade path if adversarial input
+        proves able to segfault the parser.
+        """
+        result: dict = {}
+
+        def _run():
+            try:
+                result["tree"] = parser.parse(bytes(code, "utf-8"))
+            except Exception as e:  # noqa: BLE001 - any parse failure is skippable
+                result["err"] = e
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        t.join(_PARSER_TIMEOUT_S)
+        if t.is_alive():
+            self.output_handlers["warning"](
+                f"Parse timeout exceeded after {_PARSER_TIMEOUT_S}s: "
+                f"{fname} skipped (parser exceeded limit)"
+            )
+            return None
+        if "err" in result:
+            self.output_handlers["error"](f"Error parsing {fname}: {result['err']}")
+            return None
+        return result.get("tree")
+
     def get_tags_raw(self, fname: str, rel_fname: str) -> List[Tag]:
         """Parse file to extract tags using Tree-sitter."""
         try:
@@ -312,7 +369,9 @@ class Tricorder:
             return []
         
         try:
-            tree = parser.parse(bytes(code, "utf-8"))
+            tree = self._parse_with_timeout(parser, code, fname)
+            if tree is None:
+                return []
             
             # Load query from SCM file
             query_text = read_text(scm_fname, silent=True)
@@ -385,7 +444,9 @@ class Tricorder:
             return []
 
         try:
-            tree = parser.parse(bytes(code, "utf-8"))
+            tree = self._parse_with_timeout(parser, code, fname)
+            if tree is None:
+                return []
             query_text = read_text(scm_fname, silent=True)
             if not query_text:
                 return []
@@ -669,7 +730,9 @@ class Tricorder:
             return []
 
         try:
-            tree = parser.parse(bytes(code, "utf-8"))
+            tree = self._parse_with_timeout(parser, code, fname)
+            if tree is None:
+                return []
             query_text = read_text(scm_fname, silent=True)
             if not query_text:
                 return []
