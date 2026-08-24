@@ -193,7 +193,12 @@ def run_repo(repo) -> dict:
         report["coverage_pct"] = coverage_pct
 
     finally:
-        # Clean up temp directory
+        # Debug: on failure, keep the map so we can inspect what the matcher saw.
+        task_failed = any(not t["pass"] for t in report["tasks"]) if report["tasks"] else False
+        if task_failed:
+            shutil.copy2(map_file, bench_dir / f"{name}_LAST_FAIL_map.txt")
+            report["_debug_map_path"] = str(bench_dir / f"{name}_LAST_FAIL_map.txt")
+        # Normal cleanup
         try:
             shutil.rmtree(td, ignore_errors=True)
         except Exception:

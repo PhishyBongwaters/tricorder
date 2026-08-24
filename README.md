@@ -223,6 +223,10 @@ Tricorder's whole point is token savings: a compact map steers an agent to the r
 - **vaultwarden** (~200 Rust files): ~96–99.8% token savings; 33K-token map covers `generate_invite`, `delete_user`, `admin_page`, `hash_password`, `verify_password_hash`, `routes`, `catchers`.
 - **linux** (Linux kernel, ~50M tokens full): the headline case. With `--pre-index pick_next_task` the map narrows to `kernel/sched/` and ships in **~1.1s** (no full-tree walk, no ctags index), covering `pick_next_task`, `schedule`, `update_curr` at 99.9% savings over the full 50M-token tree. Use a *specific* probe symbol: common words across the kernel cap out at 100 files and miss the target.
 
+**Note on reproducibility (linux):** the `--pre-index` probe uses `rg` with a cold filesystem cache on first run against a fresh checkout; a first run may transiently miss a deep-callgraph symbol (e.g. `update_curr`) if rg's warmup races the file enumeration. Re-run warms the probe (`rg` and the ctags index cache under `.tricorder.tags.cache.v1/`); on a warm cache the linux task passes deterministically (verified 3x consecutive PASS, identical 39,936 / 50,352,437 / 99.9% numbers). The CLI bench keeps the last-failure map in `bench/bench_temp/<repo>_LAST_FAIL_map.txt` for diagnosis when a run flakes.
+
+**MCP token shape differs from CLI:** `bench_validity_mcp.py` exercises `tricorder_detect` (per-file definition records), not a serialized map — so MCP "tokens" scale with *result count* per identifier, not with a map blob. projectm MCP tokens are therefore an order of magnitude smaller than its CLI map (1358 vs 2048); vaultwarden's grow to ~2695 because `schedule`-class symbols match more definition sites. Savings are measured against the same full-repo estimate in both suites.
+
 Both CLI and MCP surfaces are effective; savings scale with repo size.
 
 ### How to reproduce
