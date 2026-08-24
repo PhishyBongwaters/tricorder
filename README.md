@@ -201,9 +201,14 @@ Nodes = files, edges = symbol references. Chat files highlighted in pink.
 
 ## Supported Languages
 
-Languages with tree-sitter grammars (via `queries/tree-sitter-language-pack/`): arduino, c, cpp, csharp, c_sharp, chatito, commonlisp, d, dart, elisp, elixir, elm, gleam, go, hcl, javascript, java, kotlin, lua, ocaml, ocaml_interface, php, pony, properties, python, ql, r, racket, ruby, rust, scala, solidity, swift, typescript, udev.
+Tricorder parses any tree-sitter-supported grammar. Two query packs are shipped under `queries/`:
 
-**Signature extraction + return types (10 languages):** Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby.
+- **`tree-sitter-language-pack`** (29 grammars): arduino, c, chatito, commonlisp, cpp, csharp, d, dart, elisp, elixir, elm, gleam, go, hcl, java, javascript, lua, ocaml, ocaml_interface, pony, properties, python, r, racket, ruby, rust, solidity, swift, udev.
+- **`tree-sitter-languages`** (22 grammars, adds): kotlin, php, ql, scala, typescript (plus re-confirms c, cpp, elixir, elm, go, hcl, java, javascript, ocaml, ruby, rust).
+
+**Union = 28 distinct languages.** The canonical language list is the extension map in `utils.py` (`EXTENSIONS` around line 272); `detect_lang()` resolves each source file to one of the grammar keys above. `.h` files are mapped to `cpp` (the cpp grammar is a strict superset of C — see the `ponytail:` note in `utils.detect_lang`).
+
+**Signature extraction + return types (11 grammars):** Python, JavaScript, TypeScript, C, C++, Java, Go, Rust, Swift, C#, Ruby. Each of these 11 produces at least one definition symbol with a non-empty signature (parameters + return type where the grammar exposes one). This is enforced by `tests/test_language_matrix.py` (`test_claimed_languages_extract_defined_signature`): a failing grammar/query breaks the test. The wider 28-language pack is separately asserted to extract at least a definition symbol (`test_wider_language_pack_extracts_definitions`).
 
 ## Benchmarks
 
