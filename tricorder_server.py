@@ -195,6 +195,7 @@ async def tricorder_scan(
         - If dry_run: 'tags', 'tokens_per_tag', 'tags_at_budget', 'full_repo_estimate'.
         - If output_file is set: 'map_file' (path), 'token_estimate' (int), 'tier' (int), 'format' (str), 'report' (dict), and optionally 'tier_hint' (advisory).
         - If output_file is None: 'map' (the full map string), 'report' (dict) — backward compatible.
+        - On success, all responses include 'source' ('scanned_repository') and 'trust' ('untrusted_repository_content') for provenance tracking.
         Or an 'error' key if an error occurred.
     """
     err, root_path = _validate_project_root(project_root)
