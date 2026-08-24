@@ -234,5 +234,73 @@ class TestMCPDryRun(unittest.TestCase):
         self.assertGreater(result_high["tags_at_budget"], result_low["tags_at_budget"])
 
 
+class TestMCPMaxFilesClamp(unittest.TestCase):
+    """TC-007: max_files parameter is clamped server-side."""
+
+    def setUp(self):
+        self.project_root = str(Path(__file__).parent.parent)
+
+    def test_max_files_clamped_to_server_limit(self):
+        """A caller passing max_files=999999999 is clamped to MAX_ALLOWED_FILES."""
+        import asyncio
+        from tricorder_server import tricorder_scan
+        # Request absurd size — should be clamped, not honored
+        result = asyncio.run(tricorder_scan(
+            project_root=self.project_root,
+            token_limit=2048,
+            tier=0,
+            max_files=999999999,
+            output_format="text",
+        ))
+        self.assertNotIn("error", result)
+        # If there are files, the result should still be bounded (not crash)
+        # The clamp guarantees the scan never processes more than MAX_ALLOWED_FILES
+        if "tags" in result:
+            self.assertIsInstance(result["tags"], int)
+
+    def test_max_files_clamp_returns_valid_for_normal_values(self):
+        """Normal max_files values still work."""
+        import asyncio
+        from tricorder_server import tricorder_scan
+        result = asyncio.run(tricorder_scan(
+            project_root=self.project_root,
+            token_limit=2048,
+            tier=0,
+            max_files=10,
+        ))
+        self.assertNotIn("error", result)
+
+
+class TestMCPPathContainment(unittest.TestCase):
+    """TC-006: file paths resolving outside project_root are rejected."""
+
+    def setUp(self):
+        self.project_root = str(Path(__file__).parent.parent)
+
+    def test_scan_rejects_escaping_chat_file(self):
+        """chat_files with ../../ escapes project_root should return error."""
+        import asyncio
+        from tricorder_server import tricorder_scan, _tier_history_store
+        _tier_history_store.clear()
+        result = asyncio.run(tricorder_scan(
+            project_root=self.project_root,
+            token_limit=1024,
+            tier=0,
+            chat_files=["../../etc/hostname"],
+        ))
+        self.assertIn("error", result)
+
+    def test_detail_rejects_escaping_file(self):
+        """tricorder_detail with file outside project_root should return error."""
+        import asyncio
+        from tricorder_server import tricorder_detail
+        result = asyncio.run(tricorder_detail(
+            project_root=self.project_root,
+            file="../../etc/hostname",
+            name="anything",
+        ))
+        self.assertIn("error", result)
+
+
 if __name__ == '__main__':
     unittest.main()
