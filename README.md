@@ -8,7 +8,7 @@ It leverages **tree-sitter** for accurate code parsing and the **PageRank** algo
 
 **Release Candidate 1** — full rebrand of the maintained, bug-fixed RepoMapper fork. All upstream bugs resolved; test suite passes.
 
-- **Test coverage:** 123 tests passing (`pytest tests/ -q`) — token counting, T0/T1 context, caching, MCP path handling, noise filter, mermaid-top, exclude-untagged, quiet mode, gitignore filtering, search, import tracking, ctags/rg pre-index probe, graph query DSL, CLI autodiscovery, cross-surface budget parity, token budget fields, per-language signature contract matrix.
+- **Test coverage:** 145 tests passing (`pytest tests/ -q`) — token counting, T0/T1 context, caching, MCP path handling, noise filter, mermaid-top, exclude-untagged, quiet mode, gitignore filtering, search, import tracking, ctags/rg pre-index probe, graph query DSL, CLI autodiscovery, cross-surface budget parity, token budget fields, per-language signature contract matrix, and the security-hardening suite (TC-001/002/003/004/006/007/008/010).
 - **Python 3.11+** compatible.
 - **Fixed:** 8 critical upstream bugs (NameError, TypeError, cache path, duplicate definitions, dead variables, redundant checks, dedup edge cases, `relative_to` crash).
 - **Language coverage:** 11 grammars with signature extraction + return types (Python, JS, TS, C, C++, Java, Go, Rust, Swift, C#, Ruby); 28 languages total via the tree-sitter-language-pack + tree-sitter-languages grammar sets (see [Supported Languages](#supported-languages)).
@@ -31,6 +31,7 @@ It leverages **tree-sitter** for accurate code parsing and the **PageRank** algo
 - [Output Format & Tiers](#output-format--tiers)
 - [Dependency Graph (Mermaid)](#dependency-graph-mermaid)
 - [Caching](#caching)
+- [Security Model](#security-model)
 - [Supported Languages](#supported-languages)
 - [Benchmarks](#benchmarks)
 - [Running as an MCP Server](#running-as-an-mcp-server)
@@ -194,10 +195,42 @@ Nodes = files, edges = symbol references. Chat files highlighted in pink.
 
 ## Caching
 
-- Cache directory: `.tricorder.tags.cache.v1/` (in the scanned project's root).
-- Auto-invalidated when files change via content-aware signatures (sha256 of path+size+mtime per source file); cleared with `--force-refresh`.
+- Cache location: `~/.tricorder/cache/<sha1(repo_path|version|config)>/` — **outside the repository** (TC-003). A repo never controls cache state, so one repo can't poison another's cache or reuse stale entries across distinct roots.
+- Auto-invalidated when files change via content-aware signatures; cleared with `--force-refresh`.
 - **Gotcha:** after installing new tree-sitter parsers, maps may be empty from a stale cache — use `--force-refresh` or delete the cache dir.
+- Override the cache root with `TRICORDER_CACHE_HOME`.
 - `--signature-only` prints the 16-char content signature for debugging cache validity.
+
+## Security Model
+
+Tricorder treats **repository content as untrusted input**. A malicious repo
+can contain prompt-injection attempts, path-traversal filenames, or
+resource-exhaustion structures. The following guards are enforced:
+
+| Control | Ticket | Behavior |
+|---------|--------|----------|
+| Trust metadata | TC-005 | Every MCP response is stamped `source: scanned_repository`, `trust: untrusted_repository_content`. |
+| Content boundary | TC-001 | Raw map text is wrapped in `BEGIN/END UNTRUSTED REPOSITORY CONTEXT` markers so agents don't mistake repo comments for instructions. |
+| Path containment | TC-006 | `chat_files` / `detail` file params are rejected if they resolve outside `project_root` (`../../etc/passwd` → error). |
+| `max_files` clamp | TC-007 | MCP `max_files` is clamped to 10,000 server-side; discovery early-stops at 20,000. |
+| Output containment | TC-008 | `output_file` writes only to `.tricorder/output/<basename>` — path traversal is contained to the basename. |
+| Resource envelope | TC-002 | Global budget: max 20k files, 500 MB total bytes, depth 25, 300 s scan time, 1 MB/file. Hitting a limit returns a partial result with a `scan_warning`. Tunable via `TRICORDER_MAX_*` env vars. |
+| Cache isolation | TC-003 | Tags cache lives outside the repo (see [Caching](#caching)). |
+| Parser timeout | TC-004 | Each tree-sitter parse runs in a worker thread with a 5 s hard timeout (`TRICORDER_PARSER_TIMEOUT_S`); a hang is skipped, not stalled. |
+| Dependency pinning | TC-009 | `requirements.txt` is fully pinned; `scripts/depscan.py` emits a pinned inventory and runs `pip-audit`. |
+| Parser fuzzing | TC-010 | `tests/security/` holds adversarial fixtures (deeply nested, huge line, malformed, unicode, broken, giant string) asserting no crash/hang. |
+
+Environment overrides (all optional):
+
+```
+TRICORDER_MAX_SCAN_FILES=20000        # file-count ceiling
+TRICORDER_MAX_TOTAL_BYTES=524288000   # total source bytes
+TRICORDER_MAX_SCAN_DEPTH=25           # directory depth
+TRICORDER_MAX_SCAN_TIME_S=300         # walk wall-clock budget
+TRICORDER_MAX_SOURCE_FILE_SIZE=1048576# per-file size cap
+TRICORDER_PARSER_TIMEOUT_S=5          # per-parse wall-clock budget
+TRICORDER_CACHE_HOME=~/.tricorder/cache
+```
 
 ## Supported Languages
 
