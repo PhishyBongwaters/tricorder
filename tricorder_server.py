@@ -339,7 +339,12 @@ async def tricorder_scan(
             token_estimate = count_tokens(map_content or "", "gpt-4")
             full_repo_estimate = _full_repo_tokens(project_root)
 
-            out_path = Path(output_file)
+            # TC-008: contain output_file writes to tricorder-managed storage only.
+            # A caller-controlled path with no validation could write anywhere
+            # the host user has access. Resolve to an explicit output dir and
+            # reject escapes.
+            _TRICORDER_OUTPUT_DIR = Path(__file__).resolve().parent / ".tricorder" / "output"
+            out_path = _TRICORDER_OUTPUT_DIR / Path(output_file).name
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_text(map_content, encoding="utf-8")
             result: Dict[str, Any] = {

@@ -87,6 +87,9 @@ class TestMCPOutputFile(unittest.TestCase):
         self.tmpdir = tempfile.mkdtemp(prefix="tricorder_test_")
         import shutil
         self.addCleanup(shutil.rmtree, self.tmpdir, True)
+        # TC-008: clean up contained output dir created by output_file writes
+        self.output_dir = Path(__file__).resolve().parent.parent / ".tricorder" / "output"
+        self.addCleanup(shutil.rmtree, str(self.output_dir), True)
 
     def test_output_file_writes_map_and_returns_metadata(self):
         """repo_map with output_file writes map to disk and returns no 'map' key."""
@@ -105,14 +108,37 @@ class TestMCPOutputFile(unittest.TestCase):
         self.assertNotIn("map", result, "Response should NOT contain 'map' key when output_file is set")
         self.assertIn("map_file", result)
         self.assertIn("token_estimate", result)
-        self.assertEqual(result["map_file"], out_file)
-        self.assertTrue(Path(out_file).exists(), "Map file should exist on disk")
+        # TC-008: output_file is contained to .tricorder/output/ — basename preserved, dir contained
+        expected_dir = Path(__file__).resolve().parent.parent / ".tricorder" / "output"
+        expected_path = expected_dir / Path(out_file).name
+        self.assertEqual(result["map_file"], str(expected_path))
+        self.assertTrue(Path(expected_path).exists(), "Map file should exist in contained output dir")
         self.assertGreater(result["token_estimate"], 0)
         self.assertEqual(result["tier"], 0)
         self.assertEqual(result["format"], "text")
-        # The file should contain actual content
-        content = Path(out_file).read_text(encoding="utf-8")
+        # The file should contain actual content (read from the contained path)
+        content = Path(result["map_file"]).read_text(encoding="utf-8")
         self.assertGreater(len(content), 50, "Map file should have substantial content")
+
+    def test_output_file_path_traversal_contained(self):
+        """TC-008: traversal paths like ../../etc/passwd are contained to basename only."""
+        import asyncio
+        from tricorder_server import tricorder_scan, _tier_history_store
+        _tier_history_store.clear()
+
+        # A path traversal attempt — only the basename should be used
+        evil_path = str(Path(self.tmpdir) / "...." / "...." / "evil_map.txt")
+        result = asyncio.run(tricorder_scan(
+            project_root=self.project_root,
+            token_limit=2048,
+            tier=0,
+            output_file=evil_path
+        ))
+
+        # The written file must be inside the contained output dir, not escaped
+        expected_path = self.output_dir / "evil_map.txt"
+        self.assertEqual(result["map_file"], str(expected_path))
+        self.assertTrue(expected_path.exists())
 
     def test_output_file_tier_hint_on_upgrade(self):
         """Calling T0 then T1 with output_file produces a tier_hint advisory."""
