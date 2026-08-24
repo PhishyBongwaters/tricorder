@@ -80,6 +80,18 @@ def _validate_project_root(project_root: str) -> tuple[Optional[str], Optional[P
 
     return (None, root_path)
 
+def _validate_file_containment(file_path: str, project_root: Path) -> Optional[str]:
+    """TC-006: verify a resolved file path stays inside project_root.
+
+    Returns None if contained, or an error string if the path escapes.
+    """
+    resolved = Path(file_path).resolve()
+    try:
+        resolved.relative_to(project_root)
+    except ValueError:
+        return f"File path escapes project root: {file_path}"
+    return None
+
 @lru_cache(maxsize=_MAX_TIER_HISTORY)
 def _tier_history_get(project_root: str) -> Optional[dict]:
     """Get tier history for a project root (LRU-bounded)."""
@@ -122,6 +134,17 @@ def _budget_fields(resp: dict, full_repo_tokens: int, coverage_pct: Optional[flo
     if coverage_pct is not None:
         result["coverage_pct"] = coverage_pct
     return result
+
+
+_TRUST_METADATA = {
+    "source": "scanned_repository",
+    "trust": "untrusted_repository_content",
+}
+
+def _mark_untrusted(resp: dict) -> dict:
+    """TC-005: stamp repository-content trust metadata on response dicts."""
+    resp.update(_TRUST_METADATA)
+    return resp
 
 
 @mcp.tool()
@@ -189,6 +212,13 @@ async def tricorder_scan(
     if token_limit <= 0:
         token_limit = 8192
     
+    # TC-007: clamp max_files server-side — prevents callers from requesting
+    # absurd scan sizes (e.g. 999999999) that could exhaust resources.
+    # Discovery already early-stops at 20_000 (MAX_SCAN_FILES in utils.py),
+    # but clamp the param itself so downstream code never sees an absurd value.
+    MAX_ALLOWED_FILES = 10000
+    max_files = min(max_files, MAX_ALLOWED_FILES)
+    
     chat_files_list = chat_files or []
     mentioned_fnames_set = set(mentioned_files) if mentioned_files else None
     mentioned_idents_set = set(mentioned_idents) if mentioned_idents else None
@@ -234,6 +264,12 @@ async def tricorder_scan(
     root_path = Path(project_root).resolve()
     abs_chat_files = [str(Path(str(root_path / f)).resolve()) for f in chat_files_list]
     abs_other_files = [str(Path(str(root_path / f)).resolve()) for f in effective_other_files]
+    
+    # TC-006: reject any file paths that resolve outside the project root
+    for f in abs_chat_files + abs_other_files:
+        err = _validate_file_containment(f, root_path)
+        if err:
+            return {"error": err}
     
     # Remove any chat files from the other_files list to avoid duplication
     abs_chat_files_set = set(abs_chat_files)
@@ -296,7 +332,7 @@ async def tricorder_scan(
                 if tags_at_budget < len(ranked_tags):
                     pct = round(tags_at_budget / len(ranked_tags) * 100, 1)
                     result["tier_hint"] = f"T0 incomplete: {tags_at_budget}/{len(ranked_tags)} tags fit ({pct}%). Consider tier=1 or higher token_limit."
-                return result
+                return _mark_untrusted(result)
 
             # output_file path — generate the actual map, write to disk, return metadata
             if output_format == "mermaid":
@@ -375,7 +411,7 @@ async def tricorder_scan(
                         f"only escalate tiers if the previous tier genuinely failed to answer your question."
                     )
             _tier_history_set(project_root, {"last_tier": tier, "last_format": output_format, "map_file": str(out_path)})
-            return result
+            return _mark_untrusted(result)
 
         # Stdout path (backward compat — no output_file, no dry_run)
         if output_format == "mermaid":
@@ -416,11 +452,11 @@ async def tricorder_scan(
             }
         _tok = count_tokens(map_content or "", "gpt-4")
         _full = _full_repo_tokens(project_root)
-        return {"map": map_content, "report": report_dict,
+        return _mark_untrusted({"map": map_content, "report": report_dict,
                 "token_estimate": _tok,
                 "full_repo_estimate": _full,
                 "savings_pct": _savings_pct(_tok, _full),
-                "coverage_pct": file_report.coverage_pct}
+                "coverage_pct": file_report.coverage_pct})
 
     except Exception as e:
         log.exception(f"Error generating repository map for project '{project_root}': {e}")
@@ -538,11 +574,11 @@ async def tricorder_detect(
 
         resp = {"results": results}
         resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
-        return resp
+        return _mark_untrusted(resp)
 
     except Exception as e:
         log.exception(f"Error searching identifiers in project '{project_root}': {e}")
-        return {"error": f"Error searching identifiers: {str(e)}"}    
+        return {"error": f"Error searching identifiers: {str(e)}"}
 
 @mcp.tool()
 async def tricorder_symbols(
@@ -618,7 +654,7 @@ async def tricorder_symbols(
 
         resp = {"symbols": results, "total": len(results), "limit": limit}
         resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
-        return resp
+        return _mark_untrusted(resp)
 
     except Exception as e:
         log.exception(f"Error searching symbols in project '{project_root}': {e}")
@@ -663,6 +699,11 @@ async def tricorder_detail(
     if not file_path.is_absolute():
         file_path = Path(project_root) / file_path
     file_path = str(file_path.resolve())
+    
+    # TC-006: reject file paths that escape the project root
+    err = _validate_file_containment(file_path, Path(project_root))
+    if err:
+        return {"error": err}
 
     if not os.path.isfile(file_path):
         return {"error": "not found"}
@@ -682,7 +723,7 @@ async def tricorder_detail(
 
         resp = {"symbol": detail.to_dict()}
         resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
-        return resp
+        return _mark_untrusted(resp)
 
     except Exception as e:
         log.exception(f"Error getting symbol details for '{name}' in '{file_path}': {e}")
@@ -749,7 +790,7 @@ async def tricorder_query(
         )
 
         result = repo_map.query_graph(parsed, token_limit=token_limit)
-        return result
+        return _mark_untrusted(result)
 
     except Exception as e:
         log.exception(f"Error executing graph query '{query}' on project '{project_root}': {e}")
