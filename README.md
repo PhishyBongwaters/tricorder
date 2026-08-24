@@ -8,7 +8,7 @@ Leverages **tree-sitter** for accurate code parsing and the **PageRank** algorit
 
 **Release Candidate 1** — Full rebrand of the maintained, bug-fixed RepoMapper fork. All upstream bugs resolved; test suite passes.
 
-- **Test Coverage:** 118 tests passing (token_count, Tricorder, caching, MCP path handling, T0/T1 context, noise filter, mermaid-top, exclude-untagged, quiet mode, gitignore filtering, search, import tracking, graph query DSL, CLI autodiscovery, cross-surface budget parity, token budget fields, **per-language signature contract matrix**) — `pytest tests/ -q`
+- **Test Coverage:** 123 tests passing (token_count, Tricorder, caching, MCP path handling, T0/T1 context, noise filter, mermaid-top, exclude-untagged, quiet mode, gitignore filtering, search, import tracking, ctags/rg pre-index probe, graph query DSL, CLI autodiscovery, cross-surface budget parity, token budget fields, **per-language signature contract matrix**) — `pytest tests/ -q`
 - **Python 3.11+** compatible
 - **Fixed:** 8 critical upstream bugs (NameError, TypeError, cache path, duplicate definitions, dead variables, redundant checks, dedup edge cases, relative_to crash)
 - **Language Coverage:** 10 languages with signature extraction + return types (Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby)
@@ -52,7 +52,7 @@ Proven across 2 real repos with 8 realistic agent tasks using two benchmark suit
   python bench/bench_validity.py --root /path/to/your/repos
   ```
 - **Task definitions:** live in `bench/bench_validity*.py` (`REPOS` list — realistic agent questions + `ground_truth` identifiers that must appear in the map for a PASS).
-- **Date of measurement:** 2026-09-09 (Gen 3 tricorder fork, 10-language extraction, 115+ tests).
+- **Date of measurement:** 2026-09-09 (Gen 3 tricorder fork, 10-language extraction, 123+ tests).
 - Numbers above are reproducible within noise on the same public repos; savings scale with repo size. No CI benchmark machinery — run locally when you want to re-verify.
 
 - **projectm** (~5,800 files, ~1.126K lines): ~100% token savings; 2K-token map covers all required identifiers (PCM::AddToBuffer, Loudness, CurrentRelative, AverageRelative)
@@ -69,6 +69,7 @@ Proven across 2 real repos with 8 realistic agent tasks using two benchmark suit
   - [Basic Usage](#basic-usage)
   - [Advanced Options](#advanced-options)
   - [Optimal Agent Workflow (Lowest Token Cost)](#optimal-agent-workflow-lowest-token-cost)
+  - [Pre-Index Probe (rg / ctags)](#pre-index-probe-rg--ctags--fast-path-for-huge-repos)
 - [How It Works](#how-it-works)
 - [Output Format & Tiers](#output-format--tiers)
 - [Dependency Graph (Mermaid)](#dependency-graph-mermaid)
@@ -87,7 +88,7 @@ Tricorder is a rebranded fork of the **RepoMapper** fork of **Aider's RepoMap**:
 
 1. **Gen 1 — Aider `RepoMap`** (Paul Gauthier): tree-sitter symbol extraction + PageRank ranking.
 2. **Gen 2 — RepoMapper** (Paul Davis `/ pdavis68`): standalone CLI + MCP server, built with Aider + Claude 3.7 + Cline + Gemini 2.5 Pro. Upstream: https://github.com/pdavis68/RepoMapper
-- **Gen 3 — tricorder**: our fork — 8 bug fixes, 118 tests, 10-language signature extraction, cross-file call graph, Windows compatibility, full rebrand to tricorder.
+- **Gen 3 — tricorder**: our fork — 8 bug fixes, 123 tests, 10-language signature extraction, cross-file call graph, ctags/rg pre-index probe for huge repos, Windows compatibility, full rebrand to tricorder.
 
 Lineage is intentionally kept visible. MIT Licensed.
 
@@ -169,6 +170,8 @@ tricorder . --dry-run --map-tokens 2048
 tricorder . --max-files 5000  # raise auto-discovery cap (default 1000)
 tricorder . --exclude-globs vendor/** third_party/**  # skip vendored code before ranking
 tricorder . --signature-only  # print content signature for cache validation
+# When scanning a huge repo (e.g. the Linux kernel), narrow the scan to files containing a symbol:
+tricorder D:/Projects/linux --pre-index "schedule" --pre-index-max-files 20 --map-tokens 500
 ```
 
 ### Optimal Agent Workflow (Lowest Token Cost)
@@ -177,10 +180,26 @@ tricorder . --signature-only  # print content signature for cache validation
 2. **Architecture / Topography** (~1k–3k tokens): `tricorder . --mermaid` for module/component structure.
 3. **Subsystem Symbols (T0)** (~1k–2k tokens): `--tier 0` scoped to `src/sub/`. At ~14 tokens/tag, `--map-tokens 2048` ≈ 140 definitions.
 4. **Targeted Reading** (~100–500 tokens): `read_file` with the line numbers found. Direct read beats T1 for a single target.
+5. **Huge-repo drill-in (pre-index)**: `--pre-index SYMBOL` narrows the scan to files containing that symbol — sub-second even on the Linux kernel. Use when scanning a giant tree for a known identifier.
+
+### Pre-Index Probe (rg / ctags) — fast path for huge repos
+
+For a known symbol in a large tree (kernel, monorepo), a full scan wastes time walking every file. The `--pre-index` probe narrows the file set *before* any scan:
+
+```bash
+tricorder D:/Projects/linux --pre-index "schedule" --pre-index-max-files 20 --map-tokens 500
+```
+
+- **rg-first:** `rg -n -w SYMBOL` with multi-language globs is the primary path — no index, no full-tree walk (sub-second on a 37k-file kernel tree).
+- **ctags fallback:** used only if rg finds nothing. Index builds are **refused** on trees with >20,000 source files (env `TRICORDER_MAX_SCAN_FILES` defaults to 20,000), and any existing `tags` index larger than 100 MB is ignored as corrupt/stale — so a probe can never trigger a giant tree-walk or a multi-hundred-MB index build.
+- `--pre-index-max-files N` (default 100): cap on files included from the probe.
+- `--pre-index-include-parents N` (default 0): also include N parent directories of each matched file.
+
+When `--pre-index` is given, the probe runs **before** any path-walk and is authoritative (path-only walks are skipped entirely). If it finds nothing, tricorder falls back to the normal auto-scan. The same `pre_index`/`pre_index_max_files`/`pre_index_include_parents` args are available on the MCP `tricorder_scan` tool and the plugin.
 
 ## How It Works
 
-1. **File Discovery**: scans source files, skipping `.gitignore`d dirs (plus `build/`, `dist/`, `node_modules/`, `__pycache__/`, etc.)
+1. **File Discovery**: scans source files, skipping `.gitignore`d dirs (plus `build/`, `dist/`, `node_modules/`, `__pycache__/`, etc.). Discovery **early-stops** after 20,000 files (`TRICORDER_MAX_SCAN_FILES`) so a giant tree is never fully enumerated; a `--pre-index SYMBOL` probe runs first and skips the tree-walk entirely (see [Pre-Index Probe](#pre-index-probe-rg--ctags--fast-path-for-huge-repos)).
 2. **Code Parsing**: tree-sitter extracts definitions/references
 3. **Graph Building**: files = nodes, symbol references = edges
 4. **Ranking**: PageRank over the graph
@@ -274,7 +293,7 @@ The server listens over STDIO. Clients call tools with `project_root` as an abso
 
 | Tool | Purpose |
 |------|---------|
-| `tricorder_scan` | Generate a repository map for a project. Param `output_format` = `text` (prioritized definitions) or `mermaid` (dependency flowchart). Param `tier` = `0` (definitions only) or `1` (+ context). Also `token_limit`, `chat_files`, `other_files`, `mentioned_files`/`mentioned_idents`, `exclude_unranked`, `exclude_untagged`, `force_refresh`, `max_context_window`, `output_file`, `dry_run`, `exclude_globs` (list of glob patterns, e.g. `["vendor/**"]`, to drop third-party subtrees from the auto-scan before ranking). Returns token budget fields: `token_estimate`, `full_repo_estimate`, `savings_pct`, `tier_hint`. |
+| `tricorder_scan` | Generate a repository map for a project. Param `output_format` = `text` (prioritized definitions) or `mermaid` (dependency flowchart). Param `tier` = `0` (definitions only) or `1` (+ context). Also `token_limit`, `chat_files`, `other_files`, `mentioned_files`/`mentioned_idents`, `exclude_unranked`, `exclude_untagged`, `force_refresh`, `max_context_window`, `output_file`, `dry_run`, `exclude_globs` (list of glob patterns, e.g. `["vendor/**"]`, to drop third-party subtrees from the auto-scan before ranking), and `pre_index`/`pre_index_max_files`/`pre_index_include_parents` (narrow the scan to files containing a symbol — same as the CLI `--pre-index` family, for huge trees). Returns token budget fields: `token_estimate`, `full_repo_estimate`, `savings_pct`, `tier_hint`. |
 | `tricorder_detect` | Search for identifiers by name across the codebase. Case-insensitive; returns file, line, def/ref kind, context. Params `query`, `max_results`, `context_lines`, `include_definitions`, `include_references`. |
 | `tricorder_symbols` | Structured symbol query with type + file filters. Returns full symbol records (name, type, file, line range, signature, docstring, language, tree-sitter kind). Params `query`, `type`, `file`, `limit` (default 50, cap 200). |
 | `tricorder_detail` | Deep-dive on a specific symbol — body, callers (cross-file refs), callees. Params `name`, `file`, `line`. |
