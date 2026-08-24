@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Set
 import dataclasses
 
+# Pin this project's dir ahead of sys.path so `from utils import ...` / `from core import ...`
+# resolve to THIS repo, not a same-named module in another venv/install (the Hermes agent
+# shadowed D:/Projects/tricorder/utils.py with its own utils.py, killing the MCP server at import).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from fastmcp import FastMCP, settings
 from core import Tricorder
 from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery

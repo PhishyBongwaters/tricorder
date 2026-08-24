@@ -7,6 +7,8 @@ import sys
 import fnmatch
 import threading
 from pathlib import Path
+# Pin project dir ahead of sys.path (mirror tricorder.py) so utils/scm resolve to THIS repo.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from collections import namedtuple, defaultdict
 from typing import List, Dict, Set, Optional, Tuple, Callable, Any, Union
 import shutil
