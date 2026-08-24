@@ -13,6 +13,7 @@ from core import Tricorder
 from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery
 from scm import get_scm_fname
 from importance import filter_important_files
+from ctags_probe import probe_and_narrow
 
 # Thin wrapper kept for backward compat (tests import this name).
 def find_src_files(directory: str, exclude_globs: Optional[List[str]] = None) -> List[str]:
@@ -137,6 +138,9 @@ async def tricorder_scan(
     output_file: Optional[str] = None,
     dry_run: bool = False,
     exclude_globs: Optional[List[str]] = None,
+    pre_index: Optional[str] = None,
+    pre_index_max_files: int = 100,
+    pre_index_include_parents: int = 0,
 ) -> Dict[str, Any]:
     """Generate a repository map for the specified files, providing a list of function prototypes and variables for files as well as relevant related
     files. Provide filenames relative to the project_root. In addition to the files provided, relevant related files will also be included with a
@@ -190,11 +194,27 @@ async def tricorder_scan(
     if other_files:
         effective_other_files = other_files
     else:
-        log.info("No other_files provided, scanning root directory for context...")
-        effective_other_files = find_src_files(project_root, exclude_globs=exclude_globs)
-        if len(effective_other_files) > max_files:
-            log.warning(f"Auto-scanned {len(effective_other_files)} files, capping to {max_files}")
-            effective_other_files = effective_other_files[:max_files]
+        # Pre-index probe: if pre_index is given and no other_files provided, run ctags probe
+        if pre_index:
+            log.info(f"Probing ctags for symbol '{pre_index}' in {project_root}...")
+            probed_rel_files = probe_and_narrow(
+                project_root,
+                pre_index,
+                max_files=pre_index_max_files,
+                include_parents=pre_index_include_parents
+            )
+            if probed_rel_files:
+                log.info(f"Ctags probe matched {len(probed_rel_files)} files.")
+                effective_other_files = probed_rel_files
+            else:
+                log.warning(f"Ctags probe found no matches for '{pre_index}', falling back to auto-scan.")
+        
+        if not effective_other_files:
+            log.info("No other_files provided, scanning root directory for context...")
+            effective_other_files = find_src_files(project_root, exclude_globs=exclude_globs)
+            if len(effective_other_files) > max_files:
+                log.warning(f"Auto-scanned {len(effective_other_files)} files, capping to {max_files}")
+                effective_other_files = effective_other_files[:max_files]
 
     # Add a print statement for debugging so you can see what the tool is working with.
     log.debug(f"Chat files: {chat_files_list}")

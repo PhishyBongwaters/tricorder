@@ -23,6 +23,7 @@ from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_fi
 from scm import get_scm_fname
 from importance import filter_important_files
 from core import Tricorder
+from ctags_probe import probe_and_narrow
 
 
 def find_git_root(base: str) -> Optional[str]:
@@ -261,6 +262,26 @@ Examples:
         help="Cap on files during auto-discovery when no paths given (default: 1000)"
     )
 
+    parser.add_argument(
+        "--pre-index",
+        metavar="SYMBOL",
+        help="Enable ctags probe: build/use ctags index, look up SYMBOL, narrow scan to matching files"
+    )
+
+    parser.add_argument(
+        "--pre-index-max-files",
+        type=int,
+        default=100,
+        help="Max files to include from ctags probe results (default: 100)"
+    )
+
+    parser.add_argument(
+        "--pre-index-include-parents",
+        type=int,
+        default=0,
+        help="Also include N parent directories of matched files (default: 0)"
+    )
+
     args = parser.parse_args()
 
     # --signature-only: stat-hash, no map build. Early exit.
@@ -315,11 +336,6 @@ Examples:
         unresolved_paths_for_other_files_specs.extend(args.paths)
     # If neither, unresolved_paths_for_other_files_specs remains empty.
     
-    # ponytail: auto-detect git repo root FIRST, so relative path specs
-    # can be resolved against --root before find_src_files tries to walk them.
-    # Previously find_src_files ran on raw relative paths (resolved against CWD,
-    # not the repo root), which made `tricorder.py src/ --root /other/repo` silently
-    # find 0 files and emit a misleading "No tags extracted" parser-missing warning.
     if args.root in (None, '.', ''):
         git_root = find_git_root(unresolved_paths_for_other_files_specs[0] if unresolved_paths_for_other_files_specs else '.')
         if git_root:
@@ -339,21 +355,31 @@ Examples:
             p = root_path / path_spec_str
         effective_other_files_unresolved.extend(find_src_files(str(p), exclude_globs=args.exclude_globs))
 
-    # ponytail: apply max_files cap to explicit paths too (matches auto-discovery branch)
     if len(effective_other_files_unresolved) > args.max_files:
         output_handlers['warning'](
             f"Explicit paths yielded {len(effective_other_files_unresolved)} files, "
             f"capping to {args.max_files}")
         effective_other_files_unresolved = effective_other_files_unresolved[:args.max_files]
 
-    # chat_files for Tricorder are from --chat-files argument, resolved.
     chat_files = [str(Path(f).resolve()) for f in chat_files_from_args]
-    # other_files for Tricorder are the effective_other_files, resolved after expansion.
     other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
 
-    # Auto-discover when no explicit/positional paths were provided, matching
-    # MCP server behavior (tricorder_server.py:143-153). Turn-0 injection from
-    # the DSH plugin calls the CLI with no file specs.
+    # Pre-index probe: if --pre-index SYMBOL is given, run ctags probe to narrow other_files
+    if not other_files and args.pre_index:
+        output_handlers['info'](f"Probing ctags for symbol '{args.pre_index}' in {root_path}...")
+        probed_rel_files = probe_and_narrow(
+            str(root_path),
+            args.pre_index,
+            max_files=args.pre_index_max_files,
+            include_parents=args.pre_index_include_parents
+        )
+        if probed_rel_files:
+            output_handlers['info'](f"Ctags probe matched {len(probed_rel_files)} files.")
+            other_files = [str((root_path / rel).resolve()) for rel in probed_rel_files]
+        else:
+            output_handlers['warning'](f"Ctags probe found no matches for '{args.pre_index}', falling back to auto-scan.")
+
+    # Auto-discover when no explicit/positional paths were provided
     if not other_files:
         output_handlers['info'](f"No explicit files provided, auto-scanning {root_path}...")
         effective_other_files_unresolved = find_src_files(
@@ -364,14 +390,10 @@ Examples:
                 f"capping to {args.max_files}")
             effective_other_files_unresolved = effective_other_files_unresolved[:args.max_files]
         other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
-
-    # chat files resolved above
     
-    # Convert mentioned files to sets
     mentioned_fnames = set(args.mentioned_files) if args.mentioned_files else None
     mentioned_idents = set(args.mentioned_idents) if args.mentioned_idents else None
     
-    # Create Tricorder instance
     repo_map = Tricorder(
         map_tokens=args.map_tokens,
         root=str(root_path),
@@ -385,9 +407,7 @@ Examples:
         exclude_untagged=args.exclude_untagged
     )
     
-    # Generate the map
     try:
-        # Pre-compute ranked tags for mermaid/json branches
         ranked_tags, file_report = repo_map.get_ranked_tags(chat_files, other_files)
 
         if not ranked_tags:
@@ -403,11 +423,9 @@ Examples:
                 )
 
         if args.dry_run:
-            # Estimate tokens per tag by rendering top 10 tags
             if ranked_tags:
                 chat_rel = set(repo_map.get_rel_fname(f) for f in chat_files)
                 sample = ranked_tags[:10]
-                # Exclude untagged files from estimate to measure tag cost only
                 sample_tree = repo_map.to_tree(sample, chat_rel, [])
                 sample_tokens = repo_map.token_count(sample_tree)
                 tokens_per_tag = sample_tokens / len(sample)
@@ -427,7 +445,6 @@ Examples:
                 repo_map.output_handlers['info']("No tags to estimate.")
             sys.exit(0)
 
-        # Generate the map
         map_content, _ = repo_map.get_repo_map(
             chat_files=chat_files,
             other_files=other_files,
@@ -442,7 +459,6 @@ Examples:
                 tool_output(f"Generated map: {len(map_content)} chars, ~{tokens} tokens")
 
             if args.mermaid:
-                # Mermaid output: dependency graph
                 if args.top is not None:
                     ranked_tags = ranked_tags[:args.top]
                 mermaid_output = repo_map.to_mermaid(
@@ -451,7 +467,6 @@ Examples:
                 )
                 output_text = mermaid_output
             elif args.format == "json":
-                # JSON output: tags, ranks, and file metadata
                 import json
                 if args.top is not None:
                     ranked_tags = ranked_tags[:args.top]
@@ -467,7 +482,6 @@ Examples:
                         for rank, tag in ranked_tags
                     ]
                 }
-                # Budget fields: how much this map costs vs reading the whole repo.
                 map_tokens = repo_map.token_count(map_content)
                 json_output["budget"] = repo_budget(
                     args.root, map_tokens, args.model, args.exclude_globs
