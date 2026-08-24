@@ -259,6 +259,104 @@ def repo_budget(project_root: str, token_estimate: int,
 
 
 # =============================================================================
+# Turn-0 probe digest (shared by CLI --probe-digest, Hermes plugin, DSH plugin)
+# =============================================================================
+# A cheap navigation probe: language tally + rough size. NO map build, NO token
+# budget (repo_budget reads/tokenizes every source file — too slow for turn 0
+# on a kernel-scale tree). Designed so Hermes and DSH inject byte-identical
+# turn-0 content from this one code path.
+
+INJECT_MIN_FILES = 200  # below this many code files, skip the digest entirely
+
+CODE_EXTENSIONS = {
+    ".py": "python", ".rs": "rust", ".c": "c", ".h": "cpp", ".cpp": "cpp",
+    ".cc": "cpp", ".cxx": "cpp", ".hpp": "cpp", ".hxx": "cpp",
+    ".js": "javascript", ".jsx": "javascript", ".ts": "typescript",
+    ".tsx": "typescript", ".go": "go", ".java": "java", ".kt": "kotlin",
+    ".scala": "scala", ".rb": "ruby", ".php": "php", ".swift": "swift",
+    ".m": "objc", ".cs": "csharp", ".fs": "fsharp",
+    ".sh": "bash", ".bash": "bash", ".zsh": "bash",
+    ".hcl": "hcl", ".tf": "hcl",
+    ".lua": "lua", ".dart": "dart", ".r": "r", ".jl": "julia",
+    ".vim": "vim", ".el": "elisp", ".clj": "clojure", ".ex": "elixir",
+    ".exs": "elixir", ".erl": "erlang", ".hs": "haskell", ".ml": "ocaml",
+    ".nim": "nim", ".zig": "zig", ".v": "verilog", ".sv": "systemverilog",
+    ".d": "d", ".sql": "sql", ".cmake": "cmake",
+    ".html": "html", ".css": "css", ".scss": "css", ".less": "css",
+    ".vue": "javascript", ".svelte": "javascript",
+}
+
+_CODE_IGNORE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv",
+                     "target", "build", "dist", ".next", ".nuxt",
+                     "vendor", "third_party", ".tricorder"}
+
+
+def probe_project(project_root: str, exclude_globs: Optional[List[str]] = None) -> dict:
+    """Cheap os.walk tally: language counts + total files + rough line estimate.
+
+    No tree-sitter, no parsing, no ranking — just extension tally. Costs
+    milliseconds, zero tokens. This is the turn-0 navigation probe, never a
+    full map/token scan.
+
+    Returns {"lang_counts": {lang: n}, "total_files": int, "est_lines": int,
+             "top_lang": str}.
+    """
+    root_path = Path(project_root)
+    if not root_path.is_dir():
+        return {"lang_counts": {}, "total_files": 0, "est_lines": 0, "top_lang": ""}
+
+    globs = exclude_globs or []
+    lang_counts: dict = {}
+    total_bytes = 0
+
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        dirnames[:] = [d for d in dirnames if d not in _CODE_IGNORE_DIRS]
+        for fname in filenames:
+            rel = os.path.relpath(os.path.join(dirpath, fname), root_path)
+            if any(fnmatch.fnmatch(rel, g) for g in globs):
+                continue
+            ext = os.path.splitext(fname)[1].lower()
+            lang = CODE_EXTENSIONS.get(ext)
+            if not lang:
+                continue
+            lang_counts[lang] = lang_counts.get(lang, 0) + 1
+            try:
+                total_bytes += os.path.getsize(os.path.join(dirpath, fname))
+            except OSError:
+                pass
+
+    total_files = sum(lang_counts.values())
+    # ponytail: ~40 bytes/line average across languages. A probe, not a census.
+    est_lines = total_bytes // 40 if total_bytes else 0
+    top_lang = max(lang_counts, key=lang_counts.get) if lang_counts else ""
+    return {"lang_counts": lang_counts, "total_files": total_files,
+            "est_lines": est_lines, "top_lang": top_lang}
+
+
+def format_probe_digest(probe: dict, project_root: str) -> str:
+    """Turn the probe tally into the unified turn-0 digest text.
+
+    Single source of truth: CLI --probe-digest, the Hermes plugin, and the DSH
+    plugin all emit this exact string so turn-0 content is identical everywhere.
+    Navigation-only — points at MCP tools for depth, never triggers a scan.
+    """
+    total = probe.get("total_files", 0)
+    if not total:
+        return ""
+    lang_counts = probe.get("lang_counts", {})
+    est_lines = probe.get("est_lines", 0)
+    top3 = sorted(lang_counts.items(), key=lambda x: -x[1])[:3]
+    lang_str = ", ".join(f"{n} {lang}" for lang, n in top3)
+    lines_str = f"~{est_lines // 1000}K lines" if est_lines >= 1000 else f"~{est_lines} lines"
+    return (
+        f"{total} code files ({lang_str}), {lines_str}. "
+        "Use the MCP tools (mcp_tricorder_detect/symbols/detail) for targeted "
+        "probes, or /tricorder scan / the CLI to build a map on demand. "
+        "Do not deep-scan this turn."
+    )
+
+
+# =============================================================================
 # Graph Query DSL Parser (M0.10)
 # =============================================================================
 

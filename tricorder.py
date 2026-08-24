@@ -19,7 +19,7 @@ from typing import List, Optional
 # venv/site-packages (e.g. the Hermes agent's own utils.py when tricorder is
 # launched through an editable install that shares a process's sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget
+from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES
 from scm import get_scm_fname
 from importance import filter_important_files
 from core import Tricorder
@@ -282,6 +282,15 @@ Examples:
         help="Also include N parent directories of matched files (default: 0)"
     )
 
+    parser.add_argument(
+        "--probe-digest",
+        action="store_true",
+        help="Print the turn-0 probe digest (language tally + sizes + navigation "
+             "hint) for --root and exit. No map build, no token budget — cheap "
+             "even on huge repos. Emits the same text the Hermes/DSH plugins "
+             "inject at turn 0."
+    )
+
     args = parser.parse_args()
 
     # --signature-only: stat-hash, no map build. Early exit.
@@ -303,6 +312,16 @@ Examples:
                 token_estimate = 0
         budget = repo_budget(args.root, token_estimate, args.model, args.exclude_globs)
         print(_json.dumps(budget))
+        sys.exit(0)
+
+    # --probe-digest: turn-0 navigation probe, no map build, no token budget.
+    if args.probe_digest:
+        probe = probe_project(args.root, args.exclude_globs)
+        digest = format_probe_digest(probe, args.root)
+        if not digest or probe.get("total_files", 0) < INJECT_MIN_FILES:
+            # Tiny/empty/non-code repo — nothing useful to inject. Exit clean.
+            sys.exit(0)
+        print(digest)
         sys.exit(0)
     
     # Set up token counter with specified model
