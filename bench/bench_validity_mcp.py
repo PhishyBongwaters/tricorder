@@ -66,6 +66,24 @@ REPOS = [
             },
         ],
     },
+    {
+        # Linux kernel — parity with bench_validity.py's linux slot. Same
+        # identifiers (pick_next_task/schedule/update_curr) but exercised through
+        # the MCP tricorder_detect surface rather than a repo map. Uses the
+        # tricorder_detect pre_index param to scope discovery to kernel/sched/*
+        # (mirrors CLI --pre-index pick_next_task) so the 66k-file tree isn't
+        # walked per query. Skips when the linux tree isn't present.
+        "name": "linux",
+        "root": ROOT / "linux",
+        "scan_path": ".",
+        "pre_index": "pick_next_task",  # scope to kernel/sched/* (mirrors CLI bench + tricorder_detect pre_index)
+        "tasks": [
+            {
+                "question": "Where is the scheduler entry point that selects which task to run next, and what per-entity budget helper keeps fair-class tasks current?",
+                "ground_truth": ["pick_next_task", "schedule", "update_curr"],
+            },
+        ],
+    },
 ]
 
 
@@ -88,7 +106,10 @@ async def run_repo(repo: dict) -> dict:
         total_mcp_tokens = 0
         for ident in t["ground_truth"]:
             # Use MCP detect (cheap, case-insensitive, finds definitions + refs)
-            result = await tricorder_detect(root, ident, max_results=50, include_definitions=True, include_references=False)
+            result = await tricorder_detect(root, ident, max_results=50, include_definitions=True, include_references=False,
+                                            pre_index=repo.get("pre_index"),
+                                            pre_index_max_files=repo.get("pre_index_max_files", 100),
+                                            pre_index_include_parents=repo.get("pre_index_include_parents", 0))
             if "error" in result:
                 missing.append(ident)
                 continue

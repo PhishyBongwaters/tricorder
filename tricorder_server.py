@@ -428,7 +428,10 @@ async def tricorder_detect(
     max_results: int = 50,
     context_lines: int = 2,
     include_definitions: bool = True,
-    include_references: bool = True
+    include_references: bool = True,
+    pre_index: Optional[str] = None,
+    pre_index_max_files: int = 100,
+    pre_index_include_parents: int = 0,
 ) -> Dict[str, Any]:
     """Search for identifiers in code files. Get back a list of matching identifiers with their file, line number, and context.
        When searching, just use the identifier name without any special characters, prefixes or suffixes. The search is 
@@ -464,7 +467,22 @@ async def tricorder_detect(
 
         # Find all source files in the project
         all_files = find_src_files(project_root)
-        
+        # Pre-index probe: narrow the file set to files containing the probe
+        # symbol (same fast path tricorder_scan uses). Prevents full-tree walks
+        # on huge repos (e.g. the Linux kernel) where a blind search across
+        # every file is slow and cold-cache-flaky. Mirrors --pre-index on the CLI.
+        if pre_index:
+            probed = probe_and_narrow(
+                project_root, pre_index,
+                max_files=pre_index_max_files,
+                include_parents=pre_index_include_parents,
+            )
+            if probed:
+                # probe_and_narrow returns paths relative to project_root; normalize
+                # to absolute to match find_src_files() contract (the tag loop does
+                # Path(file_path).relative_to(project_root), which raises on rel input).
+                all_files = [str(Path(project_root) / f) for f in probed]
+                
         # Get all tags (definitions and references) for all files
         all_tags = []
         for file_path in all_files:

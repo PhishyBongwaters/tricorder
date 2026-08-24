@@ -211,11 +211,12 @@ Tricorder's whole point is token savings: a compact map steers an agent to the r
 
 | Repo | Tasks | Suite | Map Tokens | Full Repo | Savings |
 |------|-------|-------|------------|-----------|---------|
-| projectm | 2/2 | bench_validity.py | 2,048 | 642,428 | 99.7% |
-| projectm | 2/2 | bench_validity_mcp.py | 2,048 | 642,428 | 99.9% (MCP) |
-| vaultwarden | 2/2 | bench_validity.py | 32,563 | 755,518 | 95.7% |
-| vaultwarden | 2/2 | bench_validity_mcp.py | 32,563 | 755,518 | 99.6% (MCP) |
-| linux | 1/1 | bench_validity.py | 39,936 | 50,352,437 | 99.9% |
+|| projectm | 2/2 | bench_validity.py | 2,048 | 642,428 | 99.7% |
+|| projectm | 2/2 | bench_validity_mcp.py | (221 + 1,358) | 642,428 | 100.0% + 99.8% (MCP) |
+|| vaultwarden | 2/2 | bench_validity.py | 32,563 | 755,518 | 95.7% |
+|| vaultwarden | 2/2 | bench_validity_mcp.py | (1,173 + 2,695) | 755,518 | 99.8% + 99.6% (MCP) |
+|| linux | 1/1 | bench_validity.py | 39,936 | 50,352,437 | 99.9% |
+|| linux | 1/1 | bench_validity_mcp.py | 5,500 | 50,352,437 | 100.0% (MCP, pre-indexed) |
 
 **RESULT: ALL TASKS PASS.**
 
@@ -223,11 +224,13 @@ Tricorder's whole point is token savings: a compact map steers an agent to the r
 - **vaultwarden** (~200 Rust files): ~96–99.8% token savings; 33K-token map covers `generate_invite`, `delete_user`, `admin_page`, `hash_password`, `verify_password_hash`, `routes`, `catchers`.
 - **linux** (Linux kernel, ~50M tokens full): the headline case. With `--pre-index pick_next_task` the map narrows to `kernel/sched/` and ships in **~1.1s** (no full-tree walk, no ctags index), covering `pick_next_task`, `schedule`, `update_curr` at 99.9% savings over the full 50M-token tree. Use a *specific* probe symbol: common words across the kernel cap out at 100 files and miss the target.
 
-**Note on reproducibility (linux):** the `--pre-index` probe uses `rg` with a cold filesystem cache on first run against a fresh checkout; a first run may transiently miss a deep-callgraph symbol (e.g. `update_curr`) if rg's warmup races the file enumeration. Re-run warms the probe (`rg` and the ctags index cache under `.tricorder.tags.cache.v1/`); on a warm cache the linux task passes deterministically (verified 3x consecutive PASS, identical 39,936 / 50,352,437 / 99.9% numbers). The CLI bench keeps the last-failure map in `bench/bench_temp/<repo>_LAST_FAIL_map.txt` for diagnosis when a run flakes.
+**Note on the linux slot (both suites):** the `--pre-index pick_next_task` probe (CLI) and the `pre_index="pick_next_task"` param on `tricorder_detect` (MCP) narrow the 66k-file kernel tree to `kernel/sched/*` (~6 files). Without scoping, MCP detect walks all 66k files per query and is cold-cache-flaky (a first run can transiently miss a deep-callgraph symbol like `update_curr`). With scoping it is deterministic — verified 3x consecutive PASS on both surfaces, identical token figures.
 
 **MCP token shape differs from CLI:** `bench_validity_mcp.py` exercises `tricorder_detect` (per-file definition records), not a serialized map — so MCP "tokens" scale with *result count* per identifier, not with a map blob. projectm MCP tokens are therefore an order of magnitude smaller than its CLI map (1358 vs 2048); vaultwarden's grow to ~2695 because `schedule`-class symbols match more definition sites. Savings are measured against the same full-repo estimate in both suites.
 
 Both CLI and MCP surfaces are effective; savings scale with repo size.
+
+**MCP `tricorder_detect` now supports `pre_index`** (mirrors CLI's `--pre-index` family: `pre_index`, `pre_index_max_files`, `pre_index_include_parents`) so per-symbol searches on huge repos (e.g. the Linux kernel) can be scoped to files containing a probe symbol instead of walking every file. The linux MCP slot uses `pre_index="pick_next_task"` to narrow to `kernel/sched/*` — runtime dropped from ~168s (full-tree walk) to ~64s, and it is no longer cold-cache-flaky.
 
 ### How to reproduce
 
@@ -237,7 +240,8 @@ Both CLI and MCP surfaces are effective; savings scale with repo size.
   # from the tricorder repo root, in its venv
   python bench/bench_validity.py               # CLI surface (all repos, incl. linux)
   python bench/bench_validity_mcp.py           # MCP surface
-  python bench/bench_validity.py linux         # linux fast-path slot only
+  python bench/bench_validity.py linux         # linux fast-path slot only (CLI surface)
+  python bench/bench_validity_mcp.py            # MCP surface (projectm + vaultwarden + linux)
   # point at your own checkouts:
   python bench/bench_validity.py --root /path/to/your/repos
   ```
@@ -295,7 +299,7 @@ The server listens over STDIO. Clients call tools with `project_root` as an abso
 | Tool | Purpose |
 |------|---------|
 | `tricorder_scan` | Generate a repository map for a project. Param `output_format` = `text` (prioritized definitions) or `mermaid` (dependency flowchart). Param `tier` = `0` (definitions only) or `1` (+ context). Also `token_limit`, `chat_files`, `other_files`, `mentioned_files`/`mentioned_idents`, `exclude_unranked`, `exclude_untagged`, `force_refresh`, `max_context_window`, `output_file`, `dry_run`, `exclude_globs` (list of glob patterns, e.g. `["vendor/**"]`, to drop third-party subtrees from the auto-scan before ranking), and `pre_index`/`pre_index_max_files`/`pre_index_include_parents` (narrow the scan to files containing a symbol — same as the CLI `--pre-index` family, for huge trees). Returns token budget fields: `token_estimate`, `full_repo_estimate`, `savings_pct`, `tier_hint`. |
-| `tricorder_detect` | Search for identifiers by name across the codebase. Case-insensitive; returns file, line, def/ref kind, context. Params `query`, `max_results`, `context_lines`, `include_definitions`, `include_references`. |
+|| `tricorder_detect` | Search for identifiers by name across the codebase. Case-insensitive; returns file, line, def/ref kind, context. Params `query`, `max_results`, `context_lines`, `include_definitions`, `include_references`, and `pre_index`/`pre_index_max_files`/`pre_index_include_parents` (scope the search to files containing a probe symbol — same as CLI `--pre-index`, for huge repos; the linux MCP bench uses `pre_index="pick_next_task"` to avoid a full-tree walk). |
 | `tricorder_symbols` | Structured symbol query with type + file filters. Returns full symbol records (name, type, file, line range, signature, docstring, language, tree-sitter kind). Params `query`, `type`, `file`, `limit` (default 50, cap 200). |
 | `tricorder_detail` | Deep-dive on a specific symbol — body, callers (cross-file refs), callees. Params `name`, `file`, `line`. |
 | `tricorder_query` | Graph traversal on the call graph. DSL: `callers('sym') depth=2 exclude=tests/** \| callees('other') type=class`. Returns `{nodes, edges, token_estimate, savings_pct}`. Replaces 5+ round-trips for call graph exploration. |
