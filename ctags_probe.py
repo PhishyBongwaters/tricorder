@@ -87,22 +87,19 @@ def probe_symbol(tags_file: Path, symbol: str) -> List[Tuple[str, int]]:
     return results
 
 def rg_fallback(project_root: str, symbol: str, lang: str = "") -> List[Tuple[str, int]]:
-    cmd = ["rg", "-n", "--no-heading", "-w", "-g", "*.c", "-g", "*.h", "-g", "*.cpp", "-g", "*.hpp", "-g", "*.cc", "-g", "*.py", "-g", "*.js", "-g", "*.ts", "-g", "*.go", "-g", "*.rs", "-g", "*.java", "-g", "*.rb", "-g", "*.php", "-g", "*.sh", "-g", "*.erl", "-g", "*.ex", "-g", "*.kt", "-g", "*.swift"]
+    # -l (files-with-matches): only file paths are emitted, so there is no
+    # path:line:content to parse. Parsing -n output is ambiguous on Windows
+    # (drive-letter colon in the path; content often contains colons too) and
+    # used to leak e.g. 'sched.h:371: *   dl_se' into the narrowed file set.
+    # line number is unused downstream (narrow_files reads only [0]).
+    cmd = ["rg", "-l", "--no-heading", "-w", "-g", "*.c", "-g", "*.h", "-g", "*.cpp", "-g", "*.hpp", "-g", "*.cc", "-g", "*.py", "-g", "*.js", "-g", "*.ts", "-g", "*.go", "-g", "*.rs", "-g", "*.java", "-g", "*.rb", "-g", "*.php", "-g", "*.sh", "-g", "*.erl", "-g", "*.ex", "-g", "*.kt", "-g", "*.swift"]
     if lang:
         cmd += ["-t", lang]
     cmd += [symbol, project_root]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
         if r.returncode == 0:
-            results = []
-            for line in r.stdout.strip().splitlines():
-                parts = line.rsplit(":", 2)
-                if len(parts) >= 2:
-                    try:
-                        results.append((parts[0], int(parts[1])))
-                    except ValueError:
-                        results.append((parts[0], 0))
-            return results
+            return [(p.rstrip("\r"), 0) for p in r.stdout.splitlines() if p.strip()]
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
     return []

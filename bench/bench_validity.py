@@ -68,6 +68,25 @@ REPOS = [
             },
         ],
     },
+    {
+        "name": "linux",
+        "root": ROOT / "linux",
+        "scan_path": ".",
+        "map_tokens": 40000,  # kernel is symbol-dense; 2048 only serializes core.c's head
+        "exclude_globs": None,
+        # Kernel-scale fast path: --pre-index narrows to files containing the
+        # symbol so a giant tree is never walked. 'pick_next_task' is narrow
+        # (~6 sched/ files) vs 'schedule' (3291 matches, wrong files). Skips
+        # this entry when the linux tree isn't present (use --root to point at
+        # a checkout).
+        "pre_index": "pick_next_task",
+        "tasks": [
+            {
+                "question": "Where is the scheduler entry point that selects which task to run next, and what per-entity budget helper keeps fair-class tasks current?",
+                "ground_truth": ["pick_next_task", "schedule", "update_curr"],
+            },
+        ],
+    },
 ]
 
 
@@ -75,12 +94,14 @@ def run(exe, args) -> subprocess.CompletedProcess:
     return subprocess.run([exe, *args], capture_output=True, text=True)
 
 
-def stats(root, scan_path, map_file, map_tokens, exclude_globs):
+def stats(root, scan_path, map_file, map_tokens, exclude_globs, pre_index=None):
     """Return (map_tokens_actual, full_repo_estimate, coverage_pct) for the repo."""
     args = ["--root", str(root), "--map-tokens", str(map_tokens),
             "--exclude-untagged", "--verbose", "--output", str(map_file), scan_path]
     if exclude_globs:
         args += ["--exclude-globs", *exclude_globs]
+    if pre_index:
+        args += ["--pre-index", pre_index]
     r = run(TRICORDER_EXE, args)
     map_tokens_actual = 0
     coverage_pct = 0.0
@@ -148,7 +169,8 @@ def run_repo(repo) -> dict:
     try:
         map_file = Path(td) / "map.txt"
         map_tokens_actual, full_repo, coverage_pct = stats(root, scan, map_file, mt,
-                                              repo.get("exclude_globs"))
+                                                      repo.get("exclude_globs"),
+                                                      repo.get("pre_index"))
         map_text = map_file.read_text(encoding="utf-8", errors="replace") if map_file.exists() else ""
 
         for t in repo["tasks"]:
@@ -197,6 +219,9 @@ def main():
         # Apply --root override so external users can point at their own checkouts
         r = dict(repo)
         r["root"] = root_override / repo["name"]
+        if not r["root"].is_dir():
+            print(f"skip {repo['name']}: root {r['root']} not present (pass --root)")
+            continue
         reports.append(run_repo(r))
         print(f"ran {repo['name']}")
 
