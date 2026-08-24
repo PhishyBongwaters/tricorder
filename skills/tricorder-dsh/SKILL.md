@@ -105,7 +105,13 @@ All MCP tools require `project_root` (absolute path) — they route against that
 - `project_root` (required), `token_limit` (default 8192), `tier`: `0` = definitions only (default) or `1` = + context lines
 - `output_format`: `text` or `mermaid`; `chat_files`, `other_files`, `mentioned_files`, `mentioned_idents`
 - `exclude_unranked`, `exclude_untagged`, `force_refresh`, `dry_run`, `max_files`
-- `exclude_globs`: list of glob patterns (relative, POSIX) to drop from the auto-scan before ranking. Use for vendored/third-party subtrees, e.g. `["vendor/**"]`. Ignored when `other_files` is explicitly provided.
+- `exclude_globs`: list of glob patterns (relative, POSIX) to drop from the auto-scan before ranking. Use for vendored/third-party subtrees, e.g. `["vendor/**"]`, `["third_party/**"]`. Ignored when `other_files` is explicitly provided.
+- `pre_index` / `pre_index_max_files` (default 100) / `pre_index_include_parents` (default 0): when `other_files` is not given, narrow the scan to files containing a probe symbol (same fast path as the CLI `--pre-index` family). Use for huge repos (e.g. the Linux kernel) to avoid a full-tree walk on every call.
+
+## tricorder_detect parameters
+
+- `project_root` (required, absolute path), `query` (required — identifier to find, case-insensitive), `max_results` (default 50), `context_lines` (default 2), `include_definitions` (default true), `include_references` (default true).
+- `pre_index` / `pre_index_max_files` (default 100) / `pre_index_include_parents` (default 0): scope the search to files containing a probe symbol instead of scanning the whole tree. Critical for huge repos — prevents a full-tree walk per query.
 
 ## CLI reference
 
