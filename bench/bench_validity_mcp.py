@@ -30,7 +30,7 @@ sys.path.insert(0, str(SRC))
 from tricorder_server import tricorder_detect, tricorder_symbols, tricorder_scan, _full_repo_tokens, _budget_fields
 
 # Default parent dir of the benchmarked repos. Override per-run with --root.
-ROOT = Path(r"D:\Projects")
+ROOT = Path(r"D:\Projects\Tricorder-Testing-Repos")
 
 # Each task: a realistic question an agent would answer while "working" on the
 # repo. ground_truth = identifiers/symbols that MUST be found by MCP tools
