@@ -150,6 +150,83 @@ REPOS = [
             },
         ],
     },
+    {
+        "name": "swift",
+        "root": ROOT / "swift",
+        "scan_path": "lib",
+        "tasks": [
+            {
+                "question": "What is the SIL function IR representation?",
+                "ground_truth": ["SILFunction"],
+            },
+        ],
+    },
+    {
+        "name": "rails",
+        "root": ROOT / "rails",
+        "scan_path": "activerecord/lib",
+        "tasks": [
+            {
+                "question": "How do you declare a belongs_to association in ActiveRecord?",
+                "ground_truth": ["belongs_to"],
+            },
+        ],
+    },
+    {
+        "name": "framework",
+        "root": ROOT / "framework",
+        "scan_path": "src",
+        "tasks": [
+            {
+                "question": "Where is the Laravel Collection class defined?",
+                "ground_truth": ["Collection"],
+            },
+        ],
+    },
+    {
+        "name": "uplink",
+        "root": ROOT / "uplink",
+        "scan_path": "src",
+        "tasks": [
+            {
+                "question": "How is the virtual filesystem shell created?",
+                "ground_truth": ["createShell"],
+            },
+        ],
+    },
+    {
+        "name": "kong",
+        "root": ROOT / "kong",
+        "scan_path": "kong",
+        "tasks": [
+            {
+                "question": "What is the kong plugin context initialization function?",
+                "ground_truth": ["setup_plugin_context"],
+            },
+        ],
+    },
+    {
+        "name": "spring-boot",
+        "root": ROOT / "spring-boot",
+        "scan_path": ".",
+        "tasks": [
+            {
+                "question": "What is the Spring Boot RunMojo class?",
+                "ground_truth": ["RunMojo"],
+            },
+        ],
+    },
+    {
+        "name": "vue",
+        "root": ROOT / "vue",
+        "scan_path": "src/v3/reactivity",
+        "tasks": [
+            {
+                "question": "How is the ref() reactivity helper defined?",
+                "ground_truth": ["ref"],
+            },
+        ],
+    },
 ]
 
 
