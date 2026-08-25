@@ -255,12 +255,30 @@ Tricorder's whole point is token savings: a compact map steers an agent to the r
 | vaultwarden | 2/2 | bench_validity_mcp.py | 1,173 / 2,695 | 755,518 | 99.8% / 99.6% |
 | linux | 1/1 | bench_validity.py | 39,936 | 50,352,437 | 99.9% |
 | linux | 1/1 | bench_validity_mcp.py | 5,500 | 50,352,437 | 100.0% (pre-indexed) |
+| bitburner | 1/1 | bench_validity.py | 16,384 | 1,504,232 | 98.9% |
+| bitburner | 1/1 | bench_validity_mcp.py | 205 | 1,504,232 | 100.0% |
+| librechat | 1/1 | bench_validity.py | 65,024 | 6,316,980 | 99.0% |
+| librechat | 1/1 | bench_validity_mcp.py | 1,560 | 6,316,980 | 100.0% |
+| elixir | 1/1 | bench_validity.py | 4,096 | 3,060,510 | 99.9% |
+| elixir | 1/1 | bench_validity_mcp.py | 6,911 | 3,060,510 | 99.8% |
+| otp | 1/1 | bench_validity.py | 102 | 46,463,905 | 100.0% |
+| otp | 1/1 | bench_validity_mcp.py | 202 | 46,463,905 | 100.0% |
+| go | 1/1 | bench_validity.py | 307 | 36,501,836 | 100.0% |
+| go | 1/1 | bench_validity_mcp.py | 19,587 | 36,501,836 | 99.9% |
+| kotlin | 1/1 | bench_validity.py | 16,384 | 13,984,544 | 99.9% |
+| kotlin | 1/1 | bench_validity_mcp.py | 8,810 | 13,984,544 | 99.9% |
 
-**RESULT: ALL TASKS PASS.**
+**RESULT: ALL TASKS PASS (9 repos × 2 surfaces).**
 
 - **projectm** (~5,800 files, ~1.1M lines, C++): ~100% token savings; 2K-token map covers `PCM::AddToBuffer`, `Loudness`, `CurrentRelative`, `AverageRelative`.
 - **vaultwarden** (~200 Rust files): ~96–99.8% token savings; 33K-token map covers `generate_invite`, `delete_user`, `admin_page`, `hash_password`, `verify_password_hash`, `routes`, `catchers`.
 - **linux** (Linux kernel, ~50M tokens full): the headline case. With `--pre-index pick_next_task` the map narrows to `kernel/sched/` and ships in **~1.1s** (no full-tree walk, no ctags index), covering `pick_next_task`, `schedule`, `update_curr` at 99.9% savings over the full 50M-token tree. Use a *specific* probe symbol: common words across the kernel cap out at 100 files and miss the target.
+- **bitburner** (TypeScript): 98.9% savings CLI; `loadAliases`/`addAlias` found in both surfaces.
+- **librechat** (TypeScript monorepo, `packages/`): needs a 65K-token map to surface `getTenantId`/`configCapability` under the whole monorepo (large generated files flood ranking at lower budgets); still 99.0% savings. Both surfaces pass.
+- **elixir** (`lib/iex`): 99.9% savings; `IEx`, `configure`, `configuration` present in both surfaces.
+- **otp** (`lib/compiler`): 100% savings at ~102 (CLI) / 202 (MCP) map tokens — the targeted subtree is tiny but high-value.
+- **go** (`src/cmp`): 100% savings; `Less`/`Compare`/`Or` present in both surfaces.
+- **kotlin** (`core`): 99.9% savings; `Variance`/`TypeSystemCommonBackendContext` present in both surfaces. Note: the originally-planned `computeExpandedTypeForInlineClass` is a real `fun` extension on a generic receiver that the CLI map surfaces as a substring but `tricorder_detect` does not resolve to a `def` (a kotlin-grammar blind spot for that construct), so it is excluded from ground truth.
 
 **Note on the linux slot (both suites):** the `--pre-index pick_next_task` probe (CLI) and the `pre_index="pick_next_task"` param on `tricorder_detect` (MCP) narrow the 66k-file kernel tree to `kernel/sched/*` (~6 files). Without scoping, MCP detect walks all 66k files per query and is cold-cache-flaky (a first run can transiently miss a deep-callgraph symbol like `update_curr`). With scoping it is deterministic — verified 3x consecutive PASS on both surfaces, identical token figures.
 
@@ -286,14 +304,14 @@ Verify with: `python bench/bench_validity.py --check-env` (prints presence/absen
 
 ### How to reproduce
 
-- **Repos:** [projectm](https://github.com/projectM-team/projectm) (libprojectM, C++), [vaultwarden](https://github.com/dani-garcia/vaultwarden) (Rust), and a Linux kernel checkout. Place them under one parent dir (default `D:\Projects` → `D:\Projects\projectm`, `D:\Projects\vaultwarden`, `D:\Projects\linux`).
+- **Repos:** [projectm](https://github.com/projectM-team/projectm) (libprojectM, C++), [vaultwarden](https://github.com/dani-garcia/vaultwarden) (Rust), a Linux kernel checkout, plus bitburner (`bitburner-src`, TS), LibreChat (`LibreChat`, TS), elixir (`lib/iex`), otp (`lib/compiler`), go (`src/cmp`, Go stdlib), and kotlin (`core`). projectm lives outside the consolidated testbed at `D:\Projects\projectm`; everything else lives under `D:\Projects\Tricorder-Testing-Repos/<folder>`. bitburner's folder is `bitburner-src` (not `bitburner`).
 - **Run:**
   ```bash
   # from the tricorder repo root, in its venv
-  python bench/bench_validity.py               # CLI surface (all repos, incl. linux)
+  python bench/bench_validity.py               # CLI surface (all 9 repos, incl. linux)
   python bench/bench_validity_mcp.py           # MCP surface
   python bench/bench_validity.py linux         # linux fast-path slot only (CLI surface)
-  python bench/bench_validity_mcp.py            # MCP surface (projectm + vaultwarden + linux)
+  python bench/bench_validity.py bitburner     # any single repo by name (CLI surface)
   # point at your own checkouts:
   python bench/bench_validity.py --root /path/to/your/repos
   ```

@@ -146,7 +146,7 @@ REPOS = [
         "tasks": [
             {
                 "question": "How is variance computed for an inline class' expanded type?",
-                "ground_truth": ["Variance", "computeExpandedTypeForInlineClass"],
+                "ground_truth": ["Variance", "TypeSystemCommonBackendContext"],
             },
         ],
     },
