@@ -166,18 +166,18 @@ REPOS = [
         ],
     },
     {
-        "name": "swift",
-        "root": ROOT / "swift",
-        "scan_path": "lib",
-        "map_tokens": 16384,
-        "exclude_globs": None,
-        "tasks": [
-            {
-                "question": "What is the SIL function IR representation?",
-                "ground_truth": ["SILFunction"],
-            },
-        ],
-    },
+            "name": "swift",
+            "root": ROOT / "swift",
+            "scan_path": "lib",
+            "map_tokens": 65000,
+            "exclude_globs": None,
+            "tasks": [
+                {
+                    "question": "What is the SIL function IR representation?",
+                    "ground_truth": ["SILFunction"],
+                },
+            ],
+        },
     {
         "name": "rails",
         "root": ROOT / "rails",
