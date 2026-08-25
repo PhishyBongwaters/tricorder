@@ -1,5 +1,5 @@
 ---
-name: tricorder
+name: codebase-tricorder
 description: Use tricorder to map a codebase (symbols, call graphs, signatures) without reading every file. Highest-value when exploring an unfamiliar repo, locating a definition, or summarizing structure.
 ---
 
