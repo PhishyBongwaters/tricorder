@@ -87,6 +87,84 @@ REPOS = [
             },
         ],
     },
+    {
+        "name": "bitburner",
+        "root": ROOT / "bitburner",
+        "scan_path": "src",
+        "map_tokens": 16384,
+        "exclude_globs": None,
+        "tasks": [
+            {
+                "question": "How do you register and invoke command aliases in bitburner scripts/terminal?",
+                "ground_truth": ["loadAliases", "addAlias"],
+            },
+        ],
+    },
+    {
+        "name": "librechat",
+        "root": ROOT / "LibreChat",
+        "scan_path": "packages",
+        "map_tokens": 65000,
+        "exclude_globs": None,
+        "tasks": [
+            {
+                "question": "How does LibreChat resolve the current tenant/user identity in a request context?",
+                "ground_truth": ["getTenantId", "configCapability"],
+            },
+        ],
+    },
+    {
+        "name": "elixir",
+        "root": ROOT / "elixir",
+        "scan_path": "lib/iex",
+        "map_tokens": 4096,
+        "exclude_globs": None,
+        "tasks": [
+            {
+                "question": "How do you configure the IEx interactive shell options?",
+                "ground_truth": ["IEx", "configure", "configuration"],
+            },
+        ],
+    },
+    {
+        "name": "otp",
+        "root": ROOT / "otp",
+        "scan_path": "lib/compiler",
+        "map_tokens": 16384,
+        "exclude_globs": None,
+        "tasks": [
+            {
+                "question": "What is the OTP compiler smoke-test entry and the mix project representation?",
+                "ground_truth": ["Smoke", "MixProject"],
+            },
+        ],
+    },
+    {
+        "name": "go",
+        "root": ROOT / "go",
+        "scan_path": "src/cmp",
+        "map_tokens": 4096,
+        "exclude_globs": None,
+        "tasks": [
+            {
+                "question": "What comparison operators/helpers does the cmp package provide?",
+                "ground_truth": ["Less", "Compare", "Or"],
+            },
+        ],
+    },
+    {
+        "name": "kotlin",
+        "root": ROOT / "kotlin",
+        "scan_path": "core",
+        "map_tokens": 16384,
+        "exclude_globs": None,
+        "tasks": [
+            {
+                "question": "How is variance computed for an inline class' expanded type?",
+                "ground_truth": ["Variance", "computeExpandedTypeForInlineClass"],
+            },
+        ],
+    },
 ]
 
 
@@ -251,6 +329,9 @@ def main():
         if repo["name"] == "projectm":
             # projectm lives outside the consolidated testbed parent dir
             r["root"] = Path(r"D:\Projects\projectm")
+        elif repo["name"] == "bitburner":
+            # bitburner folder name differs from repo key
+            r["root"] = root_override / "bitburner-src"
         else:
             r["root"] = root_override / repo["name"]
         if not r["root"].is_dir():

@@ -84,6 +84,72 @@ REPOS = [
             },
         ],
     },
+    {
+        "name": "bitburner",
+        "root": ROOT / "bitburner",
+        "scan_path": "src",
+        "tasks": [
+            {
+                "question": "How do you register and invoke command aliases in bitburner scripts/terminal?",
+                "ground_truth": ["loadAliases", "addAlias"],
+            },
+        ],
+    },
+    {
+        "name": "librechat",
+        "root": ROOT / "LibreChat",
+        "scan_path": "packages",
+        "tasks": [
+            {
+                "question": "How does LibreChat resolve the current tenant/user identity in a request context?",
+                "ground_truth": ["getTenantId", "configCapability"],
+            },
+        ],
+    },
+    {
+        "name": "elixir",
+        "root": ROOT / "elixir",
+        "scan_path": "lib/iex",
+        "tasks": [
+            {
+                "question": "How do you configure the IEx interactive shell options?",
+                "ground_truth": ["IEx", "configure", "configuration"],
+            },
+        ],
+    },
+    {
+        "name": "otp",
+        "root": ROOT / "otp",
+        "scan_path": "lib/compiler",
+        "tasks": [
+            {
+                "question": "What is the OTP compiler smoke-test entry and the mix project representation?",
+                "ground_truth": ["Smoke", "MixProject"],
+            },
+        ],
+    },
+    {
+        "name": "go",
+        "root": ROOT / "go",
+        "scan_path": "src/cmp",
+        "tasks": [
+            {
+                "question": "What comparison operators/helpers does the cmp package provide?",
+                "ground_truth": ["Less", "Compare", "Or"],
+            },
+        ],
+    },
+    {
+        "name": "kotlin",
+        "root": ROOT / "kotlin",
+        "scan_path": "core",
+        "tasks": [
+            {
+                "question": "How is variance computed for an inline class' expanded type?",
+                "ground_truth": ["Variance", "computeExpandedTypeForInlineClass"],
+            },
+        ],
+    },
 ]
 
 
@@ -179,6 +245,9 @@ async def main():
         if repo["name"] == "projectm":
             # projectm lives outside the consolidated testbed parent dir
             r["root"] = Path(r"D:\Projects\projectm")
+        elif repo["name"] == "bitburner":
+            # bitburner folder name differs from repo key
+            r["root"] = root_override / "bitburner-src"
         else:
             r["root"] = root_override / repo["name"]
         reports.append(await run_repo(r))
