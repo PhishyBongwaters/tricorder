@@ -338,7 +338,7 @@ def repo_budget(project_root: str, token_estimate: int,
 # on a kernel-scale tree). Designed so Hermes and DSH inject byte-identical
 # turn-0 content from this one code path.
 
-INJECT_MIN_FILES = 200  # below this many code files, skip the digest entirely
+INJECT_MIN_FILES = 0  # gate removed — probe always injected if code files exist
 
 CODE_EXTENSIONS = {
     ".py": "python", ".rs": "rust", ".c": "c", ".h": "cpp", ".cpp": "cpp",

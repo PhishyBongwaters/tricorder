@@ -318,8 +318,8 @@ Examples:
     if args.probe_digest:
         probe = probe_project(args.root, args.exclude_globs)
         digest = format_probe_digest(probe, args.root)
-        if not digest or probe.get("total_files", 0) < INJECT_MIN_FILES:
-            # Tiny/empty/non-code repo — nothing useful to inject. Exit clean.
+        if not digest or probe.get("total_files", 0) == 0:
+            # Truly empty/non-code repo — nothing useful to inject. Exit clean.
             sys.exit(0)
         print(digest)
         sys.exit(0)
