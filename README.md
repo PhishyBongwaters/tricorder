@@ -249,12 +249,12 @@ Tricorder's whole point is token savings: a compact map steers an agent to the r
 
 | Repo | Tasks | Suite | Map Tokens | Full Repo | Savings |
 |------|-------|-------|------------|-----------|---------|
-|| projectm | 2/2 | bench_validity.py | 2,048 | 642,428 | 99.7% |
-|| projectm | 2/2 | bench_validity_mcp.py | (221 + 1,358) | 642,428 | 100.0% + 99.8% (MCP) |
-|| vaultwarden | 2/2 | bench_validity.py | 32,563 | 755,518 | 95.7% |
-|| vaultwarden | 2/2 | bench_validity_mcp.py | (1,173 + 2,695) | 755,518 | 99.8% + 99.6% (MCP) |
-|| linux | 1/1 | bench_validity.py | 39,936 | 50,352,437 | 99.9% |
-|| linux | 1/1 | bench_validity_mcp.py | 5,500 | 50,352,437 | 100.0% (MCP, pre-indexed) |
+| projectm | 2/2 | bench_validity.py | 2,048 | 642,428 | 99.7% |
+| projectm | 2/2 | bench_validity_mcp.py | 221 / 1,358 | 642,428 | 100.0% / 99.8% |
+| vaultwarden | 2/2 | bench_validity.py | 32,563 | 755,518 | 95.7% |
+| vaultwarden | 2/2 | bench_validity_mcp.py | 1,173 / 2,695 | 755,518 | 99.8% / 99.6% |
+| linux | 1/1 | bench_validity.py | 39,936 | 50,352,437 | 99.9% |
+| linux | 1/1 | bench_validity_mcp.py | 5,500 | 50,352,437 | 100.0% (pre-indexed) |
 
 **RESULT: ALL TASKS PASS.**
 
