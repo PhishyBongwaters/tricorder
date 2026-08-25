@@ -267,8 +267,22 @@ Tricorder's whole point is token savings: a compact map steers an agent to the r
 | go | 1/1 | bench_validity_mcp.py | 19,587 | 36,501,836 | 99.9% |
 | kotlin | 1/1 | bench_validity.py | 16,384 | 13,984,544 | 99.9% |
 | kotlin | 1/1 | bench_validity_mcp.py | 8,810 | 13,984,544 | 99.9% |
+| swift | 1/1 | bench_validity.py | 65,000 | 38,017,250 | 99.8% |
+| swift | 1/1 | bench_validity_mcp.py | 5,793 | 38,017,250 | 100.0% |
+| rails | 1/1 | bench_validity.py | 16,384 | 5,445,557 | 99.7% |
+| rails | 1/1 | bench_validity_mcp.py | 6,601 | 5,445,557 | 99.9% |
+| framework | 1/1 | bench_validity.py | 16,384 | 4,218,620 | 99.6% |
+| framework | 1/1 | bench_validity_mcp.py | 5,583 | 4,218,620 | 99.9% |
+| uplink | 1/1 | bench_validity.py | 65,000 | 4,788 | 0.0% |
+| uplink | 1/1 | bench_validity_mcp.py | 5 | 4,788 | 99.9% |
+| kong | 1/1 | bench_validity.py | 16,384 | 3,440,558 | 99.5% |
+| kong | 1/1 | bench_validity_mcp.py | 97 | 3,440,558 | 100.0% |
+| spring-boot | 1/1 | bench_validity.py | 65,000 | 487,802 | 86.7% |
+| spring-boot | 1/1 | bench_validity_mcp.py | 448 | 487,802 | 99.9% |
+| vue | 1/1 | bench_validity.py | 1,433 | 549,971 | 99.7% |
+| vue | 1/1 | bench_validity_mcp.py | 5,738 | 549,971 | 99.0% |
 
-**RESULT: ALL TASKS PASS (9 repos × 2 surfaces).**
+**RESULT: ALL TASKS PASS (16 repos × 2 surfaces, except uplink CLI map coverage).**
 
 - **projectm** (~5,800 files, ~1.1M lines, C++): ~100% token savings; 2K-token map covers `PCM::AddToBuffer`, `Loudness`, `CurrentRelative`, `AverageRelative`.
 - **vaultwarden** (~200 Rust files): ~96–99.8% token savings; 33K-token map covers `generate_invite`, `delete_user`, `admin_page`, `hash_password`, `verify_password_hash`, `routes`, `catchers`.
