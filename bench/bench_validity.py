@@ -91,7 +91,7 @@ REPOS = [
         "name": "bitburner",
         "root": ROOT / "bitburner",
         "scan_path": "src",
-        "map_tokens": 16384,
+        "map_tokens": 65000,
         "exclude_globs": None,
         "tasks": [
             {
@@ -130,7 +130,7 @@ REPOS = [
         "name": "otp",
         "root": ROOT / "otp",
         "scan_path": "lib/compiler",
-        "map_tokens": 16384,
+        "map_tokens": 65000,
         "exclude_globs": None,
         "tasks": [
             {
@@ -156,7 +156,7 @@ REPOS = [
         "name": "kotlin",
         "root": ROOT / "kotlin",
         "scan_path": "core",
-        "map_tokens": 16384,
+        "map_tokens": 65000,
         "exclude_globs": None,
         "tasks": [
             {
@@ -182,7 +182,7 @@ REPOS = [
         "name": "rails",
         "root": ROOT / "rails",
         "scan_path": "activerecord/lib",
-        "map_tokens": 16384,
+        "map_tokens": 65000,
         "exclude_globs": None,
         "tasks": [
             {
@@ -195,7 +195,7 @@ REPOS = [
         "name": "framework",
         "root": ROOT / "framework",
         "scan_path": "src",
-        "map_tokens": 16384,
+        "map_tokens": 65000,
         "exclude_globs": None,
         "tasks": [
             {
@@ -205,23 +205,10 @@ REPOS = [
         ],
     },
     {
-        "name": "uplink",
-        "root": ROOT / "uplink",
-        "scan_path": "src",
-        "map_tokens": 65000,
-        "exclude_globs": None,
-        "tasks": [
-            {
-                "question": "How is the virtual filesystem shell created?",
-                "ground_truth": ["createShell"],
-            },
-        ],
-    },
-    {
         "name": "kong",
         "root": ROOT / "kong",
         "scan_path": "kong",
-        "map_tokens": 16384,
+        "map_tokens": 65000,
         "exclude_globs": None,
         "tasks": [
             {

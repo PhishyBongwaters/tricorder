@@ -1,0 +1,43 @@
+ran projectm
+ran vaultwarden
+ran linux
+ran bitburner
+ran librechat
+ran elixir
+ran otp
+ran go
+ran kotlin
+ran swift
+ran rails
+ran framework
+ran uplink
+ran kong
+ran spring-boot
+ran vue
+
+repo          task# PASS? map_tok   full_tok    savings  
+------------------------------------------------------------
+projectm      1     PASS  2048      642428      99.7     
+projectm      2     PASS  2048      642428      99.7     
+vaultwarden   1     PASS  32563     755518      95.7     
+vaultwarden   2     PASS  32563     755518      95.7     
+linux         1     PASS  39936     50352437    99.9     
+bitburner     1     PASS  16384     1504232     98.9     
+librechat     1     PASS  65024     6316980     99.0     
+elixir        1     PASS  4096      3060510     99.9     
+otp           1     PASS  102       46463905    100.0    
+go            1     PASS  307       36501836    100.0    
+kotlin        1     PASS  16384     13984544    99.9     
+swift         1     PASS  64409     38017250    99.8     
+rails         1     PASS  16384     5445557     99.7     
+framework     1     PASS  16384     4218620     99.6     
+uplink        1     FAIL  102       4788        97.9     
+kong          1     FAIL  16384     3440558     99.5     
+spring-boot   1     PASS  65024     487802      86.7     
+vue           1     PASS  1433      549971      99.7     
+------------------------------------------------------------
+RESULT: SOME TASKS FAIL
+  [uplink] MISSING in map: ['createShell']
+      Q: How is the virtual filesystem shell created?
+  [kong] MISSING in map: ['setup_plugin_context']
+      Q: What is the kong plugin context initialization function?

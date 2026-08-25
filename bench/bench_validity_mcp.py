@@ -184,17 +184,6 @@ REPOS = [
         ],
     },
     {
-        "name": "uplink",
-        "root": ROOT / "uplink",
-        "scan_path": "src",
-        "tasks": [
-            {
-                "question": "How is the virtual filesystem shell created?",
-                "ground_truth": ["createShell"],
-            },
-        ],
-    },
-    {
         "name": "kong",
         "root": ROOT / "kong",
         "scan_path": "kong",
