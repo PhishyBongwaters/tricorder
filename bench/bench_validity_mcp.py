@@ -176,7 +176,11 @@ async def main():
         if only and only != repo["name"]:
             continue
         r = dict(repo)
-        r["root"] = root_override / repo["name"]
+        if repo["name"] == "projectm":
+            # projectm lives outside the consolidated testbed parent dir
+            r["root"] = Path(r"D:\Projects\projectm")
+        else:
+            r["root"] = root_override / repo["name"]
         reports.append(await run_repo(r))
         print(f"ran {repo['name']}")
 

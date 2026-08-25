@@ -28,7 +28,7 @@ TRICORDER_EXE = os.environ.get(
     "TRICORDER_EXE", str(Path(sys.executable).with_name("tricorder.exe"))
 )
 # Default parent dir of the benchmarked repos. Override per-run with --root.
-ROOT = Path(r"D:\Projects")
+ROOT = Path(r"D:\Projects\Tricorder-Testing-Repos")
 
 # Each task: a realistic question an agent would answer while "working" on the
 # repo. ground_truth = identifiers/symbols/icons that MUST appear in the map
@@ -248,7 +248,11 @@ def main():
             continue
         # Apply --root override so external users can point at their own checkouts
         r = dict(repo)
-        r["root"] = root_override / repo["name"]
+        if repo["name"] == "projectm":
+            # projectm lives outside the consolidated testbed parent dir
+            r["root"] = Path(r"D:\Projects\projectm")
+        else:
+            r["root"] = root_override / repo["name"]
         if not r["root"].is_dir():
             print(f"skip {repo['name']}: root {r['root']} not present (pass --root)")
             continue
