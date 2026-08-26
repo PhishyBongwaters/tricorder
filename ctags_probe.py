@@ -3,6 +3,7 @@
 ctags probe — fast symbol index for repo filtering before tree-sitter.
 """
 
+import hashlib
 import subprocess
 import os
 import sys
@@ -13,6 +14,20 @@ import fnmatch
 
 CTAGS_MAX_SOURCE_FILES = 20000
 
+
+def _get_repo_hash(project_root: str) -> str:
+    """Generate a stable hash for the repository root path."""
+    return hashlib.sha256(Path(project_root).resolve().as_posix().encode()).hexdigest()[:16]
+
+
+def _get_tags_cache_path(project_root: str) -> Path:
+    """Get the external cache path for the ctags index."""
+    repo_hash = _get_repo_hash(project_root)
+    cache_dir = Path.home() / ".tricorder" / "indexes" / repo_hash
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / "tags"
+
+
 def _count_source_files(project_root: str) -> int:
     root = Path(project_root)
     n = 0
@@ -21,6 +36,7 @@ def _count_source_files(project_root: str) -> int:
         if n > CTAGS_MAX_SOURCE_FILES:
             return n + 1
     return n
+
 
 def _run_ctags(project_root: str, tags_file: Path) -> bool:
     if _count_source_files(project_root) > CTAGS_MAX_SOURCE_FILES:
@@ -42,8 +58,9 @@ def _run_ctags(project_root: str, tags_file: Path) -> bool:
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
+
 def ensure_ctags_index(project_root: str, max_age_days: int = 7) -> Optional[Path]:
-    tags_file = Path(project_root) / "tags"
+    tags_file = _get_tags_cache_path(project_root)
     if tags_file.exists():
         # Refuse oversized/stale indexes: a sane per-repo tags index is a few MB.
         # A multi-hundred-MB one is a corrupt walk of a huge tree — never trust it.
