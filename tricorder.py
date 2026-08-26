@@ -513,7 +513,12 @@ Examples:
                 output_text = map_content
             
             if args.output:
-                Path(args.output).write_text(output_text, encoding="utf-8")
+                try:
+                    Path(args.output).write_text(output_text, encoding="utf-8")
+                except OSError as e:
+                    tool_error(f"Could not write --output {args.output}: {e}")
+                    print(output_text)  # ponytail: stdout safety net, map is never lost
+                    sys.exit(1)
             else:
                 print(output_text)
         else:
