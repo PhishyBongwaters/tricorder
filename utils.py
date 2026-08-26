@@ -9,11 +9,8 @@ from typing import Optional, List
 from collections import namedtuple
 from dataclasses import dataclass, asdict
 
-try:
-    import tiktoken
-except ImportError:
-    sys.stderr.write("tiktoken is required. Install with: pip install tiktoken\n")
-    sys.exit(1)
+# tiktoken is optional — only needed for count_tokens(). Imported lazily.
+_tiktoken = None
 
 # Tag namedtuple for storing parsed code definitions and references
 Tag = namedtuple("Tag", "rel_fname fname line name kind".split())
@@ -48,15 +45,22 @@ class SymbolRecord:
 
 
 def count_tokens(text: str, model_name: str = "gpt-4") -> int:
-    """Count tokens in text using tiktoken."""
+    """Count tokens in text using tiktoken (lazy import)."""
+    global _tiktoken
+    if _tiktoken is None:
+        try:
+            import tiktoken as _tiktoken_mod
+            _tiktoken = _tiktoken_mod
+        except ImportError:
+            raise RuntimeError("tiktoken is required for token counting. Install with: pip install tiktoken")
     if not text:
         return 0
 
     try:
-        encoding = tiktoken.encoding_for_model(model_name)
+        encoding = _tiktoken.encoding_for_model(model_name)
     except KeyError:
         # Fallback for unknown models
-        encoding = tiktoken.get_encoding("cl100k_base")
+        encoding = _tiktoken.get_encoding("cl100k_base")
 
     return len(encoding.encode(text))
 
