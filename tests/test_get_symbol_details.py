@@ -130,12 +130,17 @@ class TestGetSymbolDetails(unittest.TestCase):
 
     def test_line_disambiguation(self):
         """Line parameter narrows to the correct symbol."""
-        # count_tokens is at line 50 in utils.py (AST-reported)
+        # ponytail: read the real line so the test survives utils.py edits
+        utils_path = Path(self.project_root) / "utils.py"
+        real_line = next(
+            i + 1 for i, ln in enumerate(utils_path.read_text(encoding="utf-8").splitlines())
+            if ln.startswith("def count_tokens")
+        )
         result = asyncio.run(tricorder_detail(
             project_root=self.project_root,
             file="utils.py",
             name="count_tokens",
-            line=50
+            line=real_line
         ))
         self.assertNotIn("error", result)
         self.assertEqual(result["symbol"]["name"], "count_tokens")
