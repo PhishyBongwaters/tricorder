@@ -3,6 +3,7 @@ import json
 import os
 import logging
 import sys
+from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Set
@@ -60,8 +61,30 @@ mcp = FastMCP("tricorder")
 
 # ponytail: advisory tier tracker — survives across calls within a server process.
 # Can't enforce agent behavior (MCP is stateless per call) but can warn in the response.
-# Bounded LRU cache prevents unbounded growth across many project roots.
+# Bounded LRU (OrderedDict) prevents unbounded growth across many project roots.
 _MAX_TIER_HISTORY = 128
+
+_tier_history_store: "OrderedDict[str, dict]" = OrderedDict()
+
+
+def _tier_history_get(project_root: str) -> Optional[dict]:
+    """Get tier history for a project root (LRU-bounded)."""
+    if project_root in _tier_history_store:
+        # Move to end (most recently used)
+        _tier_history_store.move_to_end(project_root)
+        return _tier_history_store[project_root]
+    return None
+
+
+def _tier_history_set(project_root: str, value: dict) -> None:
+    """Set tier history for a project root (LRU-bounded with explicit eviction)."""
+    if project_root in _tier_history_store:
+        # Update existing - move to end
+        _tier_history_store.move_to_end(project_root)
+    elif len(_tier_history_store) >= _MAX_TIER_HISTORY:
+        # Evict least recently used
+        _tier_history_store.popitem(last=False)
+    _tier_history_store[project_root] = value
 
 
 def _validate_project_root(project_root: str) -> tuple[Optional[str], Optional[Path]]:
@@ -99,20 +122,6 @@ def _validate_file_containment(file_path: str, project_root: Path) -> Optional[s
     except ValueError:
         return f"File path escapes project root: {file_path}"
     return None
-
-@lru_cache(maxsize=_MAX_TIER_HISTORY)
-def _tier_history_get(project_root: str) -> Optional[dict]:
-    """Get tier history for a project root (LRU-bounded)."""
-    return _tier_history_store.get(project_root)
-
-_tier_history_store: Dict[str, dict] = {}  # {project_root: {"last_tier": int, "last_format": str, "map_file": str}}
-
-def _tier_history_set(project_root: str, value: dict) -> None:
-    """Set tier history for a project root (LRU-bounded via cache eviction on get)."""
-    _tier_history_store[project_root] = value
-    # Touch the cache to keep this entry fresh
-    _tier_history_get(project_root)
-
 
 def _savings_pct(token_estimate: int, full_repo_estimate: int) -> float:
     """% of full-repo context saved by a token estimate. 0 when repo is empty or
