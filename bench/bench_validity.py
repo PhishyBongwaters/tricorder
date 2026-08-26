@@ -23,12 +23,24 @@ import argparse, json, os, re, subprocess, sys, tempfile, shutil
 from pathlib import Path
 
 # When run from the project's venv, tricorder.exe lives next to python.exe.
-# Override with the TRICORDER_EXE env var if your layout differs.
+# Override with the TRICORDER_EXE env var if your layout differs. If that
+# console-script isn't installed (e.g. running from the repo checkout), run()
+# falls back to `python tricorder.py`.
 TRICORDER_EXE = os.environ.get(
     "TRICORDER_EXE", str(Path(sys.executable).with_name("tricorder.exe"))
 )
+TRICORDER_SCRIPT = str(Path(__file__).resolve().parent.parent / "tricorder.py")
+
 # Default parent dir of the benchmarked repos. Override per-run with --root.
 ROOT = Path(r"D:\Projects\Tricorder-Testing-Repos")
+
+
+def _exe_cmd(args):
+    """Build the CLI argv. Uses TRICORDER_EXE if it exists, else python tricorder.py."""
+    if os.path.exists(TRICORDER_EXE):
+        return [TRICORDER_EXE, *args]
+    return [sys.executable, TRICORDER_SCRIPT, *args]
+
 
 # Each task: a realistic question an agent would answer while "working" on the
 # repo. ground_truth = identifiers/symbols/icons that MUST appear in the map
@@ -243,22 +255,77 @@ REPOS = [
             },
         ],
     },
+    # Issue #40: Chromium + LLVM are the remaining "monster" scale targets.
+    # They are NOT in the default testbed and are skipped unless checked out
+    # under --root. When present they exercise the huge C++ dependency graph
+    # (Chromium) and complex templates + generated code (LLVM).
+    {
+        "name": "chromium",
+        "root": ROOT / "chromium",
+        "scan_path": ".",
+        "map_tokens": 65000,
+        "exclude_globs": None,
+        "monster": True,  # requires a multi-GB checkout; skipped silently if absent
+        "tasks": [
+            {
+                "question": "Where is the Blink scheduler / frame scheduler entry point?",
+                "ground_truth": ["FrameScheduler", "Scheduler"],
+            },
+        ],
+    },
+    {
+        "name": "llvm",
+        "root": ROOT / "llvm-project",
+        "scan_path": "llvm",
+        "map_tokens": 65000,
+        "exclude_globs": None,
+        "monster": True,
+        "tasks": [
+            {
+                "question": "Where is the LLVM IRBuilder class defined?",
+                "ground_truth": ["IRBuilder", "IRBuilderBase"],
+            },
+        ],
+    },
 ]
 
 
 def run(exe, args) -> subprocess.CompletedProcess:
-    return subprocess.run([exe, *args], capture_output=True, text=True)
+    # `exe` is ignored; argv resolved by _exe_cmd so the fallback works even
+    # when the tricorder.exe console-script isn't installed.
+    return subprocess.run(_exe_cmd(args), capture_output=True, text=True)
+
+
+def _index_bytes(root):
+    """Size in bytes of the generated ctags/tree-sitter index cache for root."""
+    cache = os.environ.get("TRICORDER_CACHE_HOME")
+    base = Path(cache) if cache else (Path(root) / ".tricorder")
+    indexes = base / "indexes"
+    if not indexes.exists():
+        return 0
+    total = 0
+    for p in indexes.rglob("*"):
+        if p.is_file():
+            total += p.stat().st_size
+    return total
 
 
 def stats(root, scan_path, map_file, map_tokens, exclude_globs, pre_index=None):
-    """Return (map_tokens_actual, full_repo_estimate, coverage_pct) for the repo."""
+    """Return a metrics dict for the repo scan.
+
+    Captures (issue #40): scan_time_s, map_tokens_actual, full_repo_estimate,
+    savings_pct, coverage_pct, index_bytes.
+    """
     args = ["--root", str(root), "--map-tokens", str(map_tokens),
             "--exclude-untagged", "--verbose", "--output", str(map_file), scan_path]
     if exclude_globs:
         args += ["--exclude-globs", *exclude_globs]
     if pre_index:
         args += ["--pre-index", pre_index]
+    import time
+    t0 = time.time()
     r = run(TRICORDER_EXE, args)
+    scan_time_s = round(time.time() - t0, 2)
     map_tokens_actual = 0
     coverage_pct = 0.0
     # Parse the CLI output for actual map tokens and coverage
@@ -283,7 +350,16 @@ def stats(root, scan_path, map_file, map_tokens, exclude_globs, pre_index=None):
                 if match:
                     coverage_pct = float(match.group(3))
     full_repo = repo_budget(root, exclude_globs)
-    return map_tokens_actual, full_repo, coverage_pct
+    savings_pct = round(max(0.0, 1 - map_tokens_actual / full_repo) * 100, 1) if full_repo else 0.0
+    index_bytes = _index_bytes(root)
+    return {
+        "scan_time_s": scan_time_s,
+        "map_tokens_actual": map_tokens_actual,
+        "full_repo_estimate": full_repo,
+        "savings_pct": savings_pct,
+        "coverage_pct": coverage_pct,
+        "index_bytes": index_bytes,
+    }
 
 
 def repo_budget(root, exclude_globs):
@@ -324,9 +400,12 @@ def run_repo(repo) -> dict:
     td = tempfile.mkdtemp(prefix=f"bench_{name}_", dir=bench_dir)
     try:
         map_file = Path(td) / "map.txt"
-        map_tokens_actual, full_repo, coverage_pct = stats(root, scan, map_file, mt,
-                                                      repo.get("exclude_globs"),
-                                                      repo.get("pre_index"))
+        m = stats(root, scan, map_file, mt,
+                  repo.get("exclude_globs"),
+                  repo.get("pre_index"))
+        map_tokens_actual = m["map_tokens_actual"]
+        full_repo = m["full_repo_estimate"]
+        coverage_pct = m["coverage_pct"]
         map_text = map_file.read_text(encoding="utf-8", errors="replace") if map_file.exists() else ""
 
         for t in repo["tasks"]:
@@ -343,10 +422,14 @@ def run_repo(repo) -> dict:
 
         report["map_tokens"] = map_tokens_actual
         report["full_repo_tokens"] = full_repo
-        report["savings_pct"] = round(
-            max(0.0, 1 - map_tokens_actual / full_repo) * 100, 1
-        ) if full_repo else 0.0
+        report["savings_pct"] = m["savings_pct"]
         report["coverage_pct"] = coverage_pct
+        # Issue #40 metrics (carried for --metrics output)
+        report["metrics"] = {
+            "scan_time_s": m["scan_time_s"],
+            "index_bytes": m["index_bytes"],
+            "full_repo_tokens": full_repo,
+        }
 
     finally:
         # Debug: on failure, keep the map so we can inspect what the matcher saw.
@@ -393,6 +476,9 @@ def main():
     p.add_argument("--check-env",
                    action="store_true", default=False,
                    help="print presence/absence of rg, ctags, git, tree-sitter and exit")
+    p.add_argument("--metrics",
+                   action="store_true", default=False,
+                   help="emit a JSON metrics table (scan_time_s, index_bytes, token reduction) per repo")
     args = p.parse_args()
     if args.check_env:
         return check_env()
@@ -413,10 +499,31 @@ def main():
         else:
             r["root"] = root_override / repo["name"]
         if not r["root"].is_dir():
+            if repo.get("monster"):
+                # monster scale targets need multi-GB checkouts; skip silently
+                continue
             print(f"skip {repo['name']}: root {r['root']} not present (pass --root)")
             continue
         reports.append(run_repo(r))
         print(f"ran {repo['name']}")
+
+    if args.metrics:
+        import json as _json
+        metrics_rows = []
+        for r in reports:
+            mt = r.get("metrics", {})
+            metrics_rows.append({
+                "repo": r["name"],
+                "scan_time_s": mt.get("scan_time_s"),
+                "index_bytes": mt.get("index_bytes"),
+                "map_tokens": r.get("map_tokens"),
+                "full_repo_tokens": mt.get("full_repo_tokens"),
+                "savings_pct": r.get("savings_pct"),
+                "coverage_pct": r.get("coverage_pct"),
+            })
+        print()
+        print(_json.dumps(metrics_rows, indent=2))
+        return 0
 
     print()
     print(f"{'repo':<14}{'task#':<6}{'PASS?':<6}{'map_tok':<10}{'full_tok':<12}{'savings':<9}")
