@@ -4,6 +4,7 @@ ctags probe — fast symbol index for repo filtering before tree-sitter.
 """
 
 import hashlib
+import json
 import subprocess
 import os
 import sys
@@ -26,6 +27,77 @@ def _get_tags_cache_path(project_root: str) -> Path:
     cache_dir = Path.home() / ".tricorder" / "indexes" / repo_hash
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir / "tags"
+
+
+def _get_meta_cache_path(project_root: str) -> Path:
+    """Get the external cache path for the ctags index metadata."""
+    repo_hash = _get_repo_hash(project_root)
+    cache_dir = Path.home() / ".tricorder" / "indexes" / repo_hash
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / "tags.meta.json"
+
+
+def _get_git_commit(project_root: str) -> Optional[str]:
+    """Get the current git commit hash for the repository."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_root, capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _read_tags_meta(meta_path: Path) -> Optional[dict]:
+    """Read and parse the tags metadata file."""
+    try:
+        if meta_path.exists():
+            return json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return None
+
+
+def _write_tags_meta(meta_path: Path, meta: dict) -> None:
+    """Write the tags metadata file."""
+    try:
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _is_meta_stale(meta: dict, project_root: str, ctags_excludes: List[str], max_age_days: int) -> bool:
+    """Check if the ctags index metadata is stale.
+    
+    Invalidates on:
+    - Missing or malformed metadata
+    - Git commit mismatch (if git available)
+    - File count mismatch (using same discovery logic)
+    - Age exceeds max_age_days
+    """
+    # Check metadata exists and has required fields
+    if not meta or "git_commit" not in meta or "file_count" not in meta or "generated" not in meta:
+        return True
+    
+    # Check age
+    age_days = (time.time() - meta["generated"]) / 86400
+    if age_days > max_age_days:
+        return True
+    
+    # Check git commit if available
+    current_commit = _get_git_commit(project_root)
+    if current_commit and meta["git_commit"] != current_commit:
+        return True
+    
+    # Check file count using same discovery logic
+    current_count = _count_source_files(project_root, exclude_globs=ctags_excludes)
+    if meta["file_count"] != current_count:
+        return True
+    
+    return False
 
 
 def _count_source_files(project_root: str, exclude_globs: Optional[List[str]] = None) -> int:
@@ -66,18 +138,39 @@ def _run_ctags(project_root: str, tags_file: Path) -> bool:
 
 def ensure_ctags_index(project_root: str, max_age_days: int = 7) -> Optional[Path]:
     tags_file = _get_tags_cache_path(project_root)
-    if tags_file.exists():
-        # Refuse oversized/stale indexes: a sane per-repo tags index is a few MB.
-        # A multi-hundred-MB one is a corrupt walk of a huge tree — never trust it.
+    meta_file = _get_meta_cache_path(project_root)
+    
+    # Exclude patterns matching the ctags command
+    ctags_excludes = [
+        "*.min.js", "*.min.css", "vendor/**", "third_party/**",
+        ".git/**", "build/**", "dist/**", "node_modules/**",
+        "__pycache__/**", "*.pyc",
+    ]
+    
+    # Check if existing index is valid using metadata
+    if tags_file.exists() and meta_file.exists():
+        # Refuse oversized indexes: a sane per-repo tags index is a few MB.
         if tags_file.stat().st_size > 100 * 1024 * 1024:
             print(f"[ctags_probe] SKIP huge existing index {tags_file} "
                   f"({tags_file.stat().st_size // (1024*1024)}MB); rg-only",
                   file=sys.stderr)
             return None
-        age_days = (time.time() - tags_file.stat().st_mtime) / 86400
-        if age_days <= max_age_days:
+        
+        meta = _read_tags_meta(meta_file)
+        if meta and not _is_meta_stale(meta, project_root, ctags_excludes, max_age_days):
             return tags_file
+    
+    # Generate new index
     if _run_ctags(project_root, tags_file):
+        # Write metadata for future invalidation
+        git_commit = _get_git_commit(project_root)
+        file_count = _count_source_files(project_root, exclude_globs=ctags_excludes)
+        meta = {
+            "git_commit": git_commit,
+            "file_count": file_count,
+            "generated": time.time(),
+        }
+        _write_tags_meta(meta_file, meta)
         return tags_file
     return None
 
