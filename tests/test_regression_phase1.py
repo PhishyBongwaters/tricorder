@@ -62,16 +62,12 @@ class TestFullRepoEstimateAccuracy(unittest.TestCase):
         self.assertEqual(r1["full_repo_estimate"], r2["full_repo_estimate"])
 
     def test_cache_file_created(self):
-        """Cache file should be created in .tricorder/cache/budget.json"""
-        cache_path = Path(self.project_root) / ".tricorder" / "cache" / "budget.json"
-        # Should exist after first call
+        """Cache file should NOT be created inside the project repo."""
+        # Verify no .tricorder dir is created inside project
+        self.assertFalse((Path(self.project_root) / ".tricorder").exists())
+        # Call should succeed without creating internal cache
         _ = repo_budget(self.project_root, 1000)
-        self.assertTrue(cache_path.exists())
-
-        import json
-        with open(cache_path) as f:
-            cache = json.load(f)
-        self.assertGreater(len(cache), 0)
+        self.assertFalse((Path(self.project_root) / ".tricorder").exists())
 
 
 class TestTierHistoryMemoryBound(unittest.TestCase):
@@ -425,13 +421,12 @@ class TestRepoBudgetCaching(unittest.TestCase):
         self.project_root = str(Path(__file__).parent.parent.resolve())
 
     def test_first_call_creates_cache(self):
-        """First call should create cache file."""
-        cache_path = Path(self.project_root) / ".tricorder" / "cache" / "budget.json"
-        if cache_path.exists():
-            cache_path.unlink()
-        
+        """First call should use external cache (not inside project)."""
+        # Verify no .tricorder dir is created inside project
+        self.assertFalse((Path(self.project_root) / ".tricorder").exists())
         repo_budget(self.project_root, 1000)
-        self.assertTrue(cache_path.exists())
+        # Still no internal cache
+        self.assertFalse((Path(self.project_root) / ".tricorder").exists())
 
     def test_second_call_uses_cache(self):
         """Second call should use cached value (same result)."""

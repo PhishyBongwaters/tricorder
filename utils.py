@@ -335,10 +335,20 @@ def detect_lang(fname: str) -> Optional[str]:
     return lang
 
 
-def _get_budget_cache_path(project_root: str) -> Path:
-    """Get path to budget cache file for a project."""
-    cache_dir = Path(project_root) / ".tricorder" / "cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+def _get_budget_cache_path(project_root: str) -> Optional[Path]:
+    """Get path to budget cache file for a project.
+
+    Returns external cache path under ~/.tricorder/cache/<repo_hash>/.
+    Returns None if the cache directory can't be created (e.g., permission
+    denied, sandbox restrictions, read-only home dir).
+    """
+    # Use external cache dir (outside repo) to avoid permission issues on read-only repos
+    repo_hash = hashlib.sha256(Path(project_root).resolve().as_posix().encode()).hexdigest()[:16]
+    cache_dir = Path.home() / ".tricorder" / "cache" / repo_hash
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError):
+        return None
     return cache_dir / "budget.json"
 
 
@@ -375,9 +385,10 @@ def calculate_full_repo_budget(project_root: str, token_estimate: int,
     cache_path = _get_budget_cache_path(project_root)
     cache_key = _get_budget_cache_key(model_name, exclude_globs)
 
-    # Try to load cached full_repo_estimate
+    # Try to load cached full_repo_estimate (cache_path may be None if cache
+    # directory can't be created, e.g. permission denied or sandbox)
     cached_full = None
-    if not force_refresh and cache_path.exists():
+    if not force_refresh and cache_path and cache_path.exists():
         try:
             cached = json.loads(cache_path.read_text(encoding="utf-8"))
             cached_full = cached.get(cache_key)
@@ -397,15 +408,16 @@ def calculate_full_repo_budget(project_root: str, token_estimate: int,
             except Exception:
                 continue
 
-        # Cache the full estimate
-        try:
-            cached = {}
-            if cache_path.exists():
-                cached = json.loads(cache_path.read_text(encoding="utf-8"))
-            cached[cache_key] = full
-            cache_path.write_text(json.dumps(cached), encoding="utf-8")
-        except Exception:
-            pass
+        # Cache the full estimate (skip if cache_path is None)
+        if cache_path:
+            try:
+                cached = {}
+                if cache_path.exists():
+                    cached = json.loads(cache_path.read_text(encoding="utf-8"))
+                cached[cache_key] = full
+                cache_path.write_text(json.dumps(cached), encoding="utf-8")
+            except Exception:
+                pass
         cached_full = full
 
     full = cached_full
