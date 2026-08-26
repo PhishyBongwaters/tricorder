@@ -421,7 +421,7 @@ async def tricorder_scan(
                 "tags": len(ranked_tags),
                 "tokens_per_tag": round(tokens_per_tag, 0),
                 "tags_at_budget": tags_at_budget,
-                "full_repo_estimate": int(tokens_per_tag * len(ranked_tags)),
+                "estimated_index_tokens": int(tokens_per_tag * len(ranked_tags)),
                 "tier": tier,
                 "format": output_format,
                 "report": report_dict,
