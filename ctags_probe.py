@@ -28,25 +28,30 @@ def _get_tags_cache_path(project_root: str) -> Path:
     return cache_dir / "tags"
 
 
-def _count_source_files(project_root: str) -> int:
-    root = Path(project_root)
-    n = 0
-    for _ in root.rglob("*"):
-        n += 1
-        if n > CTAGS_MAX_SOURCE_FILES:
-            return n + 1
-    return n
+def _count_source_files(project_root: str, exclude_globs: Optional[List[str]] = None) -> int:
+    """Count discoverable source files using shared discovery logic.
+    
+    Uses the same filtering as tricorder: gitignore, built-in skip dirs,
+    vendor/, binary/media/archive extensions, and optional exclude_globs.
+    """
+    # Import locally to avoid circular dependency
+    from utils import discover_src_files
+    
+    files = discover_src_files(project_root, use_gitignore=True, exclude_globs=exclude_globs)
+    return len(files)
 
 
 def _run_ctags(project_root: str, tags_file: Path) -> bool:
-    if _count_source_files(project_root) > CTAGS_MAX_SOURCE_FILES:
-        print(f"[ctags_probe] SKIP index: >{CTAGS_MAX_SOURCE_FILES} files in {project_root} (rg fallback only)", file=sys.stderr)
-        return False
-    exclude = [
-        "--exclude=*.min.js", "--exclude=*.min.css", "--exclude=vendor/**",
-        "--exclude=third_party/**", "--exclude=.git/**", "--exclude=build/**",
-        "--exclude=dist/**", "--exclude=node_modules/**", "--exclude=__pycache__/**", "--exclude=*.pyc",
+    # Exclude patterns matching the ctags command below (converted from ctags --exclude format)
+    ctags_excludes = [
+        "*.min.js", "*.min.css", "vendor/**", "third_party/**",
+        ".git/**", "build/**", "dist/**", "node_modules/**",
+        "__pycache__/**", "*.pyc",
     ]
+    if _count_source_files(project_root, exclude_globs=ctags_excludes) > CTAGS_MAX_SOURCE_FILES:
+        print(f"[ctags_probe] SKIP index: >{CTAGS_MAX_SOURCE_FILES} source files in {project_root} (rg fallback only)", file=sys.stderr)
+        return False
+    exclude = ["--exclude=" + pat for pat in ctags_excludes]
     cmd = [
         "ctags", "-R",
         "--languages=C,C++,Python,JavaScript,TypeScript,Go,Rust,Java,Kotlin,Swift,PHP,Ruby,Perl,Lua,Shell,SQL,HTML,CSS,JSON,YAML,TOML,XML,Markdown",
