@@ -311,6 +311,25 @@ Tricorder's whole point is token savings: a compact map steers an agent to the r
 
 **MCP `tricorder_detect` supports `pre_index`** (mirrors CLI `--pre-index`) — linux MCP slot uses `pre_index="pick_next_task"` to narrow to `kernel/sched/*`; runtime dropped from ~168s to ~64s, no longer cold-cache-flaky.
 
+## Running Tests (Agent Instructions)
+
+To run the unit and regression test suite locally:
+
+```bash
+# 1. Navigate to the tricorder repo root
+cd D:/Projects/tricorder
+
+# 2. Run targeted test suites (CLI, MCP, utilities, regression phase 1)
+python -m pytest tests/test_cli_autodiscovery.py tests/test_mcp.py tests/test_utils.py tests/test_regression_phase1.py -v
+
+# 3. Run the full test suite
+python -m pytest tests/ -v
+```
+
+*Note: Tests insert `.` into `sys.path`, so pytest must be executed from the repository root.*
+
+---
+
 ### Reproduce
 
 - **Repos:** projectm (C++), vaultwarden (Rust), Linux kernel, bitburner (`bitburner-src`, TS), LibreChat (`LibreChat`, TS), elixir (`lib/iex`), otp (`lib/compiler`), go (`src/cmp`), kotlin (`core`), swift (`lib`), rails (`activerecord/lib`), framework (`src`), kong (`kong`), spring-boot (build-plugin), vue (`src/v3/reactivity`). projectm at `D:\Projects\projectm`; rest under `D:\Projects\Tricorder-Testing-Repos/<folder>`. bitburner folder is `bitburner-src`.
