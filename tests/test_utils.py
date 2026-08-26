@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 sys.path.insert(0, '.')
 from utils import count_tokens, discover_src_files
 
@@ -25,7 +26,10 @@ class TestDiscoverSrcFilesExcludeGlobs(unittest.TestCase):
     """ponytail: smallest check proving vendor/** filtering works."""
 
     def _fixture(self):
-        tmp = tempfile.mkdtemp()
+        # Use workspace-local temp so sandboxed environments work
+        _workspace = Path(__file__).resolve().parent.parent
+        tmp = _workspace / ".pytest-tmp" / f"test_utils_{id(self)}"
+        tmp.mkdir(parents=True, exist_ok=True)
         rels = {
             'src/main.cpp': 'int main() {}\n',
             'src/util.hpp': 'class Util {};\n',
@@ -34,11 +38,10 @@ class TestDiscoverSrcFilesExcludeGlobs(unittest.TestCase):
             'README.md': '# hi\n',
         }
         for rel, content in rels.items():
-            p = os.path.join(tmp, rel)
-            os.makedirs(os.path.dirname(p), exist_ok=True)
-            with open(p, 'w', encoding='utf-8') as f:
-                f.write(content)
-        return tmp
+            p = tmp / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding='utf-8')
+        return str(tmp)
 
     def test_no_glob_includes_vendor(self):
         tmp = self._fixture()
