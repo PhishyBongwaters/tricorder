@@ -69,10 +69,30 @@ def count_tokens(text: str, model_name: str = "gpt-4") -> int:
     return len(encoding.encode(text))
 
 
-def read_text(filename: str, encoding: str = "utf-8", silent: bool = False) -> Optional[str]:
-    """Read text from file with error handling."""
+def read_text(filename: str, encoding: str = "utf-8", silent: bool = False, 
+              strict: bool = False) -> Optional[str]:
+    """Read text from file with error handling.
+    
+    Args:
+        filename: Path to file
+        encoding: Text encoding (default: utf-8)
+        silent: If True, suppress error messages
+        strict: If True, raise UnicodeError on decode failure instead of
+                silently dropping invalid bytes (errors='ignore').
+                Default False preserves backward compatibility.
+    
+    Returns:
+        File contents as string, or None on error.
+    
+    Note:
+        Default behavior (strict=False) uses errors='ignore' which silently
+        drops invalid bytes. This is intentional for source code indexing
+        where mixed-encoding repos are common. Use strict=True for
+        validation pipelines.
+    """
+    errors = 'strict' if strict else 'ignore'
     try:
-        return Path(filename).read_text(encoding=encoding, errors='ignore')
+        return Path(filename).read_text(encoding=encoding, errors=errors)
     except FileNotFoundError:
         if not silent:
             print(f"Error: {filename} not found.")
@@ -251,7 +271,22 @@ def parse_gitignore(root: str) -> set:
 
     Handles: bare dir names (match any depth), trailing slashes, negation (!),
     comments, and blank lines. Does NOT handle complex fnmatch edge cases
-    (leading slashes, double-asterisks) — good enough for 99% of repos.
+    (leading slashes, double-asterisks, anchored paths, full negation semantics).
+
+    SUPPORTED SUBSET (common 99%):
+    - Directory names: "build", "dist", ".venv", "node_modules", "target"
+    - Trailing slashes: "build/", "dist/"
+    - Comments: "# comment"
+    - Blank lines: skipped
+    - Negation lines ("!pattern"): skipped entirely (not implemented)
+
+    NOT SUPPORTED:
+    - Anchored paths: "/build" (root-only)
+    - Glob patterns: "*.log", "build/**", "**/temp"
+    - Negation: "!build/keep_this"
+    - Character classes: "build[0-9]"
+
+    For full gitignore semantics, use a library like `pathspec` or `gitignore-parser`.
 
     ponytail: returns a set of directory basenames. os.walk filters dirs[:]
     against this set. If a pattern is file-only (e.g. '*.log'), it's ignored
