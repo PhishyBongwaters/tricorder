@@ -355,7 +355,7 @@ Tricorder treats **repository content as untrusted input**. A malicious repo can
 | Content boundary | TC-001 | Raw map wrapped in `BEGIN/END UNTRUSTED REPOSITORY CONTEXT` markers. |
 | Path containment | TC-006 | `chat_files` / `detail` file params rejected if they resolve outside `project_root`. |
 | `max_files` clamp | TC-007 | MCP `max_files` clamped to 10,000 server-side; discovery early-stops at 20,000. |
-| Output containment | TC-008 | `output_file` writes only to `.tricorder/output/<basename>` — traversal contained. |
+| Output containment | TC-008 | `output_file`/`--output` writes contained: server output goes to `get_cache_root()/.tricorder/output/<basename>` (honors `TRICORDER_CACHE_HOME`); `--output` is the sole sanctioned user-chosen path. **All in-process writes route through `utils.safe_write()`, which raises `ValueError` on any target escaping the cache root** — the never-write-to-scanned-repo invariant is enforced structurally, not per-call. |
 | Resource envelope | TC-002 | Global budget: max 20k files, 500 MB, depth 25, 300s, 1 MB/file. Limits → partial result + `scan_warning`. Tunable via `TRICORDER_MAX_*` env vars. |
 | Cache isolation | TC-003 | Tags cache lives outside the repo (see Caching). |
 | Parser timeout | TC-004 | Each tree-sitter parse: 5s hard timeout (`TRICORDER_PARSER_TIMEOUT_S`); hang skipped, not stalled. |
@@ -371,7 +371,7 @@ TRICORDER_MAX_SCAN_DEPTH=25
 TRICORDER_MAX_SCAN_TIME_S=300
 TRICORDER_MAX_SOURCE_FILE_SIZE=1048576
 TRICORDER_PARSER_TIMEOUT_S=5
-TRICORDER_CACHE_HOME=~/.tricorder/cache
+TRICORDER_CACHE_HOME=<tricorder workspace>/.tricorder   # default; controls cache + output root
 ```
 
 ## Supported Languages
@@ -391,10 +391,10 @@ Union = 28 distinct languages. Canonical list in `utils.py` `EXTENSIONS`. `.h` f
 
 ## Caching
 
-- Cache location: `~/.tricorder/cache/<sha1(repo_path|version|config)>/` — **outside the repository** (TC-003). A repo never controls cache state.
-- Auto-invalidated when files change via content-aware signatures; cleared with `--force-refresh`.
-- After new tree-sitter parsers, maps may be empty from stale cache — use `--force-refresh` or delete cache dir.
-- Override cache root with `TRICORDER_CACHE_HOME`.
+- Cache location: `<tricorder workspace>/.tricorder/cache/<sha1(repo_path|version|config)>/` — **outside the repository** (TC-003). A repo never controls cache state.
+- Default cache root is the tricorder workspace `.tricorder` dir (always writable); override with `TRICORDER_CACHE_HOME`.
+- Server map output also lands under the cache root (`<cache root>/output`), so it is contained by the same `safe_write()` guard.
+- `--output` is the only write that may target a user-chosen path outside the cache root; it still fails gracefully (honest error + stdout fallback) if the path is unwritable.
 - `--signature-only` prints 16-char content signature for debugging.
 
 ## Lineage & Attribution
