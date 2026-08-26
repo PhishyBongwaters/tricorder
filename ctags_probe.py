@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 import fnmatch
 
+# safe_write lives in utils; reuse it (contains the cache-root invariant).
+from utils import safe_write  # noqa: E402
+
 CTAGS_MAX_SOURCE_FILES = 20000
 
 
@@ -212,7 +215,7 @@ def _get_repo_hash(project_root: str) -> str:
 
 def _get_tags_cache_path(project_root: str) -> Path:
     """Get the external cache path for the ctags index."""
-    from utils import get_cache_root
+    from utils import get_cache_root, safe_write
     cache_root = get_cache_root()
     if cache_root is None:
         # No writable cache root -- return a path under the project root
@@ -226,7 +229,7 @@ def _get_tags_cache_path(project_root: str) -> Path:
 
 def _get_meta_cache_path(project_root: str) -> Path:
     """Get the external cache path for the ctags index metadata."""
-    from utils import get_cache_root
+    from utils import get_cache_root, safe_write
     cache_root = get_cache_root()
     if cache_root is None:
         cache_dir = Path(project_root) / ".tricorder" / "indexes" / _get_repo_hash(project_root)
@@ -261,10 +264,10 @@ def _read_tags_meta(meta_path: Path) -> Optional[dict]:
 
 
 def _write_tags_meta(meta_path: Path, meta: dict) -> None:
-    """Write the tags metadata file."""
+    """Write the tags metadata file (best-effort; escape paths raise)."""
     try:
-        meta_path.write_text(json.dumps(meta), encoding="utf-8")
-    except Exception:
+        safe_write(meta_path, json.dumps(meta))
+    except OSError:
         pass
 
 

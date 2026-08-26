@@ -19,7 +19,7 @@ from typing import List, Optional
 # venv/site-packages (e.g. the Hermes agent's own utils.py when tricorder is
 # launched through an editable install that shares a process's sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES
+from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES, safe_write
 from scm import get_scm_fname
 from importance import filter_important_files
 from core import Tricorder
@@ -514,7 +514,7 @@ Examples:
             
             if args.output:
                 try:
-                    Path(args.output).write_text(output_text, encoding="utf-8")
+                    safe_write(args.output, output_text, allow_escape=True)
                 except OSError as e:
                     tool_error(f"Could not write --output {args.output}: {e}")
                     print(output_text)  # ponytail: stdout safety net, map is never lost

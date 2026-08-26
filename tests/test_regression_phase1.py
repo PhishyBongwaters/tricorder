@@ -131,12 +131,19 @@ class TestCtagsMetadataInvalidation(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_meta_roundtrip(self):
-        """Metadata write/read should preserve data."""
-        meta_path = self.tmpdir / "test.meta.json"
+        """Metadata write/read should preserve data at the real cache path."""
+        meta_path = _get_meta_cache_path(self.project_root)
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
         meta = {"git_commit": "abc123", "file_count": 42, "generated": 1234567890.0}
         _write_tags_meta(meta_path, meta)
         read_meta = _read_tags_meta(meta_path)
         self.assertEqual(meta, read_meta)
+
+    def test_meta_escape_rejected(self):
+        """_write_tags_meta must refuse a path outside the cache root."""
+        rogue = Path(self.tmpdir) / "escape.meta.json"
+        with self.assertRaises(ValueError):
+            _write_tags_meta(rogue, {"x": 1})
 
     def test_git_commit_detection(self):
         """Should detect git commit hash."""

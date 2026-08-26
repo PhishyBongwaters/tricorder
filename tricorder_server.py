@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastmcp import FastMCP, settings
 from core import Tricorder
-from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery
+from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write
 from scm import get_scm_fname
 from importance import filter_important_files
 from ctags_probe import probe_and_narrow
@@ -416,13 +416,10 @@ async def tricorder_scan(
             full_repo_estimate = _full_repo_tokens(project_root)
 
             # TC-008: contain output_file writes to tricorder-managed storage only.
-            # A caller-controlled path with no validation could write anywhere
-            # the host user has access. Resolve to an explicit output dir and
-            # reject escapes.
-            _TRICORDER_OUTPUT_DIR = Path(__file__).resolve().parent / ".tricorder" / "output"
-            out_path = _TRICORDER_OUTPUT_DIR / Path(output_file).name
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(map_content, encoding="utf-8")
+            # safe_write enforces the cache-root boundary; server output lives
+            # under get_cache_root()/.tricorder/output (honors TRICORDER_CACHE_HOME).
+            out_path = get_cache_root() / "output" / Path(output_file).name
+            safe_write(out_path, map_content)
             result: Dict[str, Any] = {
                 "map_file": str(out_path),
                 "token_estimate": token_estimate,

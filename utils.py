@@ -61,6 +61,27 @@ def get_cache_root() -> Path:
     return base
 
 
+def safe_write(path, text, *, allow_escape=False, encoding="utf-8") -> Path:
+    """Write text to a Tricorder-managed path. Structural guard for the
+    never-write-to-scanned-repo invariant (TC-006/TC-008).
+
+    By default the resolved target must stay inside get_cache_root()
+    (.tricorder workspace); an escape raises ValueError loud. The --output
+    escape hatch passes allow_escape=True. I/O failures raise OSError so
+    best-effort caches (budget/tags) can swallow only disk errors, not escapes.
+    """
+    target = Path(path).resolve()
+    if not allow_escape:
+        root = get_cache_root()
+        if root not in target.parents:
+            raise ValueError(
+                f"safe_write blocked escape: {target} is outside cache root {root}"
+            )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding=encoding)
+    return target
+
+
 @dataclass
 class SymbolRecord:
     """Symbol record for search_symbols MCP tool (Milestone 1).
@@ -458,9 +479,9 @@ def calculate_full_repo_budget(project_root: str, token_estimate: int,
                 if cache_path.exists():
                     cached = json.loads(cache_path.read_text(encoding="utf-8"))
                 cached[cache_key] = full
-                cache_path.write_text(json.dumps(cached), encoding="utf-8")
-            except Exception:
-                pass
+                safe_write(cache_path, json.dumps(cached))
+            except OSError:
+                pass  # best-effort cache; escapes still raise ValueError
         cached_full = full
 
     full = cached_full
