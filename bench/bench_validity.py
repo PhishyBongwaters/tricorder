@@ -310,6 +310,28 @@ def _index_bytes(root):
     return total
 
 
+def _files_in_map(map_file: Path) -> int:
+    """Count distinct source files referenced as headers in a tricorder map.
+
+    Map headers look like:  D:\\...\\cmp.go (77 lines)
+    A blind agent would have to open the whole repo; an agent using the map
+    only opens the files the map steers it to. This is the #41 'files opened'
+    dimension of the accuracy metric.
+    """
+    if not map_file.exists():
+        return 0
+    files = set()
+    # header = a line ending with ' (<digits> lines)'
+    pat = re.compile(r"\((\d+)\s+lines\)\s*$")
+    for line in map_file.read_text(encoding="utf-8", errors="replace").splitlines():
+        if pat.search(line):
+            # strip the ' (NN lines)' suffix and any trailing drive colon noise
+            path = pat.sub("", line).strip()
+            if path:
+                files.add(path)
+    return len(files)
+
+
 def stats(root, scan_path, map_file, map_tokens, exclude_globs, pre_index=None):
     """Return a metrics dict for the repo scan.
 
@@ -352,6 +374,7 @@ def stats(root, scan_path, map_file, map_tokens, exclude_globs, pre_index=None):
     full_repo = repo_budget(root, exclude_globs)
     savings_pct = round(max(0.0, 1 - map_tokens_actual / full_repo) * 100, 1) if full_repo else 0.0
     index_bytes = _index_bytes(root)
+    files_in_map = _files_in_map(map_file) if map_file.exists() else 0
     return {
         "scan_time_s": scan_time_s,
         "map_tokens_actual": map_tokens_actual,
@@ -359,6 +382,7 @@ def stats(root, scan_path, map_file, map_tokens, exclude_globs, pre_index=None):
         "savings_pct": savings_pct,
         "coverage_pct": coverage_pct,
         "index_bytes": index_bytes,
+        "files_in_map": files_in_map,
     }
 
 
@@ -429,6 +453,7 @@ def run_repo(repo) -> dict:
             "scan_time_s": m["scan_time_s"],
             "index_bytes": m["index_bytes"],
             "full_repo_tokens": full_repo,
+            "files_in_map": m["files_in_map"],
         }
 
     finally:
