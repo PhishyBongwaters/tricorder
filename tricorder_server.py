@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import logging
+import re
 import sys
 from collections import OrderedDict
 from functools import lru_cache
@@ -512,10 +513,9 @@ async def tricorder_detect(
     pre_index: Optional[str] = None,
     pre_index_max_files: int = 100,
     pre_index_include_parents: int = 0,
+    search_mode: str = "substring",  # "exact", "substring", "regex"
 ) -> Dict[str, Any]:
     """Search for identifiers in code files. Get back a list of matching identifiers with their file, line number, and context.
-       When searching, just use the identifier name without any special characters, prefixes or suffixes. The search is 
-       case-insensitive.
 
     Args:
         project_root: Root directory of the project to search.  (must be an absolute path!)
@@ -524,6 +524,10 @@ async def tricorder_detect(
         context_lines: Number of lines of context to show
         include_definitions: Whether to include definition occurrences
         include_references: Whether to include reference occurrences
+        pre_index: Optional symbol to pre-index (narrow file set before search)
+        pre_index_max_files: Max files from pre-index
+        pre_index_include_parents: Include N parent dirs of matched files
+        search_mode: Search mode - "exact" (whole word), "substring" (contains), "regex" (Python regex). Default: "substring".
     
     Returns:
         Dictionary containing search results or error message
@@ -533,6 +537,10 @@ async def tricorder_detect(
         return {"error": err}
 
     project_root = str(root_path)
+
+    # Validate search_mode
+    if search_mode not in ("exact", "substring", "regex"):
+        return {"error": f"Invalid search_mode: {search_mode}. Must be 'exact', 'substring', or 'regex'."}
 
     try:
         # Initialize Tricorder with search-specific settings
@@ -574,8 +582,27 @@ async def tricorder_detect(
         matching_tags = []
         query_lower = query.lower()
         
+        # Compile regex if needed
+        regex_pattern = None
+        if search_mode == "regex":
+            try:
+                regex_pattern = re.compile(query, re.IGNORECASE)
+            except re.error as e:
+                return {"error": f"Invalid regex pattern: {e}"}
+
         for tag in all_tags:
-            if query_lower in tag.name.lower():
+            name = tag.name
+            name_lower = name.lower()
+            
+            match = False
+            if search_mode == "exact":
+                match = name_lower == query_lower
+            elif search_mode == "substring":
+                match = query_lower in name_lower
+            elif search_mode == "regex":
+                match = bool(regex_pattern.search(name))
+            
+            if match:
                 if (tag.kind == "def" and include_definitions) or \
                    (tag.kind == "ref" and include_references):
                     matching_tags.append(tag)

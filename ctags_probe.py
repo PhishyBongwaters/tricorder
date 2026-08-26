@@ -16,6 +16,195 @@ import fnmatch
 CTAGS_MAX_SOURCE_FILES = 20000
 
 
+# =============================================================================
+# Language Registry — single source of truth for supported languages
+# =============================================================================
+# This registry maps language keys to their properties:
+# - ctags_name: name used in ctags --languages=...
+# - tree_sitter_key: key used in tree-sitter-language-pack / grep-ast
+# - extensions: file extensions (used for rg fallback, etc.)
+# - scm_query_file: scm query filename in queries/ directory
+#
+# Keep in sync with tree-sitter-language-pack supported languages and
+# the scm queries in queries/tree-sitter-language-pack/ and queries/tree-sitter-languages/
+#
+LANGUAGE_REGISTRY = {
+    "python": {
+        "ctags_name": "Python",
+        "tree_sitter_key": "python",
+        "extensions": [".py"],
+        "scm_query": "python-tags.scm",
+    },
+    "javascript": {
+        "ctags_name": "JavaScript",
+        "tree_sitter_key": "javascript",
+        "extensions": [".js", ".jsx"],
+        "scm_query": "javascript-tags.scm",
+    },
+    "typescript": {
+        "ctags_name": "TypeScript",
+        "tree_sitter_key": "typescript",
+        "extensions": [".ts", ".tsx"],
+        "scm_query": "typescript-tags.scm",
+    },
+    "c": {
+        "ctags_name": "C",
+        "tree_sitter_key": "c",
+        "extensions": [".c", ".h"],
+        "scm_query": "c-tags.scm",
+    },
+    "cpp": {
+        "ctags_name": "C++",
+        "tree_sitter_key": "cpp",
+        "extensions": [".cpp", ".cc", ".cxx", ".hpp", ".hxx", ".h"],
+        "scm_query": "cpp-tags.scm",
+    },
+    "java": {
+        "ctags_name": "Java",
+        "tree_sitter_key": "java",
+        "extensions": [".java"],
+        "scm_query": "java-tags.scm",
+    },
+    "go": {
+        "ctags_name": "Go",
+        "tree_sitter_key": "go",
+        "extensions": [".go"],
+        "scm_query": "go-tags.scm",
+    },
+    "rust": {
+        "ctags_name": "Rust",
+        "tree_sitter_key": "rust",
+        "extensions": [".rs"],
+        "scm_query": "rust-tags.scm",
+    },
+    "swift": {
+        "ctags_name": "Swift",
+        "tree_sitter_key": "swift",
+        "extensions": [".swift"],
+        "scm_query": "swift-tags.scm",
+    },
+    "kotlin": {
+        "ctags_name": "Kotlin",
+        "tree_sitter_key": "kotlin",
+        "extensions": [".kt", ".kts"],
+        "scm_query": "kotlin-tags.scm",
+    },
+    "ruby": {
+        "ctags_name": "Ruby",
+        "tree_sitter_key": "ruby",
+        "extensions": [".rb"],
+        "scm_query": "ruby-tags.scm",
+    },
+    "php": {
+        "ctags_name": "PHP",
+        "tree_sitter_key": "php",
+        "extensions": [".php"],
+        "scm_query": "php-tags.scm",
+    },
+    "c_sharp": {
+        "ctags_name": "C#",
+        "tree_sitter_key": "c_sharp",
+        "extensions": [".cs"],
+        "scm_query": "c_sharp-tags.scm",
+    },
+    "shell": {
+        "ctags_name": "Shell",
+        "tree_sitter_key": "shell",
+        "extensions": [".sh", ".bash", ".zsh"],
+        "scm_query": "shell-tags.scm",
+    },
+    "lua": {
+        "ctags_name": "Lua",
+        "tree_sitter_key": "lua",
+        "extensions": [".lua"],
+        "scm_query": "lua-tags.scm",
+    },
+    "perl": {
+        "ctags_name": "Perl",
+        "tree_sitter_key": "perl",
+        "extensions": [".pl", ".pm"],
+        "scm_query": "perl-tags.scm",
+    },
+    "sql": {
+        "ctags_name": "SQL",
+        "tree_sitter_key": "sql",
+        "extensions": [".sql"],
+        "scm_query": "sql-tags.scm",
+    },
+    "html": {
+        "ctags_name": "HTML",
+        "tree_sitter_key": "html",
+        "extensions": [".html", ".htm"],
+        "scm_query": "html-tags.scm",
+    },
+    "css": {
+        "ctags_name": "CSS",
+        "tree_sitter_key": "css",
+        "extensions": [".css", ".scss", ".less"],
+        "scm_query": "css-tags.scm",
+    },
+    "json": {
+        "ctags_name": "JSON",
+        "tree_sitter_key": "json",
+        "extensions": [".json"],
+        "scm_query": "json-tags.scm",
+    },
+    "yaml": {
+        "ctags_name": "YAML",
+        "tree_sitter_key": "yaml",
+        "extensions": [".yaml", ".yml"],
+        "scm_query": "yaml-tags.scm",
+    },
+    "toml": {
+        "ctags_name": "TOML",
+        "tree_sitter_key": "toml",
+        "extensions": [".toml"],
+        "scm_query": "toml-tags.scm",
+    },
+    "xml": {
+        "ctags_name": "XML",
+        "tree_sitter_key": "xml",
+        "extensions": [".xml"],
+        "scm_query": "xml-tags.scm",
+    },
+    "markdown": {
+        "ctags_name": "Markdown",
+        "tree_sitter_key": "markdown",
+        "extensions": [".md"],
+        "scm_query": "markdown-tags.scm",
+    },
+    # Tree-sitter only (no ctags support yet):
+    # "zig": {"ctags_name": None, "tree_sitter_key": "zig", "extensions": [".zig"], "scm_query": "zig-tags.scm"},
+    # "r": {"ctags_name": None, "tree_sitter_key": "r", "extensions": [".r"], "scm_query": "r-tags.scm"},
+    # etc.
+}
+
+
+def get_ctags_languages() -> List[str]:
+    """Get list of ctags-supported language names."""
+    return [info["ctags_name"] for info in LANGUAGE_REGISTRY.values() if info["ctags_name"]]
+
+
+def get_tree_sitter_languages() -> List[str]:
+    """Get list of tree-sitter-supported language keys."""
+    return [info["tree_sitter_key"] for info in LANGUAGE_REGISTRY.values()]
+
+
+def get_language_extensions(lang_key: str) -> List[str]:
+    """Get file extensions for a language key."""
+    return LANGUAGE_REGISTRY.get(lang_key, {}).get("extensions", [])
+
+
+def get_scm_query_for_lang(lang_key: str) -> Optional[str]:
+    """Get SCM query filename for a language key."""
+    return LANGUAGE_REGISTRY.get(lang_key, {}).get("scm_query")
+
+
+def get_ctags_name(lang_key: str) -> Optional[str]:
+    """Get ctags language name for a tree-sitter language key."""
+    return LANGUAGE_REGISTRY.get(lang_key, {}).get("ctags_name")
+
+
 def _get_repo_hash(project_root: str) -> str:
     """Generate a stable hash for the repository root path."""
     return hashlib.sha256(Path(project_root).resolve().as_posix().encode()).hexdigest()[:16]
@@ -123,10 +312,13 @@ def _run_ctags(project_root: str, tags_file: Path) -> bool:
     if _count_source_files(project_root, exclude_globs=ctags_excludes) > CTAGS_MAX_SOURCE_FILES:
         print(f"[ctags_probe] SKIP index: >{CTAGS_MAX_SOURCE_FILES} source files in {project_root} (rg fallback only)", file=sys.stderr)
         return False
+    
+    # Use language registry for ctags --languages
+    ctags_langs = get_ctags_languages()
     exclude = ["--exclude=" + pat for pat in ctags_excludes]
     cmd = [
         "ctags", "-R",
-        "--languages=C,C++,Python,JavaScript,TypeScript,Go,Rust,Java,Kotlin,Swift,PHP,Ruby,Perl,Lua,Shell,SQL,HTML,CSS,JSON,YAML,TOML,XML,Markdown",
+        "--languages=" + ",".join(ctags_langs),
         "--fields=+n", "-f", str(tags_file), *exclude, project_root,
     ]
     try:
