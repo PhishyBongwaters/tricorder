@@ -36,44 +36,29 @@ Tag = namedtuple("Tag", "rel_fname fname line name kind".split())
 # ---------------------------------------------------------------------------
 
 _CACHE_ROOT: Optional[Path] = None
-_CACHE_WARNED: bool = False
 
 
-def get_cache_root() -> Optional[Path]:
-    """Return the canonical Tricorder cache root, or None if unavailable.
+def get_cache_root() -> Path:
+    """Return the canonical Tricorder cache root.
 
-    The root is created lazily on first call.  If creation fails (e.g.
-    permission denied, sandbox, read-only home), the function returns
-    None and emits a single warning so callers can degrade cleanly.
+    The root is under the tricorder workspace by default so it is always
+    writable from tests and CLI runs.  Override with TRICORDER_CACHE_HOME.
     """
-    global _CACHE_ROOT, _CACHE_WARNED
+    global _CACHE_ROOT
 
     if _CACHE_ROOT is not None:
-        # Already resolved (may still be None from a previous failure)
         return _CACHE_ROOT
 
     base = Path(
         os.environ.get(
             "TRICORDER_CACHE_HOME",
-            str(Path(__file__).resolve().parent.parent / ".tricorder"),
+            str(Path(__file__).resolve().parent / ".tricorder"),
         )
-    )
+    ).resolve()
 
-    try:
-        base.mkdir(parents=True, exist_ok=True)
-        _CACHE_ROOT = base
-        return base
-    except (PermissionError, OSError) as exc:
-        if not _CACHE_WARNED:
-            print(
-                f"WARNING: Tricorder external cache unavailable ({exc}). "
-                f"Cache features (budget, ctags index, SCM meta) will be "
-                f"skipped for this run. Set TRICORDER_CACHE_HOME to a "
-                f"writable directory to enable them."
-            )
-            _CACHE_WARNED = True
-        _CACHE_ROOT = None
-        return None
+    base.mkdir(parents=True, exist_ok=True)
+    _CACHE_ROOT = base
+    return base
 
 
 @dataclass

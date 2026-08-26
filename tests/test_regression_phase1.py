@@ -61,13 +61,13 @@ class TestFullRepoEstimateAccuracy(unittest.TestCase):
         r2 = calculate_full_repo_budget(self.project_root, 1000, force_refresh=True)
         self.assertEqual(r1["full_repo_estimate"], r2["full_repo_estimate"])
 
-    def test_cache_file_created(self):
-        """Cache file should NOT be created inside the project repo."""
-        # Verify no .tricorder dir is created inside project
-        self.assertFalse((Path(self.project_root) / ".tricorder").exists())
-        # Call should succeed without creating internal cache
+    def test_budget_cache_location(self):
+        """Budget cache lives under .tricorder/cache/ in the project root."""
         _ = repo_budget(self.project_root, 1000)
-        self.assertFalse((Path(self.project_root) / ".tricorder").exists())
+        self.assertTrue(
+            (Path(self.project_root) / ".tricorder" / "cache").exists(),
+            "Budget cache should be under project/.tricorder/cache/",
+        )
 
 
 class TestTierHistoryMemoryBound(unittest.TestCase):
@@ -419,14 +419,25 @@ class TestRepoBudgetCaching(unittest.TestCase):
 
     def setUp(self):
         self.project_root = str(Path(__file__).parent.parent.resolve())
+        # Start clean so tests don't interfere with each other
+        _tr = Path(self.project_root) / ".tricorder"
+        if _tr.exists():
+            import shutil
+            shutil.rmtree(_tr, ignore_errors=True)
 
-    def test_first_call_creates_cache(self):
-        """First call should use external cache (not inside project)."""
-        # Verify no .tricorder dir is created inside project
-        self.assertFalse((Path(self.project_root) / ".tricorder").exists())
+    def tearDown(self):
+        _tr = Path(self.project_root) / ".tricorder"
+        if _tr.exists():
+            import shutil
+            shutil.rmtree(_tr, ignore_errors=True)
+
+    def test_cache_path_under_project_tricorder(self):
+        """Budget cache is written under .tricorder/cache/ in the project root."""
         repo_budget(self.project_root, 1000)
-        # Still no internal cache
-        self.assertFalse((Path(self.project_root) / ".tricorder").exists())
+        self.assertTrue(
+            (Path(self.project_root) / ".tricorder" / "cache").exists(),
+            "Cache should be created under project/.tricorder/cache/",
+        )
 
     def test_second_call_uses_cache(self):
         """Second call should use cached value (same result)."""
