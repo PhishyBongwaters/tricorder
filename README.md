@@ -366,6 +366,10 @@ TRICORDER_CACHE_HOME=~/.tricorder/cache
 
 Union = 28 distinct languages. Canonical list in `utils.py` `EXTENSIONS`. `.h` files mapped to `cpp` (cpp grammar is strict superset of C).
 
+**Language registry (ctags_probe.py):** Single source of truth mapping ctags names, tree-sitter keys, extensions, and SCM query files for 24 languages. Shared by ctags pre-index probe and tree-sitter extraction — adding a new language (e.g. Zig) is one registry entry.
+
+**tricorder_detect search modes:** `search_mode` parameter — `"exact"` (whole word), `"substring"` (contains, default), `"regex"` (Python regex). Case-insensitive for exact/substring. Fixes noisy results (e.g. searching "map" no longer returns "mapping"/"bitmap"/"remap").
+
 ## Caching
 
 - Cache location: `~/.tricorder/cache/<sha1(repo_path|version|config)>/` — **outside the repository** (TC-003). A repo never controls cache state.
