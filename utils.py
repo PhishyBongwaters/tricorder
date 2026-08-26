@@ -2,7 +2,11 @@
 Utility functions for Tricorder.
 """
 
-import os, fnmatch, time
+import hashlib
+import json
+import os
+import fnmatch
+import time
 import sys
 from pathlib import Path
 from typing import Optional, List
@@ -296,34 +300,85 @@ def detect_lang(fname: str) -> Optional[str]:
     return lang
 
 
-def repo_budget(project_root: str, token_estimate: int,
-                model_name: str = "gpt-4",
-                exclude_globs: Optional[List[str]] = None,
-                coverage_pct: Optional[float] = None) -> dict:
-    """Budget fields shared by CLI, MCP, and plugin: how many tokens a piece
-    of tricorder output costs vs. reading the whole repo.
+def _get_budget_cache_path(project_root: str) -> Path:
+    """Get path to budget cache file for a project."""
+    cache_dir = Path(project_root) / ".tricorder" / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / "budget.json"
 
-    full_repo_estimate = tokens of all discoverable source files under
-    project_root (canonical definition — a tier-1 map can legitimately cost
-    more than reading the repo, so savings_pct clamps at 0, never negative).
+
+def _get_budget_cache_key(model_name: str, exclude_globs: Optional[List[str]]) -> str:
+    """Generate a cache key from model and exclude patterns."""
+    key_data = model_name + "|" + "|".join(sorted(exclude_globs or []))
+    return hashlib.sha256(key_data.encode()).hexdigest()[:16]
+
+
+def calculate_full_repo_budget(project_root: str, token_estimate: int,
+                               model_name: str = "gpt-4",
+                               exclude_globs: Optional[List[str]] = None,
+                               coverage_pct: Optional[float] = None,
+                               force_refresh: bool = False) -> dict:
+    """Calculate full repo budget (EXPENSIVE — reads and tokenizes ALL source files).
+
+    This function tokenizes every discoverable source file in the repository.
+    For large repos (Linux kernel, etc.) this can take seconds to minutes.
+    Results are cached in .tricorder/cache/budget.json keyed by model + exclude_globs.
+
+    Use sparingly. For hot paths, call once and reuse the full_repo_estimate.
+
+    Args:
+        project_root: Repository root path
+        token_estimate: Estimated tokens of the map/output being compared
+        model_name: Model name for tokenization (default: gpt-4)
+        exclude_globs: Glob patterns to exclude from file discovery
+        coverage_pct: Optional coverage percentage to include in result
+        force_refresh: Skip cache and recalculate
 
     Returns: {"token_estimate": int, "full_repo_estimate": int,
               "savings_pct": float, "coverage_pct": float (optional)}
     """
-    files = discover_src_files(project_root, use_gitignore=True,
-                               exclude_globs=exclude_globs)
-    full = 0
-    for f in files:
+    cache_path = _get_budget_cache_path(project_root)
+    cache_key = _get_budget_cache_key(model_name, exclude_globs)
+
+    # Try to load cached full_repo_estimate
+    cached_full = None
+    if not force_refresh and cache_path.exists():
         try:
-            txt = read_text(f, silent=True)
-            if txt:
-                full += count_tokens(txt, model_name)
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            cached_full = cached.get(cache_key)
         except Exception:
-            continue
+            pass
+
+    # Calculate if not cached or forced
+    if cached_full is None:
+        files = discover_src_files(project_root, use_gitignore=True,
+                                   exclude_globs=exclude_globs)
+        full = 0
+        for f in files:
+            try:
+                txt = read_text(f, silent=True)
+                if txt:
+                    full += count_tokens(txt, model_name)
+            except Exception:
+                continue
+
+        # Cache the full estimate
+        try:
+            cached = {}
+            if cache_path.exists():
+                cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            cached[cache_key] = full
+            cache_path.write_text(json.dumps(cached), encoding="utf-8")
+        except Exception:
+            pass
+        cached_full = full
+
+    full = cached_full
     if not full or token_estimate <= 0:
         savings = 0.0
     else:
         savings = round(max(0.0, 1 - token_estimate / full) * 100, 1)
+
     result = {
         "token_estimate": int(token_estimate),
         "full_repo_estimate": int(full),
@@ -332,6 +387,22 @@ def repo_budget(project_root: str, token_estimate: int,
     if coverage_pct is not None:
         result["coverage_pct"] = round(coverage_pct, 1)
     return result
+
+
+def repo_budget(project_root: str, token_estimate: int,
+                model_name: str = "gpt-4",
+                exclude_globs: Optional[List[str]] = None,
+                coverage_pct: Optional[float] = None) -> dict:
+    """Budget fields shared by CLI, MCP, and plugin (cached wrapper).
+
+    NOTE: This reads/tokenizes the entire repo on FIRST call per project/model/exclude combo.
+    Subsequent calls use cached full_repo_estimate from .tricorder/cache/budget.json.
+
+    For hot paths where you already have full_repo_estimate, prefer constructing
+    the budget dict manually to avoid any filesystem I/O.
+    """
+    return calculate_full_repo_budget(project_root, token_estimate, model_name,
+                                       exclude_globs, coverage_pct, force_refresh=False)
 
 
 # =============================================================================
