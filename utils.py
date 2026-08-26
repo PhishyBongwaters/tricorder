@@ -20,6 +20,62 @@ _tiktoken = None
 Tag = namedtuple("Tag", "rel_fname fname line name kind".split())
 
 
+# ---------------------------------------------------------------------------
+# Canonical external cache root
+# ---------------------------------------------------------------------------
+# All persistent tricorder state (token-budget cache, ctags indexes,
+# diskcache tags cache, plugin meta) lives under a single root so that
+# the resolution logic, permission handling, and override mechanism are
+# defined in exactly one place.
+#
+# Override: set TRICORDER_CACHE_HOME to relocate everything.
+# Failure: if the root cannot be created, cache features are skipped and
+# a warning is emitted once per process.  There is NO silent in-memory
+# fallback -- a silent fallback hides cache corruption and makes it
+# impossible to tell whether the feature is working.
+# ---------------------------------------------------------------------------
+
+_CACHE_ROOT: Optional[Path] = None
+_CACHE_WARNED: bool = False
+
+
+def get_cache_root() -> Optional[Path]:
+    """Return the canonical Tricorder cache root, or None if unavailable.
+
+    The root is created lazily on first call.  If creation fails (e.g.
+    permission denied, sandbox, read-only home), the function returns
+    None and emits a single warning so callers can degrade cleanly.
+    """
+    global _CACHE_ROOT, _CACHE_WARNED
+
+    if _CACHE_ROOT is not None:
+        # Already resolved (may still be None from a previous failure)
+        return _CACHE_ROOT
+
+    base = Path(
+        os.environ.get(
+            "TRICORDER_CACHE_HOME",
+            str(Path(__file__).resolve().parent.parent / ".tricorder"),
+        )
+    )
+
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+        _CACHE_ROOT = base
+        return base
+    except (PermissionError, OSError) as exc:
+        if not _CACHE_WARNED:
+            print(
+                f"WARNING: Tricorder external cache unavailable ({exc}). "
+                f"Cache features (budget, ctags index, SCM meta) will be "
+                f"skipped for this run. Set TRICORDER_CACHE_HOME to a "
+                f"writable directory to enable them."
+            )
+            _CACHE_WARNED = True
+        _CACHE_ROOT = None
+        return None
+
+
 @dataclass
 class SymbolRecord:
     """Symbol record for search_symbols MCP tool (Milestone 1).
@@ -338,16 +394,18 @@ def detect_lang(fname: str) -> Optional[str]:
 def _get_budget_cache_path(project_root: str) -> Optional[Path]:
     """Get path to budget cache file for a project.
 
-    Returns external cache path under ~/.tricorder/cache/<repo_hash>/.
-    Returns None if the cache directory can't be created (e.g., permission
-    denied, sandbox restrictions, read-only home dir).
+    Returns None if the external cache root is unavailable.  Callers MUST
+    check for None and degrade cleanly -- there is no silent fallback.
     """
-    # Use external cache dir (outside repo) to avoid permission issues on read-only repos
+    cache_root = get_cache_root()
+    if cache_root is None:
+        return None
     repo_hash = hashlib.sha256(Path(project_root).resolve().as_posix().encode()).hexdigest()[:16]
-    cache_dir = Path.home() / ".tricorder" / "cache" / repo_hash
+    cache_dir = cache_root / "cache" / repo_hash
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
     except (PermissionError, OSError):
+        # Root was writable on first call but a sub-path became blocked
         return None
     return cache_dir / "budget.json"
 

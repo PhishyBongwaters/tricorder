@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import diskcache
 import networkx as nx
 from grep_ast import TreeContext
-from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget
+from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, get_cache_root
 from scm import get_scm_fname
 from importance import filter_important_files
 
@@ -132,10 +132,17 @@ class Tricorder:
         repos never share a cache and one repo can't poison another's.
         ponytail: ~/.tricorder/cache/<sha1(root|version|config)>.
         """
-        base = Path(os.environ.get(
-            "TRICORDER_CACHE_HOME",
-            str(Path.home() / ".tricorder" / "cache"),
-        ))
+        # Canonical cache root -- falls back to home .tricorder/cache if the
+        # explicit root is unavailable, preserving the existing fallback
+        # behavior of load_tags_cache().
+        _root = get_cache_root()
+        if _root is not None:
+            base = _root / "cache"
+        else:
+            base = Path(os.environ.get(
+                "TRICORDER_CACHE_HOME",
+                str(Path.home() / ".tricorder" / "cache"),
+            ))
         key = f"{self.root.resolve()}|v{CACHE_VERSION}|{self.cache_size_limit}"
         h = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
         return base / h

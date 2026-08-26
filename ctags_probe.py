@@ -212,16 +212,26 @@ def _get_repo_hash(project_root: str) -> str:
 
 def _get_tags_cache_path(project_root: str) -> Path:
     """Get the external cache path for the ctags index."""
-    repo_hash = _get_repo_hash(project_root)
-    cache_dir = Path.home() / ".tricorder" / "indexes" / repo_hash
+    from utils import get_cache_root
+    cache_root = get_cache_root()
+    if cache_root is None:
+        # No writable cache root -- return a path under the project root
+        # as a last resort (caller should handle the failure case)
+        cache_dir = Path(project_root) / ".tricorder" / "indexes" / _get_repo_hash(project_root)
+    else:
+        cache_dir = cache_root / "indexes" / _get_repo_hash(project_root)
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir / "tags"
 
 
 def _get_meta_cache_path(project_root: str) -> Path:
     """Get the external cache path for the ctags index metadata."""
-    repo_hash = _get_repo_hash(project_root)
-    cache_dir = Path.home() / ".tricorder" / "indexes" / repo_hash
+    from utils import get_cache_root
+    cache_root = get_cache_root()
+    if cache_root is None:
+        cache_dir = Path(project_root) / ".tricorder" / "indexes" / _get_repo_hash(project_root)
+    else:
+        cache_dir = cache_root / "indexes" / _get_repo_hash(project_root)
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir / "tags.meta.json"
 
