@@ -158,7 +158,12 @@ class TestGetSymbolDetails(unittest.TestCase):
             name="stretchMonitors"
         ))
         self.assertNotIn("error", result)
-        self.assertEqual(result["symbol"]["name"].rstrip("()"), "stretchMonitors")
+        # C++ methods are now scoped (Class::method); the base name must match.
+        returned = result["symbol"]["name"].rstrip("()")
+        self.assertTrue(
+            returned == "stretchMonitors" or returned.endswith("::stretchMonitors"),
+            f"expected stretchMonitors (scoped or bare), got {returned!r}",
+        )
 
     def test_performance(self):
         """Single symbol lookup returns in <1s."""

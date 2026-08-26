@@ -419,6 +419,25 @@ class Tricorder:
             self.output_handlers['error'](f"Error parsing {fname}: {e}")
             return []
 
+    def _enclosing_class_name(self, node):
+        """Walk up to the nearest enclosing class/struct definition name.
+
+        Handles layouts where the function sits inside a class_declaration /
+        struct_declaration / impl_item rather than directly.
+        """
+        cur = node.parent
+        cls_types = ("class_declaration", "struct_declaration", "class_specifier",
+                     "impl_item", "class_definition")
+        while cur is not None:
+            if cur.type in cls_types:
+                for child in cur.children:
+                    if child.type in ("identifier", "type_identifier",
+                                       "class_identifier", "scoped_identifier"):
+                        return child.text.decode("utf-8", errors="ignore")
+                return ""
+            cur = cur.parent
+        return ""
+
     def get_symbols(self, fname: str, rel_fname: str) -> List[SymbolRecord]:
         """Extract SymbolRecord objects from a file's AST.
 
@@ -530,6 +549,16 @@ class Tricorder:
                                 break
                     if not name:
                         name = parent.text.decode("utf-8", errors="ignore")
+
+                    # Scope the name to its enclosing class/struct (C/C++/Rust
+                    # use '::'); e.g. void Foo::bar() -> "Foo::bar".
+                    # ponytail: only for the ::-scoped languages, so Python
+                    # stays dotted and isn't mis-scoped.
+                    if lang in ("cpp", "c", "rust") and "::" not in name:
+                        scope = self._enclosing_class_name(parent)
+                        if scope:
+                            name = f"{scope}::{name}"
+
                     start_line = parent.start_point[0] + 1
                     end_line = parent.end_point[0] + 1
 
@@ -537,6 +566,11 @@ class Tricorder:
                     signature = ""
                     if sym_type in ("function", "method"):
                         sig_parts = [name]
+
+                        # Python: preserve the 'async' keyword on async def.
+                        if lang == "python" and parent.children and \
+                                parent.children[0].type == "async":
+                            sig_parts = ["async", name]
 
                         # Find parameter_list (C/C++), parameters (Python),
                         # or parameter nodes (Swift — uses `parameter` directly
@@ -967,6 +1001,8 @@ class Tricorder:
             symbols = self.get_symbols(filepath, rel)
             for sym in symbols:
                 sym_name = sym.name
+                if '::' in sym_name:
+                    sym_name = sym_name.split('::', 1)[-1]
                 if '(' in sym_name:
                     sym_name = sym_name.split('(', 1)[0]
                 elif sym_name.endswith('()'):
@@ -1087,7 +1123,9 @@ class Tricorder:
                         for ref in file_refs:
                             if containing["line"] <= ref["line"] <= containing["end_line"]:
                                 callee_name = ref["name"]
-                                if callee_name == name:
+                                callee_base = callee_name.split('::', 1)[-1] if '::' in callee_name else callee_name
+                                name_base = name.split('::', 1)[-1] if '::' in name else name
+                                if callee_base == name_base:
                                     continue  # Skip self-reference
                                 # Find definitions of this callee
                                 for def_file, def_line in defs.get(callee_name, []):
@@ -1205,10 +1243,13 @@ class Tricorder:
 
         target = None
         for sym in symbols:
-            # C/C++ tree-sitter queries yield names like "stretchMonitors()" or
-            # "init(SDL_Window* window, ...)" — strip trailing parens and/or
-            # everything from the first '(' to get the base name for matching.
+            # C/C++ tree-sitter queries yield names like "stretchMonitors()",
+            # "init(SDL_Window* window, ...)", or scoped "Foo::bar" — strip a
+            # leading "Class::" scope and trailing parens / "(...)" to get the
+            # base name for matching.
             sym_name = sym.name
+            if '::' in sym_name:
+                sym_name = sym_name.split('::', 1)[-1]
             if '(' in sym_name:
                 sym_name = sym_name.split('(', 1)[0]
             elif sym_name.endswith('()'):
