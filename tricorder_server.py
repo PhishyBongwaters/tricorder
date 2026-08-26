@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastmcp import FastMCP, settings
 from core import Tricorder
-from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root
+from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery
 from scm import get_scm_fname
 from importance import filter_important_files
 from ctags_probe import probe_and_narrow
@@ -419,14 +419,7 @@ async def tricorder_scan(
             # A caller-controlled path with no validation could write anywhere
             # the host user has access. Resolve to an explicit output dir and
             # reject escapes.
-            _cache_root = get_cache_root()
-            if _cache_root is None:
-                raise RuntimeError(
-                    "Tricorder cache root is unavailable (set TRICORDER_CACHE_HOME "
-                    "or ensure the home directory is writable). Cannot write "
-                    f"output_file '{output_file}'."
-                )
-            _TRICORDER_OUTPUT_DIR = _cache_root / "output"
+            _TRICORDER_OUTPUT_DIR = Path(__file__).resolve().parent / ".tricorder" / "output"
             out_path = _TRICORDER_OUTPUT_DIR / Path(output_file).name
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_text(map_content, encoding="utf-8")
