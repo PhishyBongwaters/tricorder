@@ -20,6 +20,7 @@ Honest A/B rules (per issue #44 plan v4):
 """
 import argparse
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -30,7 +31,7 @@ ROOT = Path(r"D:\Projects")
 TESTBED = ROOT / "Tricorder-Testing-Repos"
 STATE_DB = Path(os.environ["LOCALAPPDATA"]) / "hermes" / "state.db"
 LOG_PATH = Path(os.environ["LOCALAPPDATA"]) / "hermes" / "logs" / "agent.log"
-TRACK_SCRIPT = ROOT / "track_session.py"
+TRACK_SCRIPT = Path(__file__).parent / "track_session.py"  # bench-local copy
 OUTPUT_DIR = ROOT / "tricorder-test-reports"
 
 
@@ -204,15 +205,57 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
     print(f"[{variant}] running: {' '.join(cmd)}")
     env = os.environ.copy()
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
-    sid = r.stderr.strip()  # hermes prints session id / usage path at exit
-    # Fallback: scan log
+    # hermes chat (non-interactive) doesn't print the session id to stdout, so
+    # recover the newest CLI session from agent.log. Each `hermes chat` run
+    # logs a turn with format "... session=YYYYMMDD_HHMMSS_xxxxxx ...".
+    sid = recover_latest_session_id(LOG_PATH, marker=repr(prompt)[:80])
+    report_a = track_report(sid) if sid else None
     return {
         "variant": variant,
+        "session_id": sid,
         "session_file": usage_file,
         "stdout": r.stdout,
         "stderr": r.stderr,
         "rc": r.returncode,
+        "report": report_a,
     }
+
+
+def recover_latest_session_id(log_path, marker=None):
+    """Return the newest [YYYYMMDD_HHMMSS_xxxxxx] block from agent.log.
+
+    If `marker` is given, restrict to lines containing it (so we don't grab a
+    concurrent session started by someone else). Falls back to the absolute
+    newest session id in the log tail when marker matches nothing.
+    """
+    if not log_path.exists():
+        return None
+    pat = re.compile(r'\[([0-9]{8}_[0-9]{6}_[a-f0-9]+)\]')
+    with log_path.open("r", encoding="utf-8", errors="ignore") as f:
+        lines = f.readlines()
+    # Walk newest-first looking for a session= line (the definitive spawn marker).
+    for line in reversed(lines):
+        if "session=" in line or "agent.turn_context: conversation turn:" in line:
+            m = pat.search(line)
+            if m and (marker is None or marker in line):
+                return m.group(1)
+    # Fallback: any bracketed session id in the tail.
+    for line in reversed(lines):
+        m = pat.search(line)
+        if m:
+            return m.group(1)
+    return None
+
+
+def track_report(sid):
+    """Run track_session.py --save on a session id; return saved report path."""
+    if not sid or not TRACK_SCRIPT.exists():
+        return None
+    out = OUTPUT_DIR / f"report_{sid}.md"
+    r = subprocess.run([sys.executable, str(TRACK_SCRIPT),
+                        "--save", str(out), sid],
+                       capture_output=True, text=True)
+    return str(out) if r.returncode == 0 else None
 
 
 def main():
@@ -233,11 +276,17 @@ def main():
 
     for task in tasks:
         print(f"\n=== {task['repo']} ===")
-        run_variant(task, "A", args.model, args.provider)
-        run_variant(task, "B", args.model, args.provider)
+        results = []
+        if args.variant in ("A", "both"):
+            results.append(run_variant(task, "A", args.model, args.provider))
+        if args.variant in ("B", "both"):
+            results.append(run_variant(task, "B", args.model, args.provider))
+        # Summarize which session ids + reports landed.
+        for r in results:
+            print(f"  [{r['variant']}] sid={r.get('session_id')} "
+                  f"rc={r['rc']} report={r.get('report') or '(none)'}")
 
-    print("\nDone. Session usage files retained; run track_session.py on each")
-    print("to generate report_variant_a.md / report_variant_b.md + comparison.md")
+    print("\nDone. Reports saved under", OUTPUT_DIR)
 
 
 if __name__ == "__main__":
