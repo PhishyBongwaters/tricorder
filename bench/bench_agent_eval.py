@@ -166,11 +166,12 @@ def get_session_id_from_log(marker: str):
     return None
 
 
-def run_variant(repo_task, variant: str):
+def run_variant(repo_task, variant: str, model: str, provider: str):
     """Run one live hermes chat with the given variant, return session id.
 
     variant='A' -> tricorder MCP enabled (default profile).
     variant='B' -> baseline tools only (tricorder disabled for this run).
+    model/provider -> pinned on both legs so A/B is a clean comparison.
     """
     workdir = repo_task["path"]
     prompt = repo_task["question"]
@@ -189,15 +190,17 @@ def run_variant(repo_task, variant: str):
         "--in", workdir,
         "--max-turns", "60",
         "--run-budget", "120",
+        "-m", model,
+        "--provider", provider,
         "--cli",
     ]
     if variant == "B":
-        # Baseline: disable the tricorder MCP server so only read_file,
-        # search_files, grep, terminal are available.
+        # Baseline: --ignore-user-config drops plugins.enabled:[tricorder] from
+        # config.yaml, so only builtin tools (read_file, search_files, terminal)
+        # load. Model is still pinned via CLI above, so the run stays usable.
+        # ponytail: no per-run mcp toggle exists; this avoids mutating the live
+        # default profile (which other sessions share).
         cmd += ["--ignore-user-config"]
-        # ...but we still need our model + non-tricorder tools. So instead we
-        # rely on `hermes tools disable mcp:tricorder` BEFORE the run and
-        # re-enable after. Handled in main(): per-run toggle.
     print(f"[{variant}] running: {' '.join(cmd)}")
     env = os.environ.copy()
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
@@ -216,6 +219,10 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("repo", nargs="?", default=None)
     p.add_argument("--variant", choices=["A", "B", "both"], default="both")
+    p.add_argument("--model", default="hy3-free",
+                   help="Model pinned on BOTH variants (default: hy3-free).")
+    p.add_argument("--provider", default="opencode-free",
+                   help="Provider pinned on BOTH variants (default: opencode-free).")
     args = p.parse_args()
 
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -226,8 +233,8 @@ def main():
 
     for task in tasks:
         print(f"\n=== {task['repo']} ===")
-        run_variant(task, "A")
-        run_variant(task, "B")
+        run_variant(task, "A", args.model, args.provider)
+        run_variant(task, "B", args.model, args.provider)
 
     print("\nDone. Session usage files retained; run track_session.py on each")
     print("to generate report_variant_a.md / report_variant_b.md + comparison.md")
