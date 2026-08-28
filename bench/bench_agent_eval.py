@@ -19,8 +19,10 @@ Honest A/B rules (per issue #44 plan v4):
 - Metrics from real session state.db + agent.log via track_session.py.
 """
 import argparse
+import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -31,6 +33,15 @@ ROOT = Path(r"D:\Projects")
 TESTBED = ROOT / "Tricorder-Testing-Repos"
 STATE_DB = Path(os.environ["LOCALAPPDATA"]) / "hermes" / "state.db"
 LOG_PATH = Path(os.environ["LOCALAPPDATA"]) / "hermes" / "logs" / "agent.log"
+BENCH_BASELINE_LOG = (Path(os.environ["LOCALAPPDATA"]) / "hermes"
+                      / "profiles" / "bench-baseline" / "logs" / "agent.log")
+BENCH_BASELINE_DB = (Path(os.environ["LOCALAPPDATA"]) / "hermes"
+                     / "profiles" / "bench-baseline" / "state.db")
+# Judge runs on the bench-baseline profile too — it's a separate hermes chat
+# subprocess and we don't want it writing its session row into the user's
+# default profile. bench-baseline is plugin-clean and already exists, so
+# reusing it avoids creating yet another profile. ponytail: reuse, don't add.
+BENCH_JUDGE_PROFILE = "bench-baseline"
 TRACK_SCRIPT = Path(__file__).parent / "track_session.py"  # bench-local copy
 OUTPUT_DIR = ROOT / "tricorder-test-reports"
 
@@ -176,6 +187,17 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
     """
     workdir = repo_task["path"]
     prompt = repo_task["question"]
+    if variant == "A":
+        # Reinforce the skill's "stop at the first rung that answers" rule.
+        # Without this, the model over-escalates: 1 detect + 1 symbols + 1
+        # detail + multiple whole-file reads when rung 2 or 3 alone would
+        # have answered. The skill says it; the model ignores it; the prompt
+        # says it again. ponytail: 1-line suffix, no helper.
+        prompt = prompt + (
+            "\n\nUse Tricorder's escalation ladder. "
+            "Stop at the first rung that answers the question. "
+            "Do not read full files unless detail() left genuine ambiguity."
+        )
     # Write prompt to a query file so shell quoting never mangles it.
     qf = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
                                      encoding="utf-8")
@@ -195,21 +217,39 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
         "--provider", provider,
         "--cli",
     ]
+    if variant == "A":
+        # Force-load the tricorder skill so the escalation ladder is always
+        # in context. Without -s, the skill only auto-injects when the query
+        # wording matches its trigger — which left 6/8 A-runs with no ladder
+        # and the model grepping instead. Variant A is DEFINED as
+        # tricorder-with-ladder, so it must always get the skill.
+        # ponytail: single -s, no extra abstraction.
+        cmd += ["-s", "tricorder-codebase-understanding"]
     if variant == "B":
-        # Baseline: --ignore-user-config drops plugins.enabled:[tricorder] from
-        # config.yaml, so only builtin tools (read_file, search_files, terminal)
-        # load. Model is still pinned via CLI above, so the run stays usable.
-        # ponytail: no per-run mcp toggle exists; this avoids mutating the live
-        # default profile (which other sessions share).
-        cmd += ["--ignore-user-config"]
+        # Baseline: switch to a profile with the tricorder plugin disabled so
+        # only builtin tools (read_file, search_files, terminal) load — a true
+        # no-tricorder leg on identical model/prompt. `--ignore-user-config`
+        # does NOT drop the tricorer builtin MCP, so a dedicated profile is the
+        # only way to actually isolate. Create it once via:
+        #   hermes profile create bench-baseline
+        # then remove "tricorder" from plugins.enabled in its config.yaml.
+        # ponytail: this avoids mutating the live default profile (other
+        # sessions run against it).
+        cmd += ["--profile", "bench-baseline"]
     print(f"[{variant}] running: {' '.join(cmd)}")
     env = os.environ.copy()
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     # hermes chat (non-interactive) doesn't print the session id to stdout, so
-    # recover the newest CLI session from agent.log. Each `hermes chat` run
-    # logs a turn with format "... session=YYYYMMDD_HHMMSS_xxxxxx ...".
-    sid = recover_latest_session_id(LOG_PATH, marker=repr(prompt)[:80])
-    report_a = track_report(sid) if sid else None
+    # recover the newest CLI session from the right profile's agent.log.
+    # CRITICAL: Variant B uses --profile bench-baseline, whose log lives under
+    # .../profiles/bench-baseline/logs/agent.log, NOT the default log. Reading
+    # the default log for B would grab A's session id (the old sid-collision
+    # bug that made A and B report the same session).
+    log_path = LOG_PATH
+    if variant == "B":
+        log_path = BENCH_BASELINE_LOG
+    sid = recover_latest_session_id(log_path, marker=repr(prompt)[:80])
+    report_a = track_report(sid, variant) if sid else None
     return {
         "variant": variant,
         "session_id": sid,
@@ -247,15 +287,184 @@ def recover_latest_session_id(log_path, marker=None):
     return None
 
 
-def track_report(sid):
-    """Run track_session.py --save on a session id; return saved report path."""
+def track_report(sid, variant="A"):
+    """Run track_session.py --save on a session id; return saved report path.
+
+    The report filename gets "-A"/"-B" appended so A and B reports don't
+    collide even if the recovered session id happens to be identical.
+
+    Variant B's session lives in the bench-baseline profile's own state.db and
+    agent.log, so we pass --db / --log pointing there. (Reading the default
+    profile's DB for B caused "session not found" — third bench bug.)
+    """
     if not sid or not TRACK_SCRIPT.exists():
         return None
-    out = OUTPUT_DIR / f"report_{sid}.md"
-    r = subprocess.run([sys.executable, str(TRACK_SCRIPT),
-                        "--save", str(out), sid],
-                       capture_output=True, text=True)
+    out = OUTPUT_DIR / f"report_{sid}-{variant}.md"
+    cmd = [sys.executable, str(TRACK_SCRIPT), "--save", str(out), sid]
+    if variant == "B":
+        cmd += ["--db", str(BENCH_BASELINE_DB),
+                "--log", str(BENCH_BASELINE_LOG)]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"  [track_report {variant}] WARN: {r.stderr.strip()[:200]}")
     return str(out) if r.returncode == 0 else None
+
+
+def count_tricorder_calls(report_path):
+    """Return number of mcp__tricorder__ tool calls recorded in a report.
+
+    Honesty gate: if Variant A used zero tricorder calls, the A/B comparison
+    is NOT a tricorder-vs-baseline result — it's just the model's free choice.
+    Counting this prevents fake 'tricorder wins' claims from a run where A
+    never exercised the tool.
+    """
+    if not report_path or not Path(report_path).exists():
+        return None
+    txt = Path(report_path).read_text(encoding="utf-8", errors="ignore")
+    return txt.count("mcp__tricorder__")
+
+
+def grade_answer(report_path, ground_truth, rubric, model, provider,
+                 sid=None, variant="A"):
+    """Grade an agent's session against the rubric. Returns (passed, rationale).
+
+    Source of truth is the profile's state.db, not the telemetry report
+    (the report only contains tool-call traces, not the agent's prose answer).
+
+    Grades the agent's FINAL assistant message only — never the tool-result
+    dump. Catching ground_truth tokens in a tool's output proves the agent
+    SAW the answer, not that it ANSWERED. To pass, the agent must write the
+    identifiers in its own words in its own message.
+
+    Fast path: string-match ground_truth against the last assistant message
+    in state.db, with hierarchical fallback (full path -> last 2 components
+    -> basename). Cheap, no model call.
+
+    Slow path: if string match fails (or no final answer exists), invoke a
+    higher-reasoning model via `hermes chat --cli` with the final answer +
+    rubric and parse {"passed": bool, "rationale": str} from its output.
+
+    Rationale prefixes indicate which path ran: "PASS:" / "SEMANTIC PASS:" /
+    "FAIL:" / "no final answer:" / "Judge Error:".
+    """
+    # Caller already has the sid and variant; use them, don't re-parse the
+    # filename (the old regex+string-sniff was filename archaeology).
+    if not sid:
+        return False, "no sid provided"
+    db_path = BENCH_BASELINE_DB if variant == "B" else STATE_DB
+    if not db_path.exists():
+        return False, f"no db at {db_path}"
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.cursor()
+        # Final answer = LAST non-empty assistant message. A trailing empty
+        # placeholder row (in-flight session) must NOT masquerade as "no
+        # answer". ponytail: ORDER BY id is the tiebreak, content!='' is the
+        # real guard.
+        cur.execute(
+            "SELECT content FROM messages WHERE session_id = ? "
+            "AND role = 'assistant' AND content IS NOT NULL AND content != '' "
+            "ORDER BY id DESC LIMIT 1",
+            (sid,),
+        )
+        row = cur.fetchone()
+        conn.close()
+    except Exception as e:
+        return False, f"db error: {e}"
+
+    if not row or not row[0]:
+        return False, "no final answer: agent produced no assistant message"
+    final_answer = row[0]
+    final_lower = final_answer.lower()
+
+    # Fast path: hierarchical ground_truth match against the FINAL ANSWER only.
+    # The agent must name the identifier itself; finding it inside a tool
+    # result it read doesn't count.
+    found = []
+    for g in ground_truth:
+        gl = g.lower()
+        if "/" in gl:
+            parts = gl.split("/")
+            cands = [gl, "/".join(parts[-2:]), parts[-1]]
+        else:
+            cands = [gl]
+        if any(c in final_lower for c in cands):
+            found.append(g)
+    if ground_truth and len(found) == len(ground_truth):
+        return True, f"PASS: final answer names {len(found)}/{len(ground_truth)} ground_truth"
+
+    # Slow path: semantic LLM judge. Cap the final answer to keep the
+    # judge's context window sane.
+    judge_prompt = f"""You are a Pragmatic Technical Auditor. Verify whether an AI agent's final answer satisfies a rubric.
+
+RULES:
+- BE SEMANTIC: If the agent uses different but correct terminology, or slightly different file paths (e.g., ./file.py vs file.py), it is a PASS.
+- BE PRAGMATIC: Do not fail for minor formatting or style issues.
+- FOCUS ON INTENT: Does the agent's response satisfy the core requirements of the rubric? If yes, it is a PASS.
+- FAIL ONLY IF: The agent is factually wrong, misses a core requirement, or hallucinates information not present in the repo context.
+
+OUTPUT FORMAT (JSON only, no markdown fences):
+{{"passed": <true|false>, "rationale": "<one sentence explanation>"}}
+
+RUBRIC:
+{rubric}
+
+GROUND TRUTH (expected files/symbols the answer should reference):
+{', '.join(ground_truth)}
+
+AGENT'S FINAL ANSWER (the last assistant message in the session — this is all you grade; ignore tool outputs):
+{final_answer[:15000]}
+"""
+    qf = tempfile.NamedTemporaryFile(
+        "w", suffix=".txt", delete=False, encoding="utf-8"
+    )
+    qf.write(judge_prompt)
+    qf.close()
+    try:
+        r = subprocess.run(
+            ["hermes", "chat", "--query-file", qf.name, "--cli",
+             "-m", model, "--provider", provider, "--max-turns", "1",
+             "--profile", BENCH_JUDGE_PROFILE],
+            capture_output=True, text=True, timeout=180,
+        )
+        out = (r.stdout or "").strip()
+        # hermes chat echoes the query (incl. a {"passed":...} TEMPLATE
+        # example near the top) and wraps output in ANSI. The model's real
+        # verdict is the LAST balanced JSON object. Strip fences + ANSI,
+        # then walk candidate '{' positions from the right and let
+        # json.JSONDecoder.raw_decode decide where the object actually ends
+        # (it handles string escapes correctly, unlike a brace counter).
+        # ponytail: stdlib JSONDecoder handles escape edge cases a
+        # naive brace-counter gets wrong.
+        out = out.replace("```json", "").replace("```", "")
+        out = re.sub(r"\x1b\[[0-9;]*m", "", out)
+        decoder = json.JSONDecoder()
+        obj = None
+        idx = len(out) - 1
+        while idx >= 0:
+            i = out.rfind("{", 0, idx + 1)
+            if i < 0:
+                break
+            try:
+                candidate, _end = decoder.raw_decode(out[i:])
+                obj = candidate
+                break
+            except json.JSONDecodeError:
+                idx = i - 1
+        if obj is None:
+            raise ValueError("no JSON verdict in judge output")
+        decision = obj
+        passed = bool(decision.get("passed"))
+        rationale = str(decision.get("rationale", ""))
+        prefix = "SEMANTIC PASS" if passed else "SEMANTIC FAIL"
+        return passed, f"{prefix}: {rationale}"
+    except Exception as e:
+        return False, f"Judge Error: {e}"
+    finally:
+        try:
+            os.unlink(qf.name)
+        except OSError:
+            pass
 
 
 def main():
@@ -266,6 +475,14 @@ def main():
                    help="Model pinned on BOTH variants (default: hy3-free).")
     p.add_argument("--provider", default="opencode-free",
                    help="Provider pinned on BOTH variants (default: opencode-free).")
+    p.add_argument("--judge", action="store_true",
+                   help="Run the LLM judge on each leg's final answer. "
+                        "Off by default — telemetry-only runs are fast and "
+                        "free. ponytail: opt-in, no surprises.")
+    p.add_argument("--judge-model", default=None,
+                   help="Model for the judge (default: same as --model).")
+    p.add_argument("--judge-provider", default=None,
+                   help="Provider for the judge (default: same as --provider).")
     args = p.parse_args()
 
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -281,10 +498,63 @@ def main():
             results.append(run_variant(task, "A", args.model, args.provider))
         if args.variant in ("B", "both"):
             results.append(run_variant(task, "B", args.model, args.provider))
-        # Summarize which session ids + reports landed.
+        # Summarize which session ids + reports landed, with a tricorder-usage
+        # honesty gate so a no-tricorder A leg is flagged, not silently scored.
+        grades = {}
+        tc_by_variant = {}
+        # Judge model/provider default to the agent's — same reproducibility
+        # by default, opt-in to a stronger model for grading.
+        jm = args.judge_model or args.model
+        jp = args.judge_provider or args.provider
         for r in results:
+            tc = count_tricorder_calls(r.get("report"))
+            tc_by_variant[r["variant"]] = tc
+            if args.judge:
+                # Root-cause guard: a missing sid means the agent subprocess
+                # never wrote a session row. Don't pretend it's a FAIL —
+                # surface it as a WARN and skip grading.
+                if not r.get("session_id"):
+                    print(f"  [{r['variant']}] WARN: no session_id recovered "
+                          f"(rc={r['rc']}); skipping grade. "
+                          f"stderr: {(r.get('stderr') or '')[:200]}")
+                else:
+                    # Source of truth is state.db, not the report.
+                    # Pass sid+variant straight in (no filename re-parsing).
+                    passed, rationale = grade_answer(
+                        r.get("report"),
+                        task.get("ground_truth", []),
+                        task.get("rubric", ""),
+                        jm, jp,
+                        sid=r["session_id"], variant=r["variant"],
+                    )
+                    grades[r["variant"]] = (passed, rationale)
+                    print(f"  [{r['variant']}] GRADE="
+                          f"{'PASS' if passed else 'FAIL'} -- {rationale}")
+            if r["variant"] == "A":
+                flag = (f"tricorder_calls={tc}"
+                        if tc is not None else "report=MISSING")
+                if tc == 0:
+                    flag += "  <<< A did NOT use tricorder: this leg is NOT a "
+                    flag += "tricorder-vs-baseline result (model chose other tools)"
+            else:
+                flag = (f"tricorder_calls={tc} (must be 0 for clean control)"
+                        if tc is not None else "report=MISSING")
             print(f"  [{r['variant']}] sid={r.get('session_id')} "
-                  f"rc={r['rc']} report={r.get('report') or '(none)'}")
+                  f"rc={r['rc']} {flag}")
+        # VERDICT: only a real A/B if A used tricorder AND both legs graded.
+        # With --judge off, grades is empty → telemetry-only verdict.
+        a_tc = tc_by_variant.get("A")
+        if not args.judge:
+            print(f"  VERDICT: TELEMETRY ONLY (--judge off; "
+                  f"a_tc={a_tc})")
+        elif a_tc and a_tc > 0 and "A" in grades and "B" in grades:
+            a_pass, _ = grades["A"]
+            b_pass, _ = grades["B"]
+            print(f"  VERDICT: VALID A/B | A={'PASS' if a_pass else 'FAIL'} "
+                  f"B={'PASS' if b_pass else 'FAIL'}")
+        else:
+            print(f"  VERDICT: NOT a valid A/B "
+                  f"(a_tc={a_tc}, grades={list(grades.keys())})")
 
     print("\nDone. Reports saved under", OUTPUT_DIR)
 
