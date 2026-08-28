@@ -181,6 +181,12 @@ def build_report(sid):
 
 
 if __name__ == "__main__":
+    # ponytail: honor --db/--log so bench baseline sessions resolve in the
+    # right profile DB (the flag was passed but silently ignored before).
+    if "--db" in sys.argv:
+        DB_PATH = Path(sys.argv[sys.argv.index("--db") + 1]).expanduser()
+    if "--log" in sys.argv:
+        LOG_PATH = Path(sys.argv[sys.argv.index("--log") + 1]).expanduser()
     if "--all" in sys.argv:
         list_sessions()
     elif "--save" in sys.argv:
