@@ -196,21 +196,13 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
     workdir = repo_task["path"]
     prompt = repo_task["question"]
     if variant == "A":
-        # Reinforce the skill's escalation ladder — and NAME tricorder_query,
-        # the rung the prior suffix silently skipped. The skill's ladder puts
-        # query at rung 3: it returns the exact caller/callee subgraph in one
-        # call instead of dumping symbols/detail into context. Skipping it
-        # steered the agent into detect->symbols->detail (context bloat) and
-        # inflated A's token count — that was a harness skew, not a tricorder
-        # result. ponytail: explicit, 3-rung guidance, no helper.
-        prompt = prompt + (
-            "\n\nUse Tricorder's escalation ladder; stop at the first rung "
-            "that answers. Prefer tricorder_query for caller/callee traversal "
-            "(compact subgraph, one call). Use detect/symbols for a definition "
-            "or signature; use detail only to read one symbol body. Do NOT "
-            "dump whole files or full symbol maps into context — query "
-            "first, escalate only on genuine ambiguity."
-        )
+        # Force-load the tricorder skill so the escalation ladder is always
+        # in context. Without -s, the skill only auto-injects when the query
+        # wording matches its trigger — which left runs with no ladder
+        # and the model grepping instead. Variant A is DEFINED as
+        # tricorder-with-ladder, so it must always get the skill.
+        # ponytail: single -s, no extra abstraction.
+        cmd += ["-s", "tricorder-codebase-understanding"]
     # Write prompt to a query file so shell quoting never mangles it.
     qf = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
                                      encoding="utf-8")
