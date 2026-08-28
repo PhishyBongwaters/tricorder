@@ -381,26 +381,28 @@ def grade_answer(report_path, ground_truth, rubric, model, provider,
     if not db_path.exists():
         return False, f"no db at {db_path}"
     try:
-        conn = sqlite3.connect(str(db_path))
-        cur = conn.cursor()
-        # Final answer = LAST non-empty assistant message. A trailing empty
-        # placeholder row (in-flight session) must NOT masquerade as "no
-        # answer". ponytail: ORDER BY id is the tiebreak, content!='' is the
-        # real guard.
-        cur.execute(
-            "SELECT content FROM messages WHERE session_id = ? "
-            "AND role = 'assistant' AND content IS NOT NULL AND content != '' "
-            "ORDER BY id DESC LIMIT 1",
-            (sid,),
-        )
-        row = cur.fetchone()
-        conn.close()
+        final_answer = None
+        for cand in dict.fromkeys((db_path, STATE_DB)):  # dedupe; STATE_DB fallback for pre-isolation reports
+            if not cand.exists():
+                continue
+            con = sqlite3.connect(str(cand))
+            cur = con.cursor()
+            cur.execute(
+                "SELECT content FROM messages WHERE session_id = ? "
+                "AND role = 'assistant' AND content IS NOT NULL AND content != '' "
+                "ORDER BY id DESC LIMIT 1",
+                (sid,),
+            )
+            row = cur.fetchone()
+            con.close()
+            if row and row[0]:
+                final_answer = row[0]
+                break
     except Exception as e:
         return False, f"db error: {e}"
 
-    if not row or not row[0]:
+    if not final_answer:
         return False, "no final answer: agent produced no assistant message"
-    final_answer = row[0]
     final_lower = final_answer.lower()
 
     # Fast path: hierarchical ground_truth match against the FINAL ANSWER only.
@@ -509,6 +511,11 @@ def main():
                    help="Model for the judge (default: same as --model).")
     p.add_argument("--judge-provider", default=None,
                    help="Provider for the judge (default: same as --provider).")
+    p.add_argument("--judge-only", action="store_true",
+                   help="Re-grade EXISTING on-disk reports without re-running "
+                        "the agent. Needs --variant and the report file(s); "
+                        "reads session id from the report filename. ponytail: "
+                        "re-grade, don't re-run (kills LLM variance).")
     args = p.parse_args()
 
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -519,6 +526,55 @@ def main():
 
     for task in tasks:
         print(f"\n=== {task['repo']} ===")
+        jm = args.judge_model or args.model
+        jp = args.judge_provider or args.provider
+
+        # --judge-only: re-grade existing on-disk reports for this repo+variant.
+        # Report filenames encode {sid}-{variant}; the task's ground_truth/
+        # rubric come from the repo-matched task. No agent subprocess runs, so
+        # no LLM variance and no polluting a fresh session. ponytail: one glob.
+        if args.judge_only:
+            out = []
+            for v in ("A", "B"):
+                if args.variant not in (v, "both"):
+                    continue
+                for rp in sorted(
+                    OUTPUT_DIR.glob(f"report_*-{v}.md"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                ):
+                    # Report filenames don't embed the repo, so only grade
+                    # reports whose Title references THIS task's question
+                    # (telemetry bodies never contain ground_truth paths).
+                    # Match >=2 overlapping alpha words — robust to how titles
+                    # are auto-summarized. "what handler processes admin" vs
+                    # title "identify admin invites handler claim validation"
+                    # shares {handler, admin} >= 2. A projectm report title
+                    # won't. ponytail: token overlap, no schema.
+                    body = rp.read_text(encoding="utf-8", errors="ignore")
+                    m = re.search(r"\*\*Title:\*\*\s*(.+)", body)
+                    title = m.group(1).lower() if m else ""
+                    q_words = {w for w in task["question"].lower().split()
+                               if w.isalpha()}
+                    title_words = set(title.split())
+                    shared = q_words & title_words
+                    if len(shared) < 2:
+                        continue
+                    sid = rp.stem.replace(f"-{v}", "").replace("report_", "")
+                    passed, rationale = grade_answer(
+                        str(rp), task.get("ground_truth", []),
+                        task.get("rubric", ""), jm, jp,
+                        sid=sid, variant=v,
+                    )
+                    out.append(rp.name)
+                    print(f"  [{v}] {rp.name} GRADE="
+                          f"{'PASS' if passed else 'FAIL'} -- {rationale}")
+            if not out:
+                print(f"  no on-disk reports for repo={task['repo']} "
+                      f"variant={args.variant}")
+            print(f"  VERDICT: JUDGE-ONLY (re-graded {len(out)} report(s))")
+            continue
+
         results = []
         if args.variant in ("A", "both"):
             results.append(run_variant(task, "A", args.model, args.provider))
