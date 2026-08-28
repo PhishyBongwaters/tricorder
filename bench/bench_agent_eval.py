@@ -196,15 +196,20 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
     workdir = repo_task["path"]
     prompt = repo_task["question"]
     if variant == "A":
-        # Reinforce the skill's "stop at the first rung that answers" rule.
-        # Without this, the model over-escalates: 1 detect + 1 symbols + 1
-        # detail + multiple whole-file reads when rung 2 or 3 alone would
-        # have answered. The skill says it; the model ignores it; the prompt
-        # says it again. ponytail: 1-line suffix, no helper.
+        # Reinforce the skill's escalation ladder — and NAME tricorder_query,
+        # the rung the prior suffix silently skipped. The skill's ladder puts
+        # query at rung 3: it returns the exact caller/callee subgraph in one
+        # call instead of dumping symbols/detail into context. Skipping it
+        # steered the agent into detect->symbols->detail (context bloat) and
+        # inflated A's token count — that was a harness skew, not a tricorder
+        # result. ponytail: explicit, 3-rung guidance, no helper.
         prompt = prompt + (
-            "\n\nUse Tricorder's escalation ladder. "
-            "Stop at the first rung that answers the question. "
-            "Do not read full files unless detail() left genuine ambiguity."
+            "\n\nUse Tricorder's escalation ladder; stop at the first rung "
+            "that answers. Prefer tricorder_query for caller/callee traversal "
+            "(compact subgraph, one call). Use detect/symbols for a definition "
+            "or signature; use detail only to read one symbol body. Do NOT "
+            "dump whole files or full symbol maps into context — query "
+            "first, escalate only on genuine ambiguity."
         )
     # Write prompt to a query file so shell quoting never mangles it.
     qf = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
