@@ -626,6 +626,26 @@ def main():
         # VERDICT: only a real A/B if A used tricorder AND both legs graded.
         # With --judge off, grades is empty → telemetry-only verdict.
         a_tc = tc_by_variant.get("A")
+        
+        # Read billed input tokens from saved reports for direct comparison
+        tok_a, tok_b = None, None
+        for r in results:
+            rep = r.get("report")
+            if rep and Path(rep).exists():
+                txt = Path(rep).read_text(encoding="utf-8", errors="ignore")
+                m = re.search(r'- Input tokens:\s*([\d,]+)', txt)
+                if m:
+                    val = int(m.group(1).replace(",", ""))
+                    if r["variant"] == "A":
+                        tok_a = val
+                    else:
+                        tok_b = val
+
+        if tok_a is not None and tok_b is not None:
+            diff = tok_a - tok_b
+            pct = (diff / tok_b) * 100 if tok_b else 0
+            print(f"  [TOKENS] A={tok_a:,} | B={tok_b:,} | Δ={diff:+,} ({pct:+.1f}%)")
+
         if not args.judge:
             print(f"  VERDICT: TELEMETRY ONLY (--judge off; "
                   f"a_tc={a_tc})")
