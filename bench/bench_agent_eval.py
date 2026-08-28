@@ -37,6 +37,14 @@ BENCH_BASELINE_LOG = (Path(os.environ["LOCALAPPDATA"]) / "hermes"
                       / "profiles" / "bench-baseline" / "logs" / "agent.log")
 BENCH_BASELINE_DB = (Path(os.environ["LOCALAPPDATA"]) / "hermes"
                      / "profiles" / "bench-baseline" / "state.db")
+# Variant A's agent subprocess runs on bench-tricorder (separate profile that
+# already has the tricorder plugin configured). Keeps A's session row out of
+# the user's default profile — the same isolation judge already gets from
+# bench-baseline. ponytail: reuse existing profile, don't add.
+BENCH_TRICORDER_LOG = (Path(os.environ["LOCALAPPDATA"]) / "hermes"
+                       / "profiles" / "bench-tricorder" / "logs" / "agent.log")
+BENCH_TRICORDER_DB = (Path(os.environ["LOCALAPPDATA"]) / "hermes"
+                      / "profiles" / "bench-tricorder" / "state.db")
 # Judge runs on the bench-baseline profile too — it's a separate hermes chat
 # subprocess and we don't want it writing its session row into the user's
 # default profile. bench-baseline is plugin-clean and already exists, so
@@ -218,13 +226,20 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
         "--cli",
     ]
     if variant == "A":
-        # Force-load the tricorder skill so the escalation ladder is always
-        # in context. Without -s, the skill only auto-injects when the query
-        # wording matches its trigger — which left 6/8 A-runs with no ladder
-        # and the model grepping instead. Variant A is DEFINED as
-        # tricorder-with-ladder, so it must always get the skill.
-        # ponytail: single -s, no extra abstraction.
-        cmd += ["-s", "tricorder-codebase-understanding"]
+        # Run the A agent on the bench-tricorder profile (tricorder plugin
+        # already configured there). Same isolation pattern as B + judge —
+        # variant subprocesses should never write into the user's default
+        # profile.
+        #
+        # No -s flag: the tricorder skill isn't installed in bench-tricorder
+        # (only the MCP server is), and `-s <slug>` errors out hard on an
+        # unknown skill. The MCP's 9 tools (tricorder_detect, tricorder_scan,
+        # tricorder_symbols, ...) are auto-registered as tool definitions, so
+        # the model can discover and call them without the skill in context.
+        # The "stop at first rung" reinforcement is in the prompt suffix
+        # below — that doesn't need the skill file. ponytail: drop the flag,
+        # don't copy the skill.
+        cmd += ["--profile", "bench-tricorder"]
     if variant == "B":
         # Baseline: switch to a profile with the tricorder plugin disabled so
         # only builtin tools (read_file, search_files, terminal) load — a true
@@ -241,13 +256,13 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     # hermes chat (non-interactive) doesn't print the session id to stdout, so
     # recover the newest CLI session from the right profile's agent.log.
-    # CRITICAL: Variant B uses --profile bench-baseline, whose log lives under
-    # .../profiles/bench-baseline/logs/agent.log, NOT the default log. Reading
-    # the default log for B would grab A's session id (the old sid-collision
-    # bug that made A and B report the same session).
-    log_path = LOG_PATH
-    if variant == "B":
-        log_path = BENCH_BASELINE_LOG
+    # CRITICAL: variant subprocesses use their profile's own log, NOT the
+    # default log. Reading the default log for A would grab the user's real
+    # chat session (sid-collision bug that made A reports point at the wrong
+    # session). A -> bench-tricorder, B -> bench-baseline. ponytail: dict
+    # over if/elif.
+    PROFILE_LOG = {"A": BENCH_TRICORDER_LOG, "B": BENCH_BASELINE_LOG}
+    log_path = PROFILE_LOG.get(variant, LOG_PATH)
     sid = recover_latest_session_id(log_path, marker=repr(prompt)[:80])
     report_a = track_report(sid, variant) if sid else None
     return {
@@ -301,9 +316,15 @@ def track_report(sid, variant="A"):
         return None
     out = OUTPUT_DIR / f"report_{sid}-{variant}.md"
     cmd = [sys.executable, str(TRACK_SCRIPT), "--save", str(out), sid]
-    if variant == "B":
-        cmd += ["--db", str(BENCH_BASELINE_DB),
-                "--log", str(BENCH_BASELINE_LOG)]
+    # Same isolation: A reads bench-tricorder's state.db, B reads
+    # bench-baseline's. Without this, track_session.py read the default
+    # profile's DB and reported "session not found" for both legs. ponytail:
+    # same dict as PROFILE_LOG — keep them in sync.
+    PROFILE_DB = {"A": BENCH_TRICORDER_DB, "B": BENCH_BASELINE_DB}
+    PROFILE_LOG = {"A": BENCH_TRICORDER_LOG, "B": BENCH_BASELINE_LOG}
+    if variant in PROFILE_DB:
+        cmd += ["--db", str(PROFILE_DB[variant]),
+                "--log", str(PROFILE_LOG[variant])]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         print(f"  [track_report {variant}] WARN: {r.stderr.strip()[:200]}")
@@ -351,7 +372,12 @@ def grade_answer(report_path, ground_truth, rubric, model, provider,
     # filename (the old regex+string-sniff was filename archaeology).
     if not sid:
         return False, "no sid provided"
-    db_path = BENCH_BASELINE_DB if variant == "B" else STATE_DB
+    # Same dict as track_report — variant's session lives in the variant's
+    # own profile DB. Reading STATE_DB (the user's default) for A returns
+    # zero rows because A's session is in BENCH_TRICORDER_DB now. The old
+    # code only had B routed correctly; A was implicit. ponytail: one dict.
+    PROFILE_DB = {"A": BENCH_TRICORDER_DB, "B": BENCH_BASELINE_DB}
+    db_path = PROFILE_DB.get(variant, STATE_DB)
     if not db_path.exists():
         return False, f"no db at {db_path}"
     try:
