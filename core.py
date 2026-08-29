@@ -1687,7 +1687,7 @@ class Tricorder:
         mentioned_idents: Optional[Set[str]] = None,
         force_refresh: bool = False
     ) -> Optional[str]:
-        """Get the ranked tags map with caching."""
+        """Get the ranked tags map with persistent disk caching."""
         cache_key = (
             tuple(sorted(chat_fnames)),
             tuple(sorted(other_fnames)),
@@ -1696,15 +1696,26 @@ class Tricorder:
             tuple(sorted(mentioned_idents or [])),
         )
         
-        if not force_refresh and cache_key in self.map_cache:
-            return self.map_cache[cache_key]
+        if not force_refresh:
+            with self._tags_cache_lock:
+                try:
+                    cached = self.TAGS_CACHE.get(str(cache_key))
+                    if cached is not None:
+                        return cached
+                except Exception:
+                    pass
         
         result = self.get_ranked_tags_map_uncached(
             chat_fnames, other_fnames, max_map_tokens,
             mentioned_fnames, mentioned_idents
         )
         
-        self.map_cache[cache_key] = result
+        if not force_refresh:
+            with self._tags_cache_lock:
+                try:
+                    self.TAGS_CACHE[str(cache_key)] = result
+                except Exception:
+                    pass
         return result
     
     def get_ranked_tags_map_uncached(

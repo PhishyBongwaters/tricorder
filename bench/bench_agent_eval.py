@@ -195,6 +195,20 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
     """
     workdir = repo_task["path"]
     prompt = repo_task["question"]
+    # Variant A MUST use the tricorder MCP tools — relying on the skill text
+    # alone let the model fall back to blind grep/file reads (the run showed
+    # zero mcp__tricorder__ calls). Force it in the prompt so the harness's
+    # honesty gate (count_tricorder_calls) actually measures a tricorder leg.
+    if variant == "A":
+        prompt = (
+            "You MUST answer using the tricorder MCP tools "
+            "(mcp__tricorder__tricorder_detect / _symbols / _detail / _query / _scan). "
+            "Do NOT use grep, search_files, or read_file to hunt for code — tricorder "
+            "already has the repo mapped and cached on disk, so pull from that. "
+            "First locate the symbol with mcp__tricorder__tricorder_detect, then drill "
+            "with _detail/_query. Only read a file if tricorder's output is genuinely "
+            "ambiguous. Question: " + prompt
+        )
     # Write prompt to a query file so shell quoting never mangles it.
     qf = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
                                      encoding="utf-8")
