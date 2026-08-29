@@ -76,11 +76,11 @@ TASKS = [
                     "src/libprojectM/Audio/PCM.hpp",
                 ],
                 "rubric": (
-                    "Must name PCM::AddToBuffer's renderer-dispatch overload, "
-                    "the per-frame pull callback (PCM::GetNewMatrixFrame or alias), "
-                    "and the point where Loudness band computation feeds the active renderer. "
-                    "A bare grep of AddToBuffer signatures without the dispatch path fails."
-                ),
+                                    "Must name PCM::AddToBuffer's renderer-dispatch overload, "
+                                    "the per-frame pull callback (PCM::GetFrameAudioData), "
+                                    "and the point where Loudness band computation feeds the active renderer. "
+                                    "A bare grep of AddToBuffer signatures without the dispatch path fails."
+                                ),
     },
     {
         "repo": "vaultwarden",
@@ -413,8 +413,8 @@ RULES:
 - FOCUS ON INTENT: Does the agent's response satisfy the core requirements of the rubric? If yes, it is a PASS.
 - FAIL ONLY IF: The agent is factually wrong, misses a core requirement, or hallucinates information not present in the repo context.
 
-OUTPUT FORMAT (JSON only, no markdown fences):
-{{"passed": <true|false>, "rationale": "<one sentence explanation>"}}
+OUTPUT FORMAT (JSON only — emit nothing but a single balanced JSON object on its own line, no backticks, no prose before or after):
+{"passed": <true|false>, "rationale": "<one sentence>"}
 
 RUBRIC:
 {rubric}
@@ -433,7 +433,7 @@ AGENT'S FINAL ANSWER (the last assistant message in the session — this is all 
     try:
         r = subprocess.run(
             ["hermes", "chat", "--query-file", qf.name, "--cli",
-             "-m", model, "--provider", provider, "--max-turns", "1",
+             "-m", model, "--provider", provider, "--max-turns", "3",
              "--profile", BENCH_JUDGE_PROFILE],
             capture_output=True, text=True, timeout=180,
         )
