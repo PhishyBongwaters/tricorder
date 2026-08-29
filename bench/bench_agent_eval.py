@@ -414,7 +414,7 @@ RULES:
 - FAIL ONLY IF: The agent is factually wrong, misses a core requirement, or hallucinates information not present in the repo context.
 
 OUTPUT FORMAT (JSON only — emit nothing but a single balanced JSON object on its own line, no backticks, no prose before or after):
-{"passed": <true|false>, "rationale": "<one sentence>"}
+{{"passed": <true|false>, "rationale": "<one sentence>"}}
 
 RUBRIC:
 {rubric}
