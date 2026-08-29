@@ -189,20 +189,12 @@ def get_session_id_from_log(marker: str):
 def run_variant(repo_task, variant: str, model: str, provider: str):
     """Run one live hermes chat with the given variant, return session id.
 
-    variant='A' -> tricorder MCP enabled (default profile).
-    variant='B' -> baseline tools only (tricorder disabled for this run).
+    variant='A' -> tricorder MCP enabled (bench-tricorder profile).
+    variant='B' -> baseline tools only (bench-baseline profile).
     model/provider -> pinned on both legs so A/B is a clean comparison.
     """
     workdir = repo_task["path"]
     prompt = repo_task["question"]
-    if variant == "A":
-        # Force-load the tricorder skill so the escalation ladder is always
-        # in context. Without -s, the skill only auto-injects when the query
-        # wording matches its trigger — which left runs with no ladder
-        # and the model grepping instead. Variant A is DEFINED as
-        # tricorder-with-ladder, so it must always get the skill.
-        # ponytail: single -s, no extra abstraction.
-        cmd += ["-s", "tricorder-codebase-understanding"]
     # Write prompt to a query file so shell quoting never mangles it.
     qf = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
                                      encoding="utf-8")
@@ -223,30 +215,9 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
         "--cli",
     ]
     if variant == "A":
-        # Run the A agent on the bench-tricorder profile (tricorder plugin
-        # already configured there). Same isolation pattern as B + judge —
-        # variant subprocesses should never write into the user's default
-        # profile.
-        #
-        # No -s flag: the tricorder skill isn't installed in bench-tricorder
-        # (only the MCP server is), and `-s <slug>` errors out hard on an
-        # unknown skill. The MCP's 9 tools (tricorder_detect, tricorder_scan,
-        # tricorder_symbols, ...) are auto-registered as tool definitions, so
-        # the model can discover and call them without the skill in context.
-        # The "stop at first rung" reinforcement is in the prompt suffix
-        # below — that doesn't need the skill file. ponytail: drop the flag,
-        # don't copy the skill.
+        cmd += ["-s", "tricorder-codebase-understanding"]
         cmd += ["--profile", "bench-tricorder"]
-    if variant == "B":
-        # Baseline: switch to a profile with the tricorder plugin disabled so
-        # only builtin tools (read_file, search_files, terminal) load — a true
-        # no-tricorder leg on identical model/prompt. `--ignore-user-config`
-        # does NOT drop the tricorer builtin MCP, so a dedicated profile is the
-        # only way to actually isolate. Create it once via:
-        #   hermes profile create bench-baseline
-        # then remove "tricorder" from plugins.enabled in its config.yaml.
-        # ponytail: this avoids mutating the live default profile (other
-        # sessions run against it).
+    elif variant == "B":
         cmd += ["--profile", "bench-baseline"]
     print(f"[{variant}] running: {' '.join(cmd)}")
     env = os.environ.copy()
