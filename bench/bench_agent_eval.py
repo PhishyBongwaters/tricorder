@@ -201,12 +201,9 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
     # honesty gate (count_tricorder_calls) actually measures a tricorder leg.
     if variant == "A":
         prompt = (
-            "CRITICAL DIRECTIVE: You have NO other tools available for this codebase. "
-            "You MUST call mcp__tricorder__tricorder_detect for every symbol lookup "
-            "and mcp__tricorder__tricorder_detail for every code block. "
-            "Do NOT run shell commands, do NOT use read_file, do NOT use search_files. "
-            "If you do not call mcp__tricorder__* tools first, you fail. "
-            "Question: " + prompt
+            f"CRITICAL DIRECTIVE: Use the codebase-tricorder tools for symbol search and inspection. "
+            f"Pass project_root=\"{workdir}\" to any mcp__tricorder__* tool calls. "
+            f"Question: " + prompt
         )
     # Write prompt to a query file so shell quoting never mangles it.
     qf = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
