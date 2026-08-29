@@ -249,6 +249,11 @@ class Tricorder:
                 cached_entry = self.TAGS_CACHE.get(fname)
                     
                 if cached_entry and cached_entry.get("mtime") == file_mtime:
+                    try:
+                        with open(os.path.join(self._cache_dir(), "hits.log"), "a") as _hf:
+                            _hf.write(f"hit\tget_tags\t{fname}\n")
+                    except Exception:
+                        pass
                     return cached_entry["data"]
             except SQLITE_ERRORS:
                 self.tags_cache_error()
@@ -1701,6 +1706,11 @@ class Tricorder:
                 try:
                     cached = self.TAGS_CACHE.get(str(cache_key))
                     if cached is not None:
+                        try:
+                            with open(os.path.join(self._cache_dir(), "hits.log"), "a") as _hf:
+                                _hf.write(f"hit\tranked_tags_map\n")
+                        except Exception:
+                            pass
                         return cached
                 except Exception:
                     pass
