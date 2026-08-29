@@ -25,3 +25,6 @@ tmp/
 /tags
 # DSH plugin compiled output (source is src/*.ts; lib/ is built via tsc)
 plugins/dsh-tricorder-inject/lib/
+# Large untracked benchmarking corpus lives outside the repo; git status/diff
+# hashing it spikes CPU. ponytail: ignore, don't track.
+Tricorder-Testing-Repos/
