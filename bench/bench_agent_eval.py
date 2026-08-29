@@ -65,18 +65,22 @@ TASKS = [
         "path": str(ROOT / "projectm"),
         "scan_path": "src/libprojectM",
         "question": (
-            "Trace the call chain from PCM::AddToBuffer through the renderer "
-            "overloads it dispatches, and identify where loudness band "
-            "computation hooks into that chain."
-        ),
-        "ground_truth": [
-            "src/libprojectM/Audio/PCM.cpp",
-            "src/libprojectM/Audio/PCM.hpp",
-        ],
-        "rubric": (
-            "Must name the PCM::AddToBuffer overloads and the Loudness band "
-            "computation path."
-        ),
+                    "projectM's PCM audio pipeline feeds multiple renderer backends. "
+                    "Without opening every file, explain how PCM::AddToBuffer's overloads "
+                    "are dispatched to those backends and trace the path where loudness-band "
+                    "computation intersects with the active renderer — naming the dispatch "
+                    "entry and the per-frame callback the renderers pull from."
+                ),
+                "ground_truth": [
+                    "src/libprojectM/Audio/PCM.cpp",
+                    "src/libprojectM/Audio/PCM.hpp",
+                ],
+                "rubric": (
+                    "Must name PCM::AddToBuffer's renderer-dispatch overload, "
+                    "the per-frame pull callback (PCM::GetNewMatrixFrame or alias), "
+                    "and the point where Loudness band computation feeds the active renderer. "
+                    "A bare grep of AddToBuffer signatures without the dispatch path fails."
+                ),
     },
     {
         "repo": "vaultwarden",
