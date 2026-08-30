@@ -199,29 +199,39 @@ _DATA_EXTS = {
 # Overridable via env TRICORDER_MAX_SOURCE_FILE_SIZE (bytes). Read at call time
 # (see _env_int/_env_float) so tests and runtime tuning don't require re-import.
 _MAX_SOURCE_FILE_SIZE = 1024 * 1024
-_MAX_SCAN_FILES = 20000
+_MAX_SCAN_FILES = 0  # 0 = unlimited; env TRICORDER_MAX_SCAN_FILES to cap
 # TC-002: missing envelope pieces — directory-depth, total-byte, and scan-time
 # budgets so a hostile repo can't drive unbounded CPU/memory/disk. All
 # overridable via env; discovery already early-stops at _MAX_SCAN_FILES.
 _MAX_SCAN_DEPTH = 25
-_MAX_TOTAL_BYTES = 500 * 1024 * 1024
-_MAX_SCAN_TIME_S = 300.0
+_MAX_SCAN_DEPTH = 25
+_MAX_TOTAL_BYTES = 0  # 0 = unlimited; env TRICORDER_MAX_TOTAL_BYTES to cap
+_MAX_SCAN_TIME_S = 0.0  # 0 = unlimited; env TRICORDER_MAX_SCAN_TIME_S to cap
 _BUILTIN_SKIP_DIRS = {'node_modules', '__pycache__', 'venv', 'env', 'build', 'dist', '.tox', '.eggs'}
 
 
 def _env_int(name: str, default: int) -> int:
-    """Read an int env override at call time (TC-002 live tuning)."""
-    try:
-        return int(os.environ.get(name, default)) or default
-    except (TypeError, ValueError):
-        return default
+    """Read an int env override at call time (TC-002 live tuning).
+    If env is set to '0' or a negative number, returns it (0 = unlimited).
+    If unset, returns default.
+    """
+    val = os.environ.get(name)
+    if val is not None:
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            pass
+    return default
 
 
 def _env_float(name: str, default: float) -> float:
-    try:
-        return float(os.environ.get(name, default)) or default
-    except (TypeError, ValueError):
-        return default
+    val = os.environ.get(name)
+    if val is not None:
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            pass
+    return default
 
 
 def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs: Optional[List[str]] = None, report: Optional[dict] = None) -> List[str]:
@@ -295,8 +305,11 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
                 oversized_skipped += 1
                 continue
             if exclude_globs:
-                rel = os.path.relpath(full, directory).replace(os.sep, '/')
-                if any(fnmatch.fnmatch(rel, pat) for pat in exclude_globs):
+                try:
+                    rel = os.path.relpath(full, directory).replace(os.sep, '/')
+                    if any(fnmatch.fnmatch(rel, pat) for pat in exclude_globs):
+                        continue
+                except ValueError:
                     continue
             src_files.append(full)
             total_bytes += sz
@@ -304,11 +317,11 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
             # clean partial result with a warning rather than failing
             # unpredictably. The pre-index probe is required to go deeper.
             hit_limit = None
-            if len(src_files) >= max_scan_files:
+            if max_scan_files > 0 and len(src_files) >= max_scan_files:
                 hit_limit = f"reached file-count limit ({max_scan_files})"
-            elif total_bytes >= max_total_bytes:
+            elif max_total_bytes > 0 and total_bytes >= max_total_bytes:
                 hit_limit = f"reached total-byte limit ({max_total_bytes} bytes)"
-            elif (time.monotonic() - start) >= max_scan_time_s:
+            elif max_scan_time_s > 0 and (time.monotonic() - start) >= max_scan_time_s:
                 hit_limit = f"reached scan-time limit ({max_scan_time_s}s)"
             if hit_limit:
                 if report is not None:
@@ -570,7 +583,10 @@ def probe_project(project_root: str, exclude_globs: Optional[List[str]] = None) 
     for dirpath, dirnames, filenames in os.walk(root_path):
         dirnames[:] = [d for d in dirnames if d not in _CODE_IGNORE_DIRS]
         for fname in filenames:
-            rel = os.path.relpath(os.path.join(dirpath, fname), root_path)
+            try:
+                rel = os.path.relpath(os.path.join(dirpath, fname), root_path)
+            except ValueError:
+                continue
             if any(fnmatch.fnmatch(rel, g) for g in globs):
                 continue
             ext = os.path.splitext(fname)[1].lower()

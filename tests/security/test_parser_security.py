@@ -6,7 +6,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tests.security import FIXTURES, SECURITY_DIR  # noqa: E402
+import pathlib
+SECURITY_DIR = pathlib.Path(__file__).parent
+FIXTURES = {}
+
 from core import Tricorder  # noqa: E402
 
 

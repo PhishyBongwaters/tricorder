@@ -139,6 +139,12 @@ Examples:
     )
     
     parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Emit the full map regardless of token budget (disables truncation)"
+    )
+    
+    parser.add_argument(
         "--model",
         default="gpt-4",
         help="Model name for token counting (default: gpt-4)"
@@ -426,7 +432,8 @@ Examples:
         max_context_window=args.max_context_window,
         exclude_unranked=args.exclude_unranked,
         context_lines=int(args.tier) * args.context_lines,
-        exclude_untagged=args.exclude_untagged
+        exclude_untagged=args.exclude_untagged,
+        full_map=args.full,
     )
     
     try:

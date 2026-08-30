@@ -79,7 +79,8 @@ class Tricorder:
         exclude_globs: Optional[List[str]] = None,
         cache_size_limit: int = 100 * 1024 * 1024,  # 100MB default
         cache_eviction_policy: str = "least-recently-used",
-        cache_ttl: Optional[int] = None
+        cache_ttl: Optional[int] = None,
+        full_map: bool = False,
     ):
         """Initialize Tricorder instance."""
         self.map_tokens = map_tokens
@@ -99,6 +100,7 @@ class Tricorder:
         self.cache_size_limit = cache_size_limit
         self.cache_eviction_policy = cache_eviction_policy
         self.cache_ttl = cache_ttl
+        self.full_map = full_map
         
         # Set up output handlers
         if output_handler_funcs is None:
@@ -1699,6 +1701,7 @@ class Tricorder:
             max_map_tokens,
             tuple(sorted(mentioned_fnames or [])),
             tuple(sorted(mentioned_idents or [])),
+            self.full_map,
         )
         
         if not force_refresh:
@@ -1751,6 +1754,13 @@ class Tricorder:
         
         # Binary search to find the right number of tags
         chat_rel_fnames = set(self.get_rel_fname(f) for f in chat_fnames)
+        
+        # Full map: skip token-budget binary search, emit all ranked tags
+        if self.full_map:
+            best_tree = self.to_tree(ranked_tags, chat_rel_fnames, important_files)
+            best_num = len(ranked_tags)
+            file_report.total_files_considered = len(other_fnames)
+            return best_tree, file_report
         
         def try_tags(num_tags: int) -> Tuple[Optional[str], int]:
             if num_tags <= 0:

@@ -208,6 +208,7 @@ async def tricorder_scan(
     pre_index: Optional[str] = None,
     pre_index_max_files: int = 100,
     pre_index_include_parents: int = 0,
+    full: bool = False,
 ) -> Dict[str, Any]:
     """Generate a repository map for the specified files, providing a list of function prototypes and variables for files as well as relevant related
     files. Provide filenames relative to the project_root. In addition to the files provided, relevant related files will also be included with a
@@ -230,6 +231,7 @@ async def tricorder_scan(
     :param context_lines: Lines of context around each definition when tier=1.
     :param dry_run: If True, estimate token budget without generating the map. Returns tag count, tokens per tag, tags at budget, and full repo estimate.
     :param exclude_globs: Optional list of glob patterns (POSIX, relative to project_root) to exclude from auto-scan, e.g. ["vendor/**", "third_party/**"]. Filters vendored/third-party subtrees before ranking so first-party code dominates the map. Ignored when other_files is explicitly provided.
+    :param full: If True, emit the full repository map regardless of token_limit, disabling truncation. Use for full-repo indexing to disk. Defaults to False.
     :returns: A dictionary containing:
         - If dry_run: 'tags', 'tokens_per_tag', 'tags_at_budget', 'full_repo_estimate'.
         - If output_file is set: 'map_file' (path), 'token_estimate' (int), 'tier' (int), 'format' (str), 'report' (dict), and optionally 'tier_hint' (advisory).
@@ -256,7 +258,8 @@ async def tricorder_scan(
     # absurd scan sizes (e.g. 999999999) that could exhaust resources.
     # Discovery already early-stops at 20_000 (MAX_SCAN_FILES in utils.py),
     # but clamp the param itself so downstream code never sees an absurd value.
-    MAX_ALLOWED_FILES = 10000
+    MAX_ALLOWED_FILES_ENV = os.environ.get("TRICORDER_MAX_ALLOWED_FILES")
+    MAX_ALLOWED_FILES = 999999999 if (MAX_ALLOWED_FILES_ENV is not None and MAX_ALLOWED_FILES_ENV == "0") else (int(MAX_ALLOWED_FILES_ENV) if MAX_ALLOWED_FILES_ENV else 10000)
     max_files = min(max_files, MAX_ALLOWED_FILES)
     
     chat_files_list = chat_files or []
@@ -327,7 +330,8 @@ async def tricorder_scan(
             exclude_unranked=exclude_unranked,
             max_context_window=max_context_window,
             context_lines=context_lines if tier > 0 else 0,
-            exclude_globs=exclude_globs
+            exclude_globs=exclude_globs,
+            full_map=full,
         )
     except Exception as e:
         log.exception(f"Failed to initialize Tricorder for project '{project_root}': {e}")
