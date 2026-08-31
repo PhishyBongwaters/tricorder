@@ -91,12 +91,38 @@ def build_report(sid):
         FROM sessions WHERE id = ?
     """, (sid,))
     row = cur.fetchone()
-    conn.close()
 
     if not row:
+        conn.close()
         return f"Error: Session {sid} not found in DB.", {}, []
 
     model, provider, inp, out, cache_read, cache_write, reasoning, api, tools, est, act, title, started, ended = row
+
+    # ponytail: Fallback to session_model_usage aggregation when sessions table has NULL token metrics
+    # (This happens when local llama.cpp endpoint doesn't return usage headers in API response)
+    if inp is None or out is None:
+        cur.execute("""
+            SELECT COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
+                   COALESCE(SUM(cache_read_tokens), 0), COALESCE(SUM(cache_write_tokens), 0),
+                   COALESCE(SUM(reasoning_tokens), 0), COALESCE(SUM(api_call_count), 0),
+                   COALESCE(SUM(estimated_cost_usd), 0), COALESCE(SUM(actual_cost_usd), 0)
+            FROM session_model_usage WHERE session_id = ?
+        """, (sid,))
+        agg_row = cur.fetchone()
+        if agg_row and any(v is not None and v != 0 for v in agg_row[:6]):
+            if inp is None: inp = agg_row[0]
+            if out is None: out = agg_row[1]
+            if cache_read is None: cache_read = agg_row[2]
+            if cache_write is None: cache_write = agg_row[3]
+            if reasoning is None: reasoning = agg_row[4]
+            if api is None: api = agg_row[5]
+            if est is None: est = agg_row[6]
+            if act is None: act = agg_row[7]
+            # Recalculate db_cost from estimated if actual is None
+            if act is None and est is not None:
+                act = est
+
+    conn.close()
 
     api_calls = []
     tools_log = []
