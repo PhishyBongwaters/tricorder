@@ -27,7 +27,7 @@ Repo: https://github.com/pdavis68/RepoMapper
 We forked RepoMapper and went deep on language coverage, correctness, and code intelligence:
 
 - **8 critical bug fixes** — NameError, TypeError, cache path, duplicate definitions, dead variables, redundant checks, dedup edge cases, relative_to crash
-- **118 tests** — zero existed in the original
+- **199 tests** — zero existed in the original
 - **10-language signature extraction** with return types — Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby
 - **Cross-file call graph** — callers/callees with import resolution across files
 - **Reference captures** — C `call_expression`/type refs, Swift `call_expression`/`navigation_expression`/`user_type` refs
@@ -80,7 +80,7 @@ tricorder/
 │   └── tricorder/              # bundled usage skill (SKILL.md)
 ├── plugins/
 │   └── tricorder/              # Hermes lifecycle plugin (hooks + /tricorder slash cmd)
-├── tests/                      # 118 tests (ported from RepoMapper fork)
+├── tests/                      # 199 tests (ported from RepoMapper fork)
 ├── README.md
 ├── SPEC.md
 ├── LICENSE                     # MIT
@@ -362,15 +362,14 @@ tricorder builds on the work of:
 
 3. **The Hermes Agent community** — for the plugin system, MCP client, and tool framework that tricorder plugs into.
 
-The code in this repository is a rebrand and repackaging (as an MCP server + bundled skill,
-with optional slash-command plugin) of the RepoMapper fork maintained at `http://127.0.0.1:3001/projects/repomapper.git`. The fork added 8 bug fixes, 118 tests, 10-language coverage, cross-file call graph analysis, and Windows compatibility — all of which carry forward to tricorder.
+The code in this repository is a rebrand and repackaging of the RepoMapper fork maintained at `http://127.0.0.1:3001/projects/repomapper.git`. The fork added 8 bug fixes, 199 tests, 10-language coverage, cross-file call graph analysis, and Windows compatibility — all of which carry forward to tricorder.
 
 ---
 
 ## Status
 
 **Phase 1 (rebrand) complete** — RepoMapper fork imported and fully rebranded to tricorder
-(see git log). 118 tests green (incl. `exclude_globs`, language-matrix, graph-query); CLI and MCP server verified.
+(see git log). 199 tests green (incl. `exclude_globs`, language-matrix, graph-query); CLI and MCP server verified.
 **Phase 2 (Hermes integration) complete** — bundled skill (`skills/tricorder/`) added and
 installed; the MCP server is registered under Hermes' `mcp_servers:` (command points at the
 venv's `tricorder-mcp.exe`) and the `mcp` client SDK is present, so after a Hermes restart the

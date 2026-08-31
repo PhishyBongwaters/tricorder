@@ -82,7 +82,8 @@ tricorder . --max-files 5000         # Raise auto-discovery cap (default 1000)
 tricorder . --exclude-globs vendor/** third_party/**
 tricorder . --top 10                 # Top N ranked files
 tricorder . --mermaid --mermaid-top 30  # Mermaid flowchart
-tricorder . --signature-only         # Content signature for cache debugging
+|tricorder . --signature-only         # Content signature for cache debugging
+|tricorder . --full                   # Emit full map regardless of token budget
 ```
 
 ### Output Tiers
@@ -162,7 +163,7 @@ Or run directly: `python tricorder_server.py`
 
 | Tool | Purpose |
 |------|---------|
-| `tricorder_scan` | Generate repo map. `output_format`: `text` or `mermaid`. `tier`: `0` or `1`. Also `token_limit`, `chat_files`, `other_files`, `mentioned_files/idents`, `exclude_unranked`, `exclude_untagged`, `force_refresh`, `max_context_window`, `output_file`, `dry_run`, `exclude_globs`, `pre_index`/`pre_index_max_files`/`pre_index_include_parents`. Returns `token_estimate`, `full_repo_estimate`, `savings_pct`, `tier_hint`. |
+| `tricorder_scan` | Generate repo map. `output_format`: `text` or `mermaid`. `tier`: `0` or `1`. Also `token_limit`, `chat_files`, `other_files`, `mentioned_files/idents`, `exclude_unranked`, `exclude_untagged`, `force_refresh`, `max_context_window`, `output_file`, `dry_run`, `exclude_globs`, `pre_index`/`pre_index_max_files`/`pre_index_include_parents`, `full`. Returns `token_estimate`, `full_repo_estimate`, `savings_pct`, `tier_hint`. |
 | `tricorder_detect` | Search identifiers by name. Case-insensitive; returns file, line, def/ref kind, context. Params: `query`, `max_results`, `context_lines`, `include_definitions`, `include_references`, `pre_index`/`pre_index_max_files`/`pre_index_include_parents`. |
 | `tricorder_symbols` | Structured symbol query with type + file filters. Returns full records (name, type, file, line range, signature, docstring, language, ts-kind). Params: `query`, `type`, `file`, `limit` (default 50, cap 200). |
 | `tricorder_detail` | Deep-dive on a symbol — body, callers, callees. Params: `name`, `file`, `line`. |
@@ -401,7 +402,7 @@ Union = 28 distinct languages. Canonical list in `utils.py` `EXTENSIONS`. `.h` f
 
 1. **Gen 1 — Aider `RepoMap`** (Paul Gauthier): tree-sitter + PageRank.
 2. **Gen 2 — RepoMapper** (Paul Davis / pdavis68): standalone CLI + MCP server. Upstream: https://github.com/pdavis68/RepoMapper
-3. **Gen 3 — tricorder**: our fork — 8 bug fixes, 123 tests, 10-language signature extraction, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, full rebrand.
+3. **Gen 3 — tricorder**: our fork — 8 bug fixes, 199 tests, 10-language signature extraction, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, full rebrand.
 
 Lineage intentionally kept visible. MIT Licensed.
 
