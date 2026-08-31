@@ -481,8 +481,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("repo", nargs="?", default=None)
     p.add_argument("--variant", choices=["A", "B", "both"], default="both")
-    p.add_argument("--model", default="hy3-free",
-                   help="Model pinned on BOTH variants (default: hy3-free).")
+    p.add_argument("--model", default="laguna-s-2.1-free",
+                   help="Model pinned on BOTH variants (default: laguna-s-2.1-free).")
     p.add_argument("--provider", default="opencode-free",
                    help="Provider pinned on BOTH variants (default: opencode-free).")
     p.add_argument("--judge", action="store_true",
