@@ -138,17 +138,20 @@ def build_report(sid):
     lines.append("## Aggregate Metrics")
     lines.append(f"- Tool calls: {tools}")
     lines.append(f"- API calls: {api}")
-    lines.append(f"- Input tokens: {inp:,}")
-    lines.append(f"- Output tokens: {out:,}")
-    lines.append(f"- Cache read: {cache_read:,}")
-    lines.append(f"- Cache write: {cache_write:,}")
-    lines.append(f"- Reasoning tokens: {reasoning:,}")
+    lines.append(f"- Input tokens: {inp:,}" if inp else "- Input tokens: N/A")
+    lines.append(f"- Output tokens: {out:,}" if out else "- Output tokens: N/A")
+    lines.append(f"- Cache read: {cache_read:,}" if cache_read else "- Cache read: N/A")
+    lines.append(f"- Cache write: {cache_write:,}" if cache_write else "- Cache write: N/A")
+    lines.append(f"- Reasoning tokens: {reasoning:,}" if reasoning else "- Reasoning tokens: N/A")
     lines.append(f"- Actual cost: {act if act else 'N/A'}")
     if api_calls:
         sum_raw_in = sum(c["in"] for c in api_calls)
         sum_out = sum(c["out"] for c in api_calls)
-        lines.append(f"- Reconciliation: raw input sent = {sum_raw_in:,} = billed input {inp:,} + cache read {cache_read:,}")
-        lines.append(f"- Sum of per-call output: {sum_out:,} (DB reports {out:,})")
+        inp_str = f"{inp:,}" if inp else "N/A"
+        cache_str = f"{cache_read:,}" if cache_read else "N/A"
+        out_str = f"{out:,}" if out else "N/A"
+        lines.append(f"- Reconciliation: raw input sent = {sum_raw_in:,} = billed input {inp_str} + cache read {cache_str}")
+        lines.append(f"- Sum of per-call output: {sum_out:,} (DB reports {out_str})")
     lines.append("")
     lines.append("## Per-API-Call Breakdown")
     lines.append("_'in' = raw prompt/context sent that call (grows as conversation accumulates). ")
@@ -184,9 +187,9 @@ if __name__ == "__main__":
     # ponytail: honor --db/--log so bench baseline sessions resolve in the
     # right profile DB (the flag was passed but silently ignored before).
     if "--db" in sys.argv:
-        DB_PATH = Path(sys.argv[sys.argv.index("--db") + 1]).expanduser()
+        globals()["DB_PATH"] = Path(sys.argv[sys.argv.index("--db") + 1]).expanduser()
     if "--log" in sys.argv:
-        LOG_PATH = Path(sys.argv[sys.argv.index("--log") + 1]).expanduser()
+        globals()["LOG_PATH"] = Path(sys.argv[sys.argv.index("--log") + 1]).expanduser()
     if "--all" in sys.argv:
         list_sessions()
     elif "--save" in sys.argv:
