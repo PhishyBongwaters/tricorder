@@ -481,10 +481,10 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("repo", nargs="?", default=None)
     p.add_argument("--variant", choices=["A", "B", "both"], default="both")
-    p.add_argument("--model", default="laguna-s-2.1-free",
-                   help="Model pinned on BOTH variants (default: laguna-s-2.1-free).")
-    p.add_argument("--provider", default="opencode-free",
-                   help="Provider pinned on BOTH variants (default: opencode-free).")
+    p.add_argument("--model", default="Qwen",
+                   help="Model pinned on BOTH variants (default: Qwen).")
+    p.add_argument("--provider", default="llama-cpp",
+                   help="Provider pinned on BOTH variants (default: llama-cpp).")
     p.add_argument("--judge", action="store_true",
                    help="Run the LLM judge on each leg's final answer. "
                         "Off by default — telemetry-only runs are fast and "
