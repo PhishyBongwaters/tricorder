@@ -568,6 +568,13 @@ class Tricorder:
 
                     start_line = parent.start_point[0] + 1
                     end_line = parent.end_point[0] + 1
+                    # ponytail: tree-sitter queries capture function_declarator
+                    # (signature only) not function_definition (full body).
+                    # Walk up to function_definition to get the real end_line.
+                    if sym_type in ("function", "method") and parent.type == "function_declarator":
+                        func_def = parent.parent
+                        if func_def and func_def.type == "function_definition":
+                            end_line = func_def.end_point[0] + 1
 
                     # Build signature from function/method parameters
                     signature = ""
@@ -1288,18 +1295,26 @@ class Tricorder:
         file_refs = self._file_refs_index.get(_np) or []
 
         # In-file callers: lines in this file that reference this symbol's name
+        # ponytail: function-scope guard — only refs within the symbol's body
         callers = []
         for ref in file_refs:
             if ref["name"] == symbol_name:
-                callers.append({"file": file_path, "line": ref["line"], "cross_file": False})
+                if ref["line"] >= target.line and ref["line"] <= target.end_line:
+                    callers.append({"file": file_path, "line": ref["line"], "cross_file": False})
 
-        # In-file callees: unique symbols this file's code calls (excluding self)
+        # In-file callees: unique symbols called WITHIN this symbol's body
+        # ponytail: function-scope guard — excludes refs in sibling functions
         callees = []
         seen = set()
         for ref in file_refs:
-            if ref["name"] != symbol_name and ref["name"] not in seen:
-                seen.add(ref["name"])
-                callees.append({"name": ref["name"], "file": file_path, "line": ref["line"], "cross_file": False})
+            if ref["name"] == symbol_name:
+                continue
+            if ref["name"] in seen:
+                continue
+            if ref["line"] < target.line or ref["line"] > target.end_line:
+                continue
+            seen.add(ref["name"])
+            callees.append({"name": ref["name"], "file": file_path, "line": ref["line"], "cross_file": False})
 
         # Cross-file callers: references to this symbol in OTHER files
         # ponytail: normalize path separators — cross-file index uses os.path
@@ -1314,9 +1329,13 @@ class Tricorder:
         import_data = self._build_import_index()
         resolver = import_data['resolver']
 
+        # ponytail: function-scope guard for cross-file callees too
         for ref in file_refs:
             ref_name = ref["name"]
             if ref_name == symbol_name:
+                continue
+            # Exclude refs outside this function's body
+            if ref["line"] < target.line or ref["line"] > target.end_line:
                 continue
             # Resolve to qualified name if possible
             resolution = resolver.resolve(ref_name, file_path)

@@ -165,6 +165,43 @@ class TestGetSymbolDetails(unittest.TestCase):
             f"expected stretchMonitors (scoped or bare), got {returned!r}",
         )
 
+    def test_function_scope_isolation(self):
+        """Callees and callers are scoped to the function body, not the whole file.
+
+        PCM.cpp has sibling functions with overlapping call targets (e.g.
+        UpdateSpectrum, Align, CopyNewWaveformData).  GetFrameAudioData must
+        NOT list callees from UpdateFrameAudioData or CopyNewWaveformData.
+        """
+        import os
+        pcm = r"D:\Projects\projectm\src\libprojectM\Audio\PCM.cpp"
+        if not os.path.isfile(pcm):
+            self.skipTest(f"PCM.cpp not found: {pcm}")
+
+        result = asyncio.run(tricorder_detail(
+            project_root=r"D:\Projects\projectm",
+            file=r"src\libprojectM\Audio\PCM.cpp",
+            name="GetFrameAudioData"
+        ))
+        self.assertNotIn("error", result)
+        sym = result["symbol"]
+
+        # end_line must cover the body, not just the declarator
+        self.assertGreaterEqual(sym["end_line"], 97,
+                                "end_line should cover the full function body")
+
+        # Collect callee names
+        callee_names = {c["name"] for c in sym["callees"]}
+
+        # These are defined in PCM.cpp but belong to OTHER functions —
+        # they must NOT appear as callees of GetFrameAudioData.
+        false_positives = callee_names & {"CopyNewWaveformData", "UpdateSpectrum", "Align"}
+        self.assertFalse(false_positives,
+                         f"GetFrameAudioData should not see callees from sibling functions: {false_positives}")
+
+        # Verify end_line is correct (PCM.cpp GetFrameAudioData body is L76-97)
+        self.assertEqual(sym["end_line"], 97,
+                         "end_line must match the actual closing brace of the function body")
+
     def test_performance(self):
         """Single symbol lookup returns in <1s."""
         start = time.time()
