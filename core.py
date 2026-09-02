@@ -829,7 +829,66 @@ class Tricorder:
 
     _import_index_cache: Dict[str, Dict] = None  # type: ignore[assignment]
 
+    _CROSS_REF_DISK_KEY = "__cross_ref_index_v1__"
+
+    def _cross_ref_fingerprint(self) -> str:
+        """Fingerprint of every discovered file's (rel path, mtime).
+
+        One stat per file, no tree-sitter parse. Any add/edit/delete changes
+        the fingerprint, so a matching fingerprint means the persisted
+        cross-file/import indexes are still valid for THIS repo snapshot.
+        """
+        entries = []
+        for fpath in self._discover_files():
+            try:
+                m = os.path.getmtime(fpath)
+            except OSError:
+                continue
+            entries.append((self.get_rel_fname(fpath).replace("\\", "/"), m))
+        entries.sort()
+        return hashlib.sha256(repr(entries).encode("utf-8")).hexdigest()
+
+    def _load_cross_ref_disk(self) -> bool:
+        """Restore the import+cross-file indexes from diskcache if valid.
+
+        Also restores self._file_refs_index (detail uses it for in-file
+        callers/callees). Returns True on a valid hit. Both TAGS_CACHE types
+        (diskcache.Cache and the plain-dict fallback) expose .get/.set.
+        """
+        try:
+            bundle = self.TAGS_CACHE.get(self._CROSS_REF_DISK_KEY)
+            if not bundle:
+                return False
+            if bundle.get("fingerprint") != self._cross_ref_fingerprint():
+                return False
+            self._import_index_cache = bundle["import_index"]
+            self._cross_file_index_cache = bundle["cross_file_idx"]
+            self._file_refs_index = bundle["file_refs_index"]
+            return True
+        except Exception:
+            return False
+
+    def _save_cross_ref_disk(self):
+        """Persist the import+cross-file indexes + file_refs to diskcache.
+
+        Computes the fingerprint lazily (one stat pass). Failure is harmless —
+        next call rebuilds in memory. Only diskcache.Cache persists; the
+        plain-dict fallback stays in-memory.
+        """
+        try:
+            if not hasattr(self.TAGS_CACHE, "set"):
+                return  # in-memory fallback — nothing durable to write to
+            self.TAGS_CACHE.set(self._CROSS_REF_DISK_KEY, {
+                "fingerprint": self._cross_ref_fingerprint(),
+                "import_index": self._import_index_cache,
+                "cross_file_idx": self._cross_file_index_cache,
+                "file_refs_index": getattr(self, "_file_refs_index", {}),
+            })
+        except Exception:
+            pass  # evicted/disk error — rebuild next call
+
     def _build_import_index(self) -> Dict[str, Dict]:
+
         """Build import bindings and name resolver for all source files.
 
         Returns a dict with:
@@ -841,7 +900,12 @@ class Tricorder:
         # Fast path: cache hit (no lock needed for read)
         if self._import_index_cache is not None:
             return self._import_index_cache
-        
+
+        # Disk cache: restore the whole import+cross-file bundle if the repo
+        # snapshot is unchanged. Avoids re-parsing imports on every detail().
+        if self._load_cross_ref_disk():
+            return self._import_index_cache
+
         # Lock for write - double-checked locking
         with self._import_index_lock:
             # Double-check after acquiring lock
@@ -896,7 +960,11 @@ class Tricorder:
         # Fast path: check if we have a cached cross-file index
         if hasattr(self, '_cross_file_index_cache') and self._cross_file_index_cache is not None:
             return self._cross_file_index_cache
-        
+
+        # Disk cache: restore the whole bundle if the repo snapshot is unchanged.
+        if self._load_cross_ref_disk():
+            return self._cross_file_index_cache
+
         # Lock for write - double-checked locking
         with self._cross_file_index_lock:
             # Double-check after acquiring lock
@@ -944,6 +1012,9 @@ class Tricorder:
             result = (dict(defs), dict(refs))
             self._cross_file_index_cache = result
             self._file_refs_index = file_refs_index
+            # Persist the full import+cross-file bundle so a fresh process
+            # (every MCP call) restores it without re-parsing the repo.
+            self._save_cross_ref_disk()
             return result
 
     def build_call_graph(self, file_paths: List[str]) -> Dict[str, Dict]:

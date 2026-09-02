@@ -1,85 +1,26 @@
 ---
-name: tricorder
-description: Use tricorder (via dsh MCP bridge) to map a codebase (symbols, call graphs, signatures) without reading every file. Use when exploring an unfamiliar repo, locating a definition, or summarizing project structure in deepseek-harness.
-whenToUse: Exploring an unfamiliar codebase, locating a symbol definition, tracing callers/callees, or summarizing repo structure with minimal token cost.
+name: codebase-tricorder
+description: Use tricorder to map a codebase (symbols, call graphs, signatures) without reading every file. Highest-value when exploring an unfamiliar repo, locating a definition, or summarizing structure.
 ---
 
-# Tricorder (deepseek-harness / dsh port)
+# Tricorder
 
-Downstream port of the Hermes `tricorder` skill for deepseek-harness (dsh).
-Source of truth for the underlying knowledge: the Hermes skill at
-`skills/tricorder/SKILL.md` in this repo. Keep the two in sync on shared facts
-(escalation ladder, arg names, token costs); this file only differs in the
-tool-name prefix and the dsh integration plumbing.
+Use tricorder when you need `symbols`, `signatures`, `callers/callees`, or a compact **map** of a codebase without reading every file. It scans with tree-sitter, ranks by PageRank, and returns only the important definitions — typically **~1.5% of full-repo token cost**.
 
-## Tool names (dsh MCP bridge)
+It is surfaced two ways:
 
-Tricorder is registered as an MCP server named `tricorder` via `dsh-mcp-client`
-(`serverName: tricorder`). dsh prefixes external server tools as
-`mcp__<serverName>__<rawName>`, so the tools you call are:
-
-- `mcp__tricorder__tricorder_scan` — project map / structure
-- `mcp__tricorder__tricorder_detect` — find an identifier (case-insensitive, cheap)
-- `mcp__tricorder__tricorder_symbols` — definition + signature + line
-- `mcp__tricorder__tricorder_detail` — full symbol body + cross-file callers/callees
-- `mcp__tricorder__tricorder_query` — graph traversal DSL on call graph (callers/callees/refs/defs with depth, exclude, type, limit)
-
-## Install (reproducible)
-
-This skill hybrid-installs: the file lives in-repo under `skills/tricorder-dsh/`
-and is copied into dsh's skill dir (dsh can't symlink into a repo checkout).
-
-```bash
-# 1. pip-install tricorder (builds the `tricorder-mcp` console script)
-pip install -e "D:/Projects/tricorder"
-
-# 2. install this skill into dsh
-mkdir -p ~/.dsh/skills/tricorder
-cp "D:/Projects/tricorder/skills/tricorder-dsh/SKILL.md" ~/.dsh/skills/tricorder/SKILL.md
-```
-
-That yields one skill, version-controlled. Repo copy is source of truth; the
-`~/.dsh/skills/tricorder/` copy is a build artifact. Re-copy after edits.
-
-## cordis.yml wiring
-
-Add to the dsh Cordis config (the row that mounts the MCP client). The
-`dsh-mcp-client` plugin's stdio schema (from its `src/index.ts`) takes
-`serverName`, `command`, `args`, `env`, `cwd`. Put the row in the profile's
-`cordis.patch.yml` as an `insert:` entry:
-
-```yaml
-- insert:
-    - id: mcp-tricorder
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: tricorder
-        transport: stdio
-        # Point command at YOUR tricorder-mcp console script. Find it with:
-        #   pip show tricorder   # look for "Location", then <Location>/../Scripts/tricorder-mcp.exe  (Windows)
-        #   which tricorder-mcp  # Linux/macOS
-        command: <path-to-your-python>/Scripts/tricorder-mcp.exe   # Windows
-        #        or <path-to-your-python>/bin/tricorder-mcp            # Linux/macOS
-        args: []
-```
-
-`tricorder-mcp` is the console-script entry point from the tricorder
-`pyproject.toml`. **It is usually not on PATH**: pip-install puts it under
-`<your-python>/Scripts/` (Windows) or `<your-python>/bin/` (Linux/macOS),
-e.g. `%APPDATA%\Python\Python3xx\Scripts\tricorder-mcp.exe`.
-Find the exact path with `pip show tricorder` (note "Location") or `which tricorder-mcp`.
-Use that absolute path as `command` — robust, recommended. `serverName` must
-match `[A-Za-z0-9_-]{1,32}`; `tricorder` is valid.
+- **Native MCP tools** (primary): when tricorder is registered as an MCP server, its tools appear as `mcp_tricorder_scan`, `mcp_tricorder_detect`, `mcp_tricorder_symbols`, `mcp_tricorder_detail`.
+- **CLI**: `tricorder . --map-tokens <N>` for ad-hoc runs without the MCP server.
 
 ## When to use
 
 | Situation | Use |
 |-----------|-----|
-| "How is this project structured?" | `mcp__tricorder__tricorder_scan` (text) |
-| Module/component dependency view | `mcp__tricorder__tricorder_scan` with `output_format: mermaid` |
-| "Where is `<symbol>` defined?" | `mcp__tricorder__tricorder_detect` or `mcp__tricorder__tricorder_symbols` |
-| Callers / callees of one symbol | `mcp__tricorder__tricorder_detail` |
-| Graph traversal: callers/callees up to N hops, filtered | `mcp__tricorder__tricorder_query` — `callers('sym') depth=2 exclude=tests/**` |
+| "How is this project structured?" | `mcp_tricorder_scan` (text) |
+| Module/component dependency view | `mcp_tricorder_scan` with `output_format: mermaid` |
+| "Where is `<symbol>` defined?" | `mcp_tricorder_detect` or `mcp_tricorder_symbols` |
+| Callers / callees of one symbol | `mcp_tricorder_detail` |
+| Graph traversal: callers/callees up to N hops, filtered | `mcp_tricorder_query` — `callers('sym') depth=2 exclude=tests/**` |
 
 Don't scan for a known symbol — go straight to `detect`/`symbols`. Scan only for structure.
 
@@ -87,12 +28,12 @@ Don't scan for a known symbol — go straight to `detect`/`symbols`. Scan only f
 
 The point of tricorder is to NOT read every file. Climb the ladder; stop at the first rung that answers the question. Pulling a full file is the **last resort, not the default**.
 
-1. **T0 map (auto-injected)** — the `[tricorder]` digest at turn 0 already gives the repo skeleton: file paths + symbol names + line numbers. Often enough to know *which* file. **Don't re-scan** — the digest is current.
-2. **Locate** — `mcp__tricorder__tricorder_detect {query}` (case-insensitive, token-cheap) or `mcp__tricorder__tricorder_symbols {query, file?, type?}` for a definition + signature + line. Returns the what/where without reading the file.
-3. **Graph query** — need callers/callees up to N hops? `mcp__tricorder__tricorder_query {query: "callers('sym') depth=2 exclude=tests/**"}` returns the exact subgraph in one call (nodes + edges), replacing 5+ round-trips.
-4. **Deep-dive** — `mcp__tricorder__tricorder_detail {name, file, line}` returns the **full symbol body** + cross-file callers/callees. For most "how does X work" questions this is enough — you get the implementation, not just the signature.
-5. **Escalate the map tier** — `mcp__tricorder__tricorder_scan {project_root, tier: 1, context_lines: 3}` gives definitions + surrounding lines (~350 tokens/tag, ~25x T0). Use `output_format: "mermaid"` for a module dependency graph.
-6. **Full file read — last resort** — only when all of the above left genuine ambiguity. Read the *specific line range* found in step 2/3, not the whole file blindly. A whole-file pull is a confession that the ladder failed.
+1. **T0 map (auto-injected)** — the `[tricorder]` digest at turn 0 already gives you the repo skeleton: file paths + symbol names + line numbers. Often enough to know *which* file. **Don't re-scan** — the digest is current.
+2. **Locate** — `mcp_tricorder_detect {query}` (case-insensitive, token-cheap) or `mcp_tricorder_symbols {query, file?, type?}` for a definition + signature + line. Returns the what/where without reading the file.
+3. **Graph query** — need callers/callees up to N hops? `mcp_tricorder_query {query: "callers('sym') depth=2 exclude=tests/**"}` returns the exact subgraph in one call (nodes + edges), replacing 5+ round-trips.
+4. **Deep-dive** — `mcp_tricorder_detail {name, file, line}` returns the **full symbol body** + cross-file callers/callees. For most "how does X work" questions this is enough — you get the implementation, not just the signature.
+5. **Escalate the map tier** — still missing context? `mcp_tricorder_scan {project_root, tier: 1, context_lines: 3}` gives definitions + surrounding lines (~350 tokens/tag, ~25x T0). Use `output_format: "mermaid"` for a module dependency graph. Narrow with `chat_files`/`mentioned_files` to keep it small.
+6. **Full file read — last resort** — `read_file` only when all of the above left genuine ambiguity (a bug spans half a file, you need a comment block far from any symbol, etc). Read the *specific line range* found in step 2/3, not the whole file blindly. A whole-file pull is a confession that the ladder failed.
 
 **Token economics**: T0 ≈ 14 tokens/tag. T1 ≈ 350 tokens/tag. `detail` returns one symbol body (typically 50-400 tokens). A full file read is thousands. Escalate deliberately.
 
@@ -106,37 +47,24 @@ All MCP tools require `project_root` (absolute path) — they route against that
 - `output_format`: `text` or `mermaid`; `chat_files`, `other_files`, `mentioned_files`, `mentioned_idents`
 - `exclude_unranked`, `exclude_untagged`, `force_refresh`, `dry_run`, `max_files`
 - `exclude_globs`: list of glob patterns (relative, POSIX) to drop from the auto-scan before ranking. Use for vendored/third-party subtrees, e.g. `["vendor/**"]`, `["third_party/**"]`. Ignored when `other_files` is explicitly provided.
-- `pre_index` / `pre_index_max_files` (default 100) / `pre_index_include_parents` (default 0): when `other_files` is not given, narrow the scan to files containing a probe symbol (same fast path as the CLI `--pre-index` family). Use for huge repos (e.g. the Linux kernel) to avoid a full-tree walk on every call.
+- `pre_index` / `pre_index_max_files` (default 100) / `pre_index_include_parents` (default 0): when `other_files` is not given, narrow the scan to files containing a probe symbol (same fast path as the CLI `--pre-index` family). Use for huge repos (e.g. the Linux kernel) to avoid a full-tree walk on every call — the linux bench uses `pre_index="pick_next_task"` to scope to `kernel/sched/*`.
 
 ## tricorder_detect parameters
 
 - `project_root` (required, absolute path), `query` (required — identifier to find, case-insensitive), `max_results` (default 50), `context_lines` (default 2), `include_definitions` (default true), `include_references` (default true).
 - `pre_index` / `pre_index_max_files` (default 100) / `pre_index_include_parents` (default 0): scope the search to files containing a probe symbol instead of scanning the whole tree. Critical for huge repos — prevents a full-tree walk per query.
 
-## CLI reference
+## tricorder_symbols parameters
 
-The standalone CLI is harness-independent and works the same under dsh:
+- `project_root` (required, absolute path), `query` (required — substring match, case-insensitive), `type` (optional), `file` (optional), `limit` (default 50)
 
-```bash
-tricorder . --map-tokens 2048                # map cwd
-tricorder src/ --tier 1 --context-lines 3    # T1 with context
-tricorder --chat-files main.py --other-files src/ --mermaid
-tricorder --force-refresh .                  # bust stale tag cache
-tricorder --exclude-globs vendor/** third_party/** .  # skip vendored code
-```
+## tricorder_detail parameters
 
-Tier tokens: T0 ≈ 14 tokens/tag (definitions), T1 ≈ 350 tokens/tag (with context).
+- `project_root` (required, absolute path), `name` (required), `file` (required), `line` (optional)
 
-## Multi-project caching
+## tricorder_query parameters
 
-The scanner caches maps per-project in the **scanned project's root** as
-`.tricorder.tags.cache.v1/`. Cache validity is **content-aware**: a stat-based
-signature (path + size + mtime per source file, sha256'd) is stored in the meta
-JSON. On the next access, if the signature matches current stats, the cache is
-reused — no rebuild. If files changed, the signature differs and a rebuild
-happens automatically. Passing `force_refresh: true` (or `--force-refresh`)
-busts the cache explicitly, and changing `exclude_globs` changes the file set →
-different signature → auto-rebuild.
+- `project_root` (required, absolute path), `query` (required — DSL string like `callers('sym') depth=2 exclude=tests/**`)
 
 ## Don't — discipline
 
@@ -145,14 +73,12 @@ different signature → auto-rebuild.
 - **Don't open the whole repo first.** Use the map to narrow.
 - **Don't re-scan when the digest already points at the right area.** It's current.
 - **Don't guess file locations.** Query MCP.
-- **Don't run a full rebuild** unless the map is stale (file changes not reflected).
+- **Don't ask the user to run `/tricorder scan`** unless the map is stale (file changes not reflected).
 
 ## Pitfalls
 
-- **Stale cache → empty/odd maps**: after installing new tree-sitter parsers or an upgrade, maps can look wrong from a cached parse. Pass `force_refresh: true` or delete the `.tricorder.tags.cache.v1/` dir.
+- **Stale cache → empty/odd maps**: after installing new tree-sitter parsers or an upgrade, maps can look wrong from a cached parse. Run `--force-refresh` (MCP: `force_refresh: true`) or delete the `.tricorder.tags.cache.v1/` dir.
 - **Cache is per-project**: it lives in the scanned project's root, not tricorder's — don't ship or commit it.
 - `project_root` must be absolute; relative paths are not trusted.
 - `tricorder_detect` is case-insensitive and token-cheap — prefer it over a full scan to find an identifier.
-- **Arg names are exact** — the tools use strict MCP names, so a wrong guess costs a rejected call. The ones that bite: `tricorder_scan` takes `project_root` (not `files`/`path`), `tricorder_detect` takes `query` (not `identifier`), `tricorder_detail` takes `name`+`file`+`line` (not `symbol`).
-- **FastMCP tool names carry the `tricorder_` prefix** (server defines `tricorder_scan`, not `scan`), so the full dsh name is `mcp__tricorder__tricorder_scan` — both the server prefix and the `mcp__tricorder__` bridge prefix appear. Write the full name.
-```
+- **Arg names are exact** — the tools use strict MCP names, so a wrong guess costs a rejected call before the schema comes back. The ones that bite: `tricorder_scan` takes `project_root` (not `files`/`path`), `tricorder_detect` takes `query` (not `identifier`), `tricorder_detail` takes `name`+`file`+`line` (not `symbol`). Coping them correctly up front skips the round-trip.

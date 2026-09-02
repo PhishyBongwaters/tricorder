@@ -205,7 +205,7 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
     # honesty gate (count_tricorder_calls) actually measures a tricorder leg.
     if variant == "A":
         prompt = (
-            f"CRITICAL DIRECTIVE: Use the codebase-tricorder tools for symbol search and inspection. "
+            f"CRITICAL DIRECTIVE: You must follow this workflow when investigating code: first use Tricorder T0 scan, detect, and symbols to locate relevant code; then use read_file to inspect the identified lines before answering. Do not infer implementation details from symbols, summaries, or metadata alone. Any statement about code behavior must be supported by inspected source."
             f"Pass project_root=\"{workdir}\" to any mcp__tricorder__* tool calls. "
             f"Question: " + prompt
         )
@@ -284,6 +284,35 @@ def recover_latest_session_id(log_path, marker=None):
     return None
 
 
+
+def profile_db(variant):
+    return {"A": BENCH_TRICORDER_DB, "B": BENCH_BASELINE_DB}.get(variant, STATE_DB)
+
+def fetch_final_answer(sid, variant="A"):
+    db_path = profile_db(variant)
+    if not db_path.exists():
+        return None
+    try:
+        for cand in dict.fromkeys((db_path, STATE_DB)):
+            if not cand.exists():
+                continue
+            con = sqlite3.connect(str(cand))
+            cur = con.cursor()
+            cur.execute(
+                "SELECT content FROM messages WHERE session_id = ? "
+                "AND role = 'assistant' AND content IS NOT NULL AND content != '' "
+                "ORDER BY id DESC LIMIT 1",
+                (sid,),
+            )
+            row = cur.fetchone()
+            con.close()
+            if row and row[0]:
+                return row[0]
+    except Exception:
+        return None
+    return None
+
+
 def track_report(sid, variant="A"):
     """Run track_session.py --save on a session id; return saved report path.
 
@@ -308,7 +337,13 @@ def track_report(sid, variant="A"):
         cmd += ["--db", str(PROFILE_DB[variant]),
                 "--log", str(PROFILE_LOG[variant])]
     r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
+    if r.returncode == 0 and out.exists():
+        ans = fetch_final_answer(sid, variant)
+        tail = "\n\n## Agent final answer (would be graded by --judge)\n\n"
+        tail += (f"{ans}\n" if ans else "*no final assistant message recorded*\n")
+        with out.open("a", encoding="utf-8") as fh:
+            fh.write(tail)
+    elif r.returncode != 0:
         print(f"  [track_report {variant}] WARN: {r.stderr.strip()[:200]}")
     return str(out) if r.returncode == 0 else None
 
