@@ -212,6 +212,8 @@ hermes config set plugins.entries.tricorder.exclude_globs '[\"vendor/**\",\"thir
 
 **Cache validity:** Stat-based content signature (not TTL). CLI `--signature-only` computes sha256 over `{path}:{size}:{mtime}` per source file; plugin shells to CLI, compares to stored `project_sig`. Changing `exclude_globs` changes file set → signature changes → rebuild triggered.
 
+**Persistent cross-file / import index:** The import-resolved cross-file call graph (`_import_index_cache`, `_cross_file_index_cache`, `_file_refs_index`) is written to the tags diskcache under key `__cross_ref_index_v1__` by `_save_cross_ref_disk()` and restored on the next process by `_load_cross_ref_disk()`. Fresh MCP processes (one per RPC call) therefore reuse the previously-parsed cross-file refs instead of re-parsing the repo on every `tricorder_detail`, keeping caller/callee resolution fast across process boundaries. The bundle carries a **fingerprint** — sha256 over the sorted `(rel path, mtime)` of every discovered source file, computed by `_cross_ref_fingerprint()` (one stat per file, no tree-sitter parse). On restore the current fingerprint is compared to the stored one; a match means the file set is unchanged and the indexes are used, any add/edit/delete invalidates them and triggers a rebuild. Save/load are best-effort: any failure (disk error, cache eviction) falls back to an in-memory rebuild, which then re-persists.
+
 ### Installation
 
 ```bash
