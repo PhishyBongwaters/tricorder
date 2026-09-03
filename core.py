@@ -1327,22 +1327,34 @@ class Tricorder:
         symbols = self.get_symbols(file_path, rel_path)
 
         target = None
+        # Exact (case-sensitive) match first, then a fuzzy fallback that mirrors
+        # detect/symbols' substring matching so a symbol detect found easily
+        # isn't "not found" to detail over a case/scope/paren/template mismatch.
+        # TC-011: this is the root of the "not found" retry loop — detail was
+        # brittle where the explore tools are fuzzy.
+        def _base(name: str) -> str:
+            if '::' in name:
+                name = name.split('::', 1)[-1]
+            if '(' in name:
+                name = name.split('(', 1)[0]
+            elif name.endswith('()'):
+                name = name[:-2]
+            return name
+        symbol_l = symbol_name.lower()
         for sym in symbols:
-            # C/C++ tree-sitter queries yield names like "stretchMonitors()",
-            # "init(SDL_Window* window, ...)", or scoped "Foo::bar" — strip a
-            # leading "Class::" scope and trailing parens / "(...)" to get the
-            # base name for matching.
-            sym_name = sym.name
-            if '::' in sym_name:
-                sym_name = sym_name.split('::', 1)[-1]
-            if '(' in sym_name:
-                sym_name = sym_name.split('(', 1)[0]
-            elif sym_name.endswith('()'):
-                sym_name = sym_name[:-2]
+            sym_name = _base(sym.name)
             if sym_name == symbol_name:
                 if line == 0 or sym.line == line:
                     target = sym
                     break
+        if target is None:
+            # fuzzy: case-insensitive + substring (mirror detect/symbols)
+            for sym in symbols:
+                sym_name = _base(sym.name).lower()
+                if sym_name == symbol_l or symbol_l in sym_name or sym_name in symbol_l:
+                    if line == 0 or sym.line == line:
+                        target = sym
+                        break
         if target is None:
             return None
 

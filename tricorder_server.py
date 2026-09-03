@@ -60,6 +60,27 @@ settings.stateless_http = True
 # Create MCP server
 mcp = FastMCP("tricorder")
 
+@lru_cache(maxsize=32)
+def _get_tricorder(project_root: str) -> "Tricorder":
+    """Reuse one Tricorder per root across tool calls (TC-011).
+
+    Construction re-scans find_src_files + re-parses every file (9s+ per
+    symbols call in bench). Keeping the instance alive lets tree_cache and
+    _cross_file_index_cache persist in-process so repeat looks at the same
+    repo are warm. The instance holds its own per-field locks, so reuse
+    across stateless HTTP calls is safe. exclude_unranked=True always drops
+    untagged/bloat files (per user: bloat -> exclude always).
+    ponytail: single key (root), bounded LRU.
+    """
+    return Tricorder(
+        root=project_root,
+        token_counter_func=lambda text: count_tokens(text, "gpt-4"),
+        file_reader_func=read_text,
+        output_handler_funcs={'info': log.info, 'warning': log.warning, 'error': log.error},
+        verbose=False,
+        exclude_unranked=True,
+    )
+
 # ponytail: advisory tier tracker — survives across calls within a server process.
 # Can't enforce agent behavior (MCP is stateless per call) but can warn in the response.
 # Bounded LRU (OrderedDict) prevents unbounded growth across many project roots.
@@ -545,14 +566,7 @@ async def tricorder_detect(
 
     try:
         # Initialize Tricorder with search-specific settings
-        repo_map = Tricorder(
-            root=project_root,
-            token_counter_func=lambda text: count_tokens(text, "gpt-4"),
-            file_reader_func=read_text,
-            output_handler_funcs={'info': log.info, 'warning': log.warning, 'error': log.error},
-            verbose=False,
-            exclude_unranked=True
-        )
+        repo_map = _get_tricorder(project_root)
 
         # Find all source files in the project
         all_files = find_src_files(project_root)
@@ -677,13 +691,7 @@ async def tricorder_symbols(
     limit = min(max(limit, 1), 200)
 
     try:
-        repo_map = Tricorder(
-            root=project_root,
-            token_counter_func=lambda text: count_tokens(text, "gpt-4"),
-            file_reader_func=read_text,
-            output_handler_funcs={'info': log.info, 'warning': log.warning, 'error': log.error},
-            verbose=False,
-        )
+        repo_map = _get_tricorder(project_root)
 
         all_files = find_src_files(project_root)
         all_symbols = []
@@ -776,13 +784,7 @@ async def tricorder_detail(
         return {"error": "not found"}
 
     try:
-        repo_map = Tricorder(
-            root=project_root,
-            token_counter_func=lambda text: count_tokens(text, "gpt-4"),
-            file_reader_func=read_text,
-            output_handler_funcs={'info': log.info, 'warning': log.warning, 'error': log.error},
-            verbose=False,
-        )
+        repo_map = _get_tricorder(project_root)
 
         detail = repo_map.get_symbol_detail(file_path, name, line)
         if detail is None:
@@ -848,13 +850,7 @@ async def tricorder_query(
         return {"error": "Empty query"}
 
     try:
-        repo_map = Tricorder(
-            root=project_root,
-            token_counter_func=lambda text: count_tokens(text, "gpt-4"),
-            file_reader_func=read_text,
-            output_handler_funcs={'info': log.info, 'warning': log.warning, 'error': log.error},
-            verbose=False,
-        )
+        repo_map = _get_tricorder(project_root)
 
         result = repo_map.query_graph(parsed, token_limit=token_limit)
         return _mark_untrusted(result)

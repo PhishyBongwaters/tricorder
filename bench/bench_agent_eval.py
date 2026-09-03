@@ -205,7 +205,7 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
     # honesty gate (count_tricorder_calls) actually measures a tricorder leg.
     if variant == "A":
         prompt = (
-            f"CRITICAL DIRECTIVE: You must follow this workflow when investigating code: first use Tricorder T0 scan, detect, and symbols to locate relevant code; then use read_file to inspect the identified lines before answering. Do not infer implementation details from symbols, summaries, or metadata alone. Any statement about code behavior must be supported by inspected source."
+            f"CRITICAL DIRECTIVE: You must follow this workflow when investigating code: the tricorder cache already contains a full repo map from pre-scans. Do NOT call tricorder_scan. Use tricorder_detect to locate relevant symbols by name (limit 3-4 detect calls), tricorder_query to trace references (limit 2), and tricorder_symbols + tricorder_detail to inspect code. Only use read_file on identified specific files/lines. Do not infer implementation details from symbols, summaries, or metadata alone. Any statement about code behavior must be supported by inspected source. BUDGET: You have 60 tool calls total. If a detect call returns 0 matches, immediately move on to a different search term. Do not re-try the same or similar search terms. If tricorder_detail returns 'not found' or a symbol lookup returns no result, do NOT retry the same or a similar name — the fuzzy/symbols path already gave you what it has; rely on the symbol table you already have or one read_file on the file you need. Never re-issue a dead-end lookup."
             f"Pass project_root=\"{workdir}\" to any mcp__tricorder__* tool calls. "
             f"Question: " + prompt
         )
