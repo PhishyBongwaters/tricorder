@@ -348,6 +348,20 @@ python bench/bench_validity.py --root /path/to/your/repos  # custom checkouts
 
 Note: `rg` must be on `PATH` for `--pre-index` fast path (linux slot). Task definitions live in `bench/bench_validity*.py`. No CI bench machinery — run locally; numbers reproducible on same public repos.
 
+#### A/B agent harness (`bench_agent_eval.py`)
+
+End-to-end agent benchmark: Variant A (Tricorder MCP) vs Variant B (baseline tools) on the same relationship task, with real session telemetry from each variant's profile `state.db`. Grades the agent's **final answer** against the rubric in `bench_agent_eval.py`.
+
+```bash
+python bench/bench_agent_eval.py projectm --variant both     # A + B, telemetry-only
+python bench/bench_agent_eval.py projectm --judge --variant A # also judge the answer
+python bench/bench_agent_eval.py projectm --judge-only --variant A  # re-grade on-disk reports, no agent re-run
+```
+
+**Judge semantics (changed):** the fast path is **fail-fast only** — it returns a cheap FAIL when the final answer names none of the expected ground-truth identifiers. It never emits a PASS on filename presence, because an agent can name `PCM.cpp` and still hallucinate its contents. Every non-trivial answer routes to the semantic LLM judge, which is given the session's **retrieved source** (actual tool output) as an authority: any specific value the answer asserts (template args, line numbers, step ordering) must appear in that retrieved source or the answer fails as a hallucinated detail (`GROUND SPECIFICS` rule). Rationale prefix: `PASS:` (fast), `SEMANTIC PASS/FAIL:`, `FAIL(fast):`, `no final answer:`, `Judge Error:`.
+
+Notes: judge model/provider default to the agent's — pass `--judge-model`/`--judge-provider` for a stronger grader. Cache isolation between legs requires restarting the inference server between legs; warm-cache legs invalidate a comparison. Judge is opt-in (`--judge`); telemetry-only runs skip it.
+
 ## Security Model
 
 Tricorder treats **repository content as untrusted input**. A malicious repo can contain prompt-injection attempts, path-traversal filenames, or resource-exhaustion structures.

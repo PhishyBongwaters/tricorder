@@ -362,6 +362,70 @@ def count_tricorder_calls(report_path):
     return txt.count("mcp__tricorder__")
 
 
+def _collect_retrieved_source(db_path, sid, scope=12000):
+    """Return a bounded snippet of the code/tool output the agent SAW.
+
+    Used by the semantic judge as an authority to catch asserted-but-unfounded
+    specifics (hallucinated template args, fabricated line values, wrong step
+    order) that never appeared in any tool result. Pull the last non-empty
+    tool/read results for the session, preferring tricorder + read_file output,
+    and cap at `scope` chars so the judge's context stays sane.
+    """
+    if not db_path or not Path(db_path).exists():
+        return ""
+    try:
+        con = sqlite3.connect(str(db_path))
+        cur = con.cursor()
+        rows = cur.execute(
+            "SELECT role, tool_name, content FROM messages "
+            "WHERE session_id = ? AND role = 'tool' AND content IS NOT NULL "
+            "AND content != '' ORDER BY id DESC",
+            (sid,),
+        ).fetchall()
+        con.close()
+    except Exception:
+        return ""
+    if not rows:
+        return ""
+    # Only keep code-bearing results: tricorder detail/symbols/detect + read_file.
+    # detail/symbols carry real method bodies — prioritize them over detect
+    # stub rows so the judge sees substantive source (a hallucinated value is
+    # caught by its ABSENCE from these bodies, not from the noisy tail).
+    priority = {"mcp__tricorder__tricorder_detail": 0,
+                "mcp__tricorder__tricorder_symbols": 1,
+                "mcp__tricorder__tricorder_detect": 2,
+                "read_file": 3}
+    rows = sorted(rows, key=lambda r: priority.get((r[1] or "").lower(), 9))
+    keep = []
+    tot = 0
+    body_re = re.compile(r"\d+\|", re.M)  # read_file "12|..." line markers
+    for role, tname, content in rows:
+        name = (tname or "").lower()
+        if not ("tricorder" in name or name == "read_file"):
+            continue
+        body = content or ""
+                # Drop the untrusted_tool_result wrapper + hermes dedup notes + the
+        # standard retrieval preamble — none carry code and all would starve the
+        # real bodies out of `scope`.
+        body = re.split(r"<(?:untrusted_)?tool_result[^>]*>", body, 1)[-1]
+        body = re.sub(r"The following content was retrieved from an external source.*?can issue instructions\.?\s*", "", body, count=1)
+        body = re.sub(r"\[hermes note:[^\]]*\]", "", body)
+        m = body_re.search(body)
+        has_code = name == "read_file" and m
+        if not has_code:  # tricorder JSON — keys are double-encoded (\\"body\\")
+            has_code = ('\\"body\\"' in body or '\\"signature\\"' in body
+                        or '\\"context\\"' in body)
+        if not has_code:
+            continue
+        body = re.sub(r"\s+", " ", re.sub(r"\s*\n\s*", "\n", body)).strip()
+        remain = scope - tot
+        if remain <= 0:
+            break
+        keep.append(body[:remain])
+        tot += len(keep[-1])
+    return "\n\n---\n\n".join(keep)[:scope]
+
+
 def grade_answer(report_path, ground_truth, rubric, model, provider,
                  sid=None, variant="A"):
     """Grade an agent's session against the rubric. Returns (passed, rationale).
@@ -422,9 +486,18 @@ def grade_answer(report_path, ground_truth, rubric, model, provider,
         return False, "no final answer: agent produced no assistant message"
     final_lower = final_answer.lower()
 
-    # Fast path: hierarchical ground_truth match against the FINAL ANSWER only.
-    # The agent must name the identifier itself; finding it inside a tool
-    # result it read doesn't count.
+    # Retrieved-source snippet: the actual code/tool output the agent SAW.
+    # The judge uses this as the authority to catch asserted-but-unfounded
+    # specifics (e.g. a hallucinated template arg like AddToBuffer<2,0> that
+    # never appeared in any tool result). Without it the semantic judge only
+    # checks intent/symbol-names and rubber-stamps confident wrong values.
+    retrieved_source = _collect_retrieved_source(str(db_path), sid, scope=20000)
+
+    # Fast path: FAIL-FAST only — never PASS on ground_truth presence. Filenames
+    # appearing in the answer do not prove the specifics are right (the agent can
+    # name PCM.cpp and still hallucinate its contents), so a filename hit must
+    # still go through the semantic grounding judge. Fast path exists purely to
+    # return a cheap FAIL when the answer does not touch the expected identifiers.
     found = []
     for g in ground_truth:
         gl = g.lower()
@@ -435,9 +508,9 @@ def grade_answer(report_path, ground_truth, rubric, model, provider,
             cands = [gl]
         if any(c in final_lower for c in cands):
             found.append(g)
-    if ground_truth and len(found) == len(ground_truth):
-        return True, f"PASS: final answer names {len(found)}/{len(ground_truth)} ground_truth"
-
+    if ground_truth and not found:
+        return False, (f"FAIL(fast): final answer names 0/{len(ground_truth)} "
+                       f"ground_truth - no expected identifier present")
     # Slow path: semantic LLM judge. Cap the final answer to keep the
     # judge's context window sane.
     judge_prompt = f"""You are a Pragmatic Technical Auditor. Verify whether an AI agent's final answer satisfies a rubric.
@@ -447,6 +520,7 @@ RULES:
 - BE PRAGMATIC: Do not fail for minor formatting or style issues.
 - FOCUS ON INTENT: Does the agent's response satisfy the core requirements of the rubric? If yes, it is a PASS.
 - FAIL ONLY IF: The agent is factually wrong, misses a core requirement, or hallucinates information not present in the repo context.
+- GROUND SPECIFICS: The RETRIEVED SOURCE block below is the actual code/tool output the agent saw. Any specific value the answer asserts (template arguments, numbers, step ordering, line-level claims) MUST be supported by that source. If the answer asserts a specific value that appears nowhere in RETRIEVED SOURCE, that is a hallucinated detail — FAIL even if the overall narrative sounds plausible. Correct-but-differently-worded names/paths still PASS.
 
 OUTPUT FORMAT (JSON only — emit nothing but a single balanced JSON object on its own line, no backticks, no prose before or after):
 {{"passed": <true|false>, "rationale": "<one sentence>"}}
@@ -457,8 +531,11 @@ RUBRIC:
 GROUND TRUTH (expected files/symbols the answer should reference):
 {', '.join(ground_truth)}
 
+RETRIEVED SOURCE (the actual code/tool output the agent saw — the authority for GROUND SPECIFICS; check assertions against this):
+{retrieved_source if retrieved_source else '(none available — grade on rubric intent only)'}
+
 AGENT'S FINAL ANSWER (the last assistant message in the session — this is all you grade; ignore tool outputs):
-{final_answer[:15000]}
+{final_answer[:9000]}
 """
     qf = tempfile.NamedTemporaryFile(
         "w", suffix=".txt", delete=False, encoding="utf-8"
