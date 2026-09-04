@@ -22,6 +22,53 @@ from scm import get_scm_fname
 from importance import filter_important_files
 from ctags_probe import probe_and_narrow
 
+
+_WORD_SPLIT = re.compile(r"[_\-\s\./]+")
+
+def _camel_split(word: str):
+    """Split a camelCase/CamelCase/screaming token into words. Deterministic."""
+    return [w for w in re.split(
+        r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", word) if w]
+
+def _query_variants(query: str):
+    """Deterministic orthographic variants for a retrieve-0 rescue (no LLM).
+
+    Strips C++-style decorations off a query (template args, parens, namespace
+    qualifier) and re-joins the word parts under every separator/case form so a
+    dead-end exact lookup like `PCM::AddToBuffer<128,128>` or `Add_To_buffer`
+    still resolves to the base symbol name. Results of a rescue are flagged
+    'fuzzy' downstream so the agent/judge know they are not exact-name hits.
+    ponytail: case fold + separator + camel split only; no stemmer, add one if
+    plural/tense variants measurably miss.
+    """
+    q = query.strip()
+    core = re.sub(r"<[^<>]*>", "", q)      # strip template args <128,128>
+    core = re.sub(r"[()]", "", core)       # strip parens (incl. std::map<int>)
+    core = core.split("::")[-1]            # namespace -> basename
+    words = [w for part in _WORD_SPLIT.split(core) for w in _camel_split(part) if w]
+    if not words:
+        words = [core]
+    variants = {q, q.lower()}
+    for sep in ("_", "-", "", " "):
+        variants.add(sep.join(words))
+        variants.add(sep.join(words).lower())
+    variants.add("".join(w.lower() for w in words))
+    variants.discard("")
+    # Prefer the base-name/joined forms, NEVER bare word fragments (a bare
+    # 'get' over-matches every get_* symbol and caps the rescue before the
+    # specific base arrives). Keep the raw-decorated forms last — they should
+    # only win when nothing else did. ponytail: no stemming.
+    def _rank(v):
+        base_l = "".join(w.lower() for w in words)
+        if v.lower() == base_l:
+            return 0
+        if v.lower() == "".join(words).lower():
+            return 1
+        if v == q:
+            return 3
+        return 2
+    return sorted(variants, key=lambda s: (_rank(s), len(s), s))
+
 # Thin wrapper kept for backward compat (tests import this name).
 def find_src_files(directory: str, exclude_globs: Optional[List[str]] = None) -> List[str]:
     # TC-002: surface the resource-envelope partial-scan report on the module
@@ -628,6 +675,32 @@ async def tricorder_detect(
         # Limit results
         matching_tags = matching_tags[:max_results]
 
+        # Retrieve-0 rescue: the substring query matched nothing (e.g. because
+        # the agent typed a decorated/qualified/differently-cased name). Retry
+        # over deterministic orthographic variants so a dead-end lookup becomes
+        # a set of near-lookalike candidates instead of an empty result. Flag
+        # them 'fuzzy' so the consumer knows they are not exact-name hits and
+        # must be verified against source. No LLM, reproducible.
+        rescue_used = False
+        if not matching_tags and query:
+            seen = set()
+            for cand in _query_variants(query):
+                if len(cand) < 2:
+                    continue
+                cand_l = cand.lower()
+                for tag in all_tags:
+                    if id(tag) in seen:
+                        continue
+                    if cand_l in tag.name.lower():
+                        if (tag.kind == "def" and include_definitions) or \
+                           (tag.kind == "ref" and include_references):
+                            matching_tags.append(tag)
+                            seen.add(id(tag))
+                if len(matching_tags) >= max_results * 2:
+                    break
+            if matching_tags:
+                rescue_used = True
+
         # Format results with context
         results = []
         for tag in matching_tags:
@@ -650,7 +723,8 @@ async def tricorder_detect(
                     "line": tag.line,
                     "name": tag.name,
                     "kind": tag.kind,
-                    "context": context
+                    "context": context,
+                    "quality": "fuzzy" if rescue_used else "exact"
                 })
 
         resp = {"results": results}
@@ -724,8 +798,35 @@ async def tricorder_symbols(
         # Sort: definitions first, then by name
         results.sort(key=lambda x: (x["type"], x["name"].lower()))
 
+        # Retrieve-0 rescue (mirror detect): retry over orthographic variants
+        # when the plain substring query matched nothing, so decorated/cased
+        # lookups still surface near-lookalike symbols. Flagged 'fuzzy'.
+        rescue = False
+        if query and not results:
+            seen = set()
+            for cand in _query_variants(query):
+                if len(cand) < 2:
+                    continue
+                cand_l = cand.lower()
+                for sym in all_symbols:
+                    if id(sym) in seen:
+                        continue
+                    if type and sym.type != type:
+                        continue
+                    if cand_l in sym.name.lower():
+                        results.append(sym.to_dict())
+                        seen.add(id(sym))
+                if len(results) >= limit * 2:
+                    break
+            if results:
+                rescue = True
+
         # Apply limit
         results = results[:limit]
+
+        if rescue:
+            for r_ in results:
+                r_["quality"] = "fuzzy"
 
         resp = {"symbols": results, "total": len(results), "limit": limit}
         resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))

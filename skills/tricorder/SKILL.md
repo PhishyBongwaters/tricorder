@@ -98,4 +98,5 @@ signature differs and a rebuild happens automatically.
 - **Cache is per-project**: it lives in the scanned project's root, not tricorder's — don't ship or commit it.
 - `project_root` must be absolute; relative paths are not trusted.
 - `tricorder_detect` is case-insensitive and token-cheap — prefer it over a full scan to find an identifier.
+- **Detect/symbols auto-rescue**: when a query matches nothing, both tools deterministically retry orthographic variants (strips template args/parens/namespace, camel/snake/kebab/case forms) so decorated lookups like `PCM::AddToBuffer<128,128>` still resolve. Rescue hits are tagged `quality: "fuzzy"` — verify them against source before asserting behavior; `"exact"` hits matched the literal query.
 - **Arg names are exact** — the tools use strict MCP names, so a wrong guess costs a rejected call before the schema comes back. The ones that bite: `tricorder_scan` takes `project_root` (not `files`/`path`), `tricorder_detect` takes `query` (not `identifier`), `tricorder_detail` takes `name`+`file`+`line` (not `symbol`). Coping them correctly up front skips the round-trip.

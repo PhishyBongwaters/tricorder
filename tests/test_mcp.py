@@ -340,6 +340,37 @@ class TestMCPTrustMetadata(unittest.TestCase):
             self.assertEqual(result.get("source"), "scanned_repository")
             self.assertEqual(result.get("trust"), "untrusted_repository_content")
 
+    def test_detect_rescue_on_decorated_query(self):
+        """tricorder_detect deterministically rescues decorated/namespace queries."""
+        import asyncio
+        from tricorder_server import tricorder_detect
+        # get_symbols exists in this repo (core.py); decorate it so the strict
+        # substring (`get_symbols<foo>` in `get_symbols`) misses and the rescue fires.
+        r = asyncio.run(tricorder_detect(
+            project_root=Path(__file__).parent.parent,
+            query="core::get_symbols<foo>",
+            max_results=10,
+        ))
+        self.assertNotIn("error", r)
+        names = [x["name"] for x in r.get("results", [])]
+        self.assertTrue(any("get_symbols" in n.lower() for n in names),
+                        f"rescue should surface get_symbols, got {names}")
+        self.assertTrue(any(x["quality"] == "fuzzy" for x in r["results"]))
+
+    def test_symbols_rescue_flags_fuzzy(self):
+        """tricorder_symbols rescue tags results quality='fuzzy'."""
+        import asyncio
+        from tricorder_server import tricorder_symbols
+        s = asyncio.run(tricorder_symbols(
+            project_root=Path(__file__).parent.parent,
+            query="core.py::GetSymbols",
+            limit=10,
+        ))
+        self.assertNotIn("error", s)
+        syms = s.get("symbols", [])
+        self.assertTrue(any("get_symbols" in x["name"].lower() for x in syms))
+        self.assertTrue(any(x.get("quality") == "fuzzy" for x in syms))
+
     def test_query_has_trust_metadata(self):
         """tricorder_query stamps trust metadata on results."""
         import asyncio
