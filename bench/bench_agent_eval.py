@@ -418,12 +418,55 @@ def _collect_retrieved_source(db_path, sid, scope=12000):
         if not has_code:
             continue
         body = re.sub(r"\s+", " ", re.sub(r"\s*\n\s*", "\n", body)).strip()
+        if scope is None:
+            keep.append(body)
+            continue
         remain = scope - tot
         if remain <= 0:
             break
         keep.append(body[:remain])
         tot += len(keep[-1])
+    if scope is None:
+        return "\n\n---\n\n".join(keep)
     return "\n\n---\n\n".join(keep)[:scope]
+
+def _deterministic_ground_check(final_answer, retrieved_source):
+    """Deterministic hallucination gate — no model call.
+
+    Scans the final answer for code-shaped SPECIFIC values (template-arg
+    literals like AddToBuffer<2, 0>) and verifies each appears in the
+    retrieved source the agent actually saw. A specific asserted value that
+    is absent from source is a fabrication we can catch exactly, without a
+    judge model — and without reintroducing the small-model false-flag on
+    large context that motivated the LLM grounding rule (string matching
+    never 'loses attention'). Returns a FAIL rationale string, or None if
+    no fabricated specific was found.
+
+    Scope deliberately narrow: only unambiguous `<N[, N]>` template-arg
+    literals immediately following an identifier are checked. Broadening this
+    to bare numbers or free-standing tokens would reintroduce false flags
+    (prose legitimately contains numbers); template-arg literals appearing in
+    a prose answer are unambiguously code. ponytail: covers the observed
+    fabrication class (hallucinated template args); extend to hex/bit-width
+    literals if a new bench task needs it.
+    """
+    if not retrieved_source or not final_answer:
+        return None
+    src_norm = re.sub(r"\s+", "", retrieved_source)
+    # identifier optionally scoped, then <N> or <N, N[, N]> — template args.
+    lit_pat = re.compile(
+        r"\b[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*<\s*\d+(?:\s*,\s*\d+)*\s*>"
+    )
+    missing = []
+    for m in lit_pat.finditer(final_answer):
+        lit = re.sub(r"\s+", "", m.group(0))
+        if lit not in src_norm:
+            missing.append(lit)
+    if missing:
+        return ("FAIL(deterministic-grounding): answer asserts template-arg "
+                f"literal(s) not present in any retrieved source: "
+                f"{', '.join(dict.fromkeys(missing))}")
+    return None
 
 
 def grade_answer(report_path, ground_truth, rubric, model, provider,
@@ -491,7 +534,14 @@ def grade_answer(report_path, ground_truth, rubric, model, provider,
     # specifics (e.g. a hallucinated template arg like AddToBuffer<2,0> that
     # never appeared in any tool result). Without it the semantic judge only
     # checks intent/symbol-names and rubber-stamps confident wrong values.
-    retrieved_source = _collect_retrieved_source(str(db_path), sid, scope=20000)
+    # Retrieved source is the FULL code/tool output the agent saw. Giving the
+    # judge a truncated window is actively harmful: scope drops real bodies
+    # (e.g. the PCM Add bodies) and the judge then false-FAILs correct answers
+    # as "details not in source." A strong judge (the point of #1) can take the
+    # full source; the deterministic gate needs it verbatim anyway. ponytail:
+    # select a judge model with adequate context via --judge-model/--provider.
+    full_source = _collect_retrieved_source(str(db_path), sid, scope=None)
+    retrieved_source = full_source
 
     # Fast path: FAIL-FAST only — never PASS on ground_truth presence. Filenames
     # appearing in the answer do not prove the specifics are right (the agent can
@@ -511,6 +561,15 @@ def grade_answer(report_path, ground_truth, rubric, model, provider,
     if ground_truth and not found:
         return False, (f"FAIL(fast): final answer names 0/{len(ground_truth)} "
                        f"ground_truth - no expected identifier present")
+
+    # Deterministic hallucination gate: catch fabricated template-arg/literal
+    # specifics by exact string match against the retrieved source. No model
+    # call, no context-collapse. Returns a FAIL if a specific value the answer
+    # asserts never appeared in source.
+    det_fail = _deterministic_ground_check(final_answer, full_source)
+    if det_fail:
+        return False, det_fail
+
     # Slow path: semantic LLM judge. Cap the final answer to keep the
     # judge's context window sane.
     judge_prompt = f"""You are a Pragmatic Technical Auditor. Verify whether an AI agent's final answer satisfies a rubric.
