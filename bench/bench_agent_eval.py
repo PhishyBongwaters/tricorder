@@ -112,15 +112,22 @@ TASKS = [
     {
         "repo": "kotlin",
         "path": str(TESTBED / "kotlin"),
-        "scan_path": "core/compiler.common",
+        "scan_path": "core/compiler.common.jvm",
+        "mcp_root": str(TESTBED / "kotlin" / "core" / "compiler.common.jvm"),
         "question": (
-            "How is variance computed for an inline class's expanded type, and "
-            "which backend-context method resolves the underlying type?"
+            "When the backend expands an inline class type to its underlying type, "
+            "how is nullability propagated through the recursion, and which "
+            "TypeSystemCommonBackendContext helpers resolve the substituted underlying "
+            "type and apply the upper-bound substitution for type-parameter and array cases?"
         ),
         "ground_truth": [
-            "compiler.common.jvm/src/org/jetbrains/kotlin/types/expandedTypeUtils.kt",
+            "core/compiler.common.jvm/src/org/jetbrains/kotlin/types/expandedTypeUtils.kt",
         ],
-        "rubric": "Must name computeExpandedTypeForInlineClass and getSubstitutedUnderlyingType.",
+        "rubric": (
+            "Must reference computeExpandedTypeInner or computeExpandedTypeForInlineClass, "
+            "getSubstitutedUnderlyingType, and the nullability propagation (makeNullable, "
+            "isNullableType) plus substituteUpperBound for the array/type-parameter path."
+        ),
     },
     {
         "repo": "rails",
@@ -198,6 +205,10 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
     model/provider -> pinned on both legs so A/B is a clean comparison.
     """
     workdir = repo_task["path"]
+    # MCP project_root: override with scan subdir when provided (kotlin's 50k-file
+    # full tree times out MCP's 300s on first detect; the narrow scan window parses
+    # in <1s). --in stays the full repo so the baseline leg still sees everything.
+    mcp_root = repo_task.get("mcp_root", workdir)
     prompt = repo_task["question"]
     # Variant A MUST use the tricorder MCP tools — relying on the skill text
     # alone let the model fall back to blind grep/file reads (the run showed
@@ -205,8 +216,8 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
     # honesty gate (count_tricorder_calls) actually measures a tricorder leg.
     if variant == "A":
         prompt = (
-            f"CRITICAL DIRECTIVE: You must follow this workflow when investigating code: the tricorder cache already contains a full repo map from pre-scans. Do NOT call tricorder_scan. Use tricorder_detect to locate relevant symbols by name (limit 3-4 detect calls), tricorder_query to trace references (limit 2), and tricorder_symbols + tricorder_detail to inspect code. Only use read_file on identified specific files/lines. Do not infer implementation details from symbols, summaries, or metadata alone. Any statement about code behavior must be supported by inspected source. BUDGET: You have 60 tool calls total. If a detect call returns 0 matches, immediately move on to a different search term. Do not re-try the same or similar search terms. If tricorder_detail returns 'not found' or a symbol lookup returns no result, do NOT retry the same or a similar name — the fuzzy/symbols path already gave you what it has; rely on the symbol table you already have or one read_file on the file you need. Never re-issue a dead-end lookup."
-            f"Pass project_root=\"{workdir}\" to any mcp__tricorder__* tool calls. "
+            f"CRITICAL DIRECTIVE: You must follow this workflow when investigating code: the tricorder cache already contains a full repo map from pre-scans. Do NOT call tricorder_scan. Use tricorder_detect to locate relevant symbols by name (limit 3-4 detect calls, outputs are tiny), tricorder_query to TRACE REFERENCES/edges between identified symbols (use up to 2 query calls — PREFER query over dumping whole symbol tables; a targeted edge trace is far cheaper), and tricorder_detail for a single symbol's definition (limit 2 detail calls). RESTRICTION: do NOT call tricorder_symbols more than once, and only if a symbols listing is genuinely required — the two-symbols-dump pattern (28K chars) is the single biggest context bloat and must be avoided; a query edge-trace or one read_file covers most cases. Only use read_file on identified specific files/lines. Do not infer implementation details from symbols, summaries, or metadata alone. Any statement about code behavior must be supported by inspected source. BUDGET: You have 60 tool calls total. If a detect call returns 0 matches, immediately move on to a different search term. Do not re-try the same or similar search terms. If tricorder_detail returns 'not found' or a symbol lookup returns no result, do NOT retry the same or a similar name — the fuzzy/symbols path already gave you what it has; rely on the symbol table you already have or one read_file on the file you need. Never re-issue a dead-end lookup. If a detect/query returns 0 matches for a symbol you believe must exist (e.g. a type field you were asked to name), do not stow a caveat — do one read_file on the header/file you already located that must define it, then answer from inspected source."
+            f"Pass project_root=\"{mcp_root}\" to any mcp__tricorder__* tool calls. "
             f"Question: " + prompt
         )
     # Write prompt to a query file so shell quoting never mangles it.

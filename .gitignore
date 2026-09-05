@@ -28,3 +28,17 @@ plugins/dsh-tricorder-inject/lib/
 # Large untracked benchmarking corpus lives outside the repo; git status/diff
 # hashing it spikes CPU. ponytail: ignore, don't track.
 Tricorder-Testing-Repos/
+# Tricorder scan dumps (output text, not source — do NOT delete, they're the
+# warm-map record; just don't track them in git)
+.tricorder_scans/
+.tricorder_full_cli.txt
+.tricorder_full_scan.txt
+.tricorder_full_scan2.txt
+.tricorder_scan_check.txt
+_tmp_repo_path.txt
+# Path-corrupt temp file accidentally created in repo root (fullwidth colon:
+# "C:Users..." with U+FF1A — do NOT delete, it's reference material; ignore it)
+C[：:]UsersmacdoAppDataLocalTempquery.txt
+# Bench run logs (A/B harness output captured via tee)
+bench_*_0905_*.log
+bench_AB_0905_*.log

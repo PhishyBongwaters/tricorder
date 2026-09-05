@@ -176,12 +176,12 @@ def build_report(sid):
         inp_str = f"{inp:,}" if inp else "N/A"
         cache_str = f"{cache_read:,}" if cache_read else "N/A"
         out_str = f"{out:,}" if out else "N/A"
-        lines.append(f"- Reconciliation: raw input sent = {sum_raw_in:,} = billed input {inp_str} + cache read {cache_str}")
+        lines.append(f"- Reconciliation: raw input sent = {sum_raw_in:,} = billed input {inp_str} + cached re-send {cache_str} (cached tokens are discounted provider prompt-cache reads, not new context)")
         lines.append(f"- Sum of per-call output: {sum_out:,} (DB reports {out_str})")
     lines.append("")
     lines.append("## Per-API-Call Breakdown")
     lines.append("_'in' = raw prompt/context sent that call (grows as conversation accumulates). ")
-    lines.append("Sum of 'in' across calls = billed input + cache read._")
+    lines.append("Sum of 'in' across calls = billed input + cached re-send (discounted). Cost metric = billed input.")
     for c in api_calls:
         lines.append(f"- Call #{c['num']}: in={c['in']:,} out={c['out']:,} total={c['total']:,} latency={c['latency']}s")
     lines.append("")
