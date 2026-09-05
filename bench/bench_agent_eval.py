@@ -87,15 +87,21 @@ TASKS = [
         "path": str(TESTBED / "vaultwarden"),
         "scan_path": "src",
         "question": (
-            "What handler processes admin invites, and how does it validate "
-            "claims against the database connection layer?"
+            "Trace vaultwarden's master-password hash pipeline end to end: which "
+            "crypto primitives wrap the PBKDF2 derivation, and how do the user "
+            "model methods that verify a login (and that set/rotate a password) "
+            "pass the per-user KDF iteration count and salt into that derivation?"
         ),
         "ground_truth": [
-            "src/api/admin.rs",
-            "src/auth.rs",
+            "src/crypto.rs",
+            "src/db/models/user.rs",
         ],
         "rubric": (
-            "Must reference generate_invite / admin_page and the DbConn binding."
+            "Must name hash_password and verify_password_hash in crypto.rs, the "
+            "user.rs methods that call them (validate_password / set_password), "
+            "and the CONFIG.password_iterations() source of the iteration count "
+            "plus per-user salt. A bare grep of crypto.rs without the cross-file "
+            "callers fails."
         ),
     },
     {
@@ -197,7 +203,8 @@ def get_session_id_from_log(marker: str):
     return None
 
 
-def run_variant(repo_task, variant: str, model: str, provider: str):
+def run_variant(repo_task, variant: str, model: str, provider: str,
+                max_turns: int = 10):
     """Run one live hermes chat with the given variant, return session id.
 
     variant='A' -> tricorder MCP enabled (bench-tricorder profile).
@@ -233,7 +240,7 @@ def run_variant(repo_task, variant: str, model: str, provider: str):
         "chat",
         "--query-file", qf.name,
         "--in", workdir,
-        "--max-turns", "60",
+        "--max-turns", str(max_turns),
         "--run-budget", "120",
         "-m", model,
         "--provider", provider,
@@ -617,7 +624,7 @@ AGENT'S FINAL ANSWER (the last assistant message in the session — this is all 
             ["hermes", "chat", "--query-file", qf.name, "--cli",
              "-m", model, "--provider", provider, "--max-turns", "3",
              "--profile", BENCH_JUDGE_PROFILE],
-            capture_output=True, text=True, timeout=180,
+            capture_output=True, text=True, timeout=300,
         )
         out = (r.stdout or "").strip()
         # hermes chat echoes the query (incl. a {"passed":...} TEMPLATE
@@ -680,6 +687,13 @@ def main():
                         "the agent. Needs --variant and the report file(s); "
                         "reads session id from the report filename. ponytail: "
                         "re-grade, don't re-run (kills LLM variance).")
+    p.add_argument("--max-turns", type=int, default=10,
+                   help="Hard cap on API turns per leg. Configurable — NOT "
+                        "derived from any repo's prior runs and not "
+                        "repo/language-specific. 10 is the sane default; bump "
+                        "it only if a legitimately large task needs more. "
+                        "This is the real anti-spam guard: --run-budget is "
+                        "only a soft prompt nudge the model may ignore.")
     args = p.parse_args()
 
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -741,9 +755,11 @@ def main():
 
         results = []
         if args.variant in ("A", "both"):
-            results.append(run_variant(task, "A", args.model, args.provider))
+            results.append(run_variant(task, "A", args.model, args.provider,
+                                       args.max_turns))
         if args.variant in ("B", "both"):
-            results.append(run_variant(task, "B", args.model, args.provider))
+            results.append(run_variant(task, "B", args.model, args.provider,
+                                       args.max_turns))
         # Summarize which session ids + reports landed, with a tricorder-usage
         # honesty gate so a no-tricorder A leg is flagged, not silently scored.
         grades = {}
