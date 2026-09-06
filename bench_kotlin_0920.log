@@ -1,0 +1,12 @@
+
+=== kotlin ===
+[A] running: hermes --usage-file C:\Users\macdo\AppData\Local\Temp\tmpxkvelgcm.json chat --query-file C:\Users\macdo\AppData\Local\Temp\tmpr3jjmvrh.txt --in D:\Projects\Tricorder-Testing-Repos\kotlin --max-turns 20 --run-budget 120 -m deepseek-ai/deepseek-v4-flash-0731 --provider nvidia --cli -s codebase-tricorder --profile bench-tricorder
+[B] running: hermes --usage-file C:\Users\macdo\AppData\Local\Temp\tmpwmqe4j6f.json chat --query-file C:\Users\macdo\AppData\Local\Temp\tmpa4payiya.txt --in D:\Projects\Tricorder-Testing-Repos\kotlin --max-turns 20 --run-budget 120 -m deepseek-ai/deepseek-v4-flash-0731 --provider nvidia --cli --profile bench-baseline
+  [A] GRADE=PASS -- SEMANTIC PASS: Answer references computeExpandedTypeForInlineClass/computeExpandedTypeInner, getSubstitutedUnderlyingType, the nullability propagation (isNullableType/makeNullable) in both branches, and substituteUpperBound (with asTypeParameterOrArrayThereof) for the array/type-parameter path, all grounded in the retrieved expandedTypeUtils.kt source.
+  [A] sid=20260906_073846_a07fce rc=0 tricorder_calls=5
+  [B] GRADE=FAIL -- FAIL(fast): final answer names 0/1 ground_truth - no expected identifier present
+  [B] sid=20260906_075137_914bf1 rc=0 tricorder_calls=0 (must be 0 for clean control)
+  [TOKENS] A=54,134 | B=27,563 | Δ=+26,571 (+96.4%)
+  VERDICT: VALID A/B | A=PASS B=FAIL
+
+Done. Reports saved under D:\Projects\tricorder-test-reports

@@ -348,15 +348,28 @@ python bench/bench_validity.py --root /path/to/your/repos  # custom checkouts
 
 Note: `rg` must be on `PATH` for `--pre-index` fast path (linux slot). Task definitions live in `bench/bench_validity*.py`. No CI bench machinery — run locally; numbers reproducible on same public repos.
 
-#### A/B agent harness (`bench_agent_eval.py`)
+## A/B agent harness (`bench_agent_eval.py`)
 
 End-to-end agent benchmark: Variant A (Tricorder MCP) vs Variant B (baseline tools) on the same relationship task, with real session telemetry from each variant's profile `state.db`. Grades the agent's **final answer** against the rubric in `bench_agent_eval.py`.
 
 ```bash
-python bench/bench_agent_eval.py projectm --variant both     # A + B, telemetry-only
-python bench/bench_agent_eval.py projectm --judge --variant A # also judge the answer
-python bench/bench_agent_eval.py projectm --judge-only --variant A  # re-grade on-disk reports, no agent re-run
+python bench/bench_agent_eval.py projectm --variant both                # A + B, telemetry-only
+python bench/bench_agent_eval.py projectm --judge --variant A            # also judge the answer
+python bench/bench_agent_eval.py projectm --judge-only --variant A       # re-grade on-disk reports, no agent re-run
+python bench/bench_agent_eval.py vaultwarden --variant both --max-turns 20   # set the API-turn cap per leg
 ```
+
+**`--max-turns` (hard cap, default 10):** caps the number of model API turns per leg — previously the harness had no real stop (`--max-turns` was a hardcoded `60` and `--run-budget 120` is a soft prompt nudge the model can ignore, which let a small task spiral into 15 calls / 378K billed). It is configurable per run (`--max-turns 20`), never derived from any repo's prior runs, and no repo/language-specific tuning. **It does not balloon to fill budget** — projectm at `--max-turns 20` still used only 4 API calls. Bump it for legitimately large tasks; the 10 default cuts off a hard repo before it can do its decisive read (projectm PASSed at 20, FAILed at 10 for the same reason). `--run-budget` remains only a soft nudge; the real guard is `--max-turns`.
+
+**Even-settings results (all legs `--max-turns 20`, same deepseek judge/model):**
+
+| repo | A (Tricorder) | B (baseline) |
+|------|---------------|--------------|
+| projectm | PASS · 6 tcalls · 76K in · 366s | PASS · 113K in |
+| kotlin | PASS · 5 tcalls · 54K in · 758s | FAIL (0/1, clean control) |
+| vaultwarden | PASS · 13 tcalls · 184K in · 878s | PASS · 5c · 77K in · 323s |
+
+Across every pair: **A (Tricorder) grounded-PASS** on the same task. B (baseline) depends on turn budget: at 10 turns it fails or hallucinates (kotlin B and vaultwarden B at 10); at 20 turns it can burn more probe cycles and — on vaultwarden — landed a correct answer too. But A reached the same correct answer **without** the hallucinated-wrong-name failure mode B hit at 10 turns, and A's 20-turn cost is a cap, not a spend: A used 9/20 API calls on vaultwarden and 4/20 on projectm (both PASSes), while B needed 5/20. On this leg A's input (184K) ran higher than B's (77K) because Tricorder returned richer retrieved source; the meaningful win is A's **consistency** (PASS at every turn budget, clean-control B FAILs removed only by giving B 2× the budget).
 
 **Judge semantics (changed):** the fast path is **fail-fast only** — it returns a cheap FAIL when the final answer names none of the expected ground-truth identifiers. It never emits a PASS on filename presence, because an agent can name `PCM.cpp` and still hallucinate its contents. Every non-trivial answer then hits a **deterministic grounding gate** (no model call): template-arg literals the answer asserts (e.g. `AddToBuffer<2, 0>`) must appear verbatim in the session's retrieved source — absent → immediate `FAIL(deterministic-grounding)`. Only if that passes does the semantic LLM judge run, given the session's **full retrieved source** (actual tool output) as the authority: any specific value the answer asserts (template args, line numbers, step ordering) must appear there or it fails as a hallucinated detail (`GROUND SPECIFICS` rule). Rationale prefixes: `PASS:` (fast), `FAIL(fast):`, `FAIL(deterministic-grounding):`, `SEMANTIC PASS/FAIL:`, `no final answer:`, `Judge Error:`.
 

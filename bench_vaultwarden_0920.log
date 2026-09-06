@@ -1,0 +1,12 @@
+
+=== vaultwarden ===
+[A] running: hermes --usage-file C:\Users\macdo\AppData\Local\Temp\tmpd52dikiv.json chat --query-file C:\Users\macdo\AppData\Local\Temp\tmpagq1djxz.txt --in D:\Projects\Tricorder-Testing-Repos\vaultwarden --max-turns 20 --run-budget 120 -m deepseek-ai/deepseek-v4-flash-0731 --provider nvidia --cli -s codebase-tricorder --profile bench-tricorder
+[B] running: hermes --usage-file C:\Users\macdo\AppData\Local\Temp\tmpujhhj3l4.json chat --query-file C:\Users\macdo\AppData\Local\Temp\tmp1da7hetm.txt --in D:\Projects\Tricorder-Testing-Repos\vaultwarden --max-turns 20 --run-budget 120 -m deepseek-ai/deepseek-v4-flash-0731 --provider nvidia --cli --profile bench-baseline
+  [A] GRADE=PASS -- SEMANTIC PASS: The agent named hash_password and verify_password_hash in src/crypto.rs, tied them to the user.rs methods set_password (user.rs:192) and check_valid_password (user.rs:160) — the actual code symbol; semantically the verify-call method the rubric called 'validate_password' — and correctly traced the iteration count to CONFIG.password_iterations() (user.rs:132) plus the per-user salt from get_random_bytes (user.rs:131), all cross-file callers grounded in the retrieved source.
+  [A] sid=20260906_075618_705199 rc=0 tricorder_calls=13
+  [B] GRADE=PASS -- SEMANTIC PASS: The answer names both crypto.rs wrappers (hash_password / verify_password_hash), the cross-file user.rs callers (check_valid_password for verify, set_password for hash — the actual methods, matching rubric intent), and correctly cites CONFIG.password_iterations() plus the per-user salt (crypto::get_random_bytes::<64>), all supported by the retrieved source.
+  [B] sid=20260906_081107_03e220 rc=0 tricorder_calls=0 (must be 0 for clean control)
+  [TOKENS] A=184,119 | B=77,449 | Δ=+106,670 (+137.7%)
+  VERDICT: VALID A/B | A=PASS B=PASS
+
+Done. Reports saved under D:\Projects\tricorder-test-reports
