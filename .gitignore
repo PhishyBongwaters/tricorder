@@ -42,3 +42,4 @@ C[：:]UsersmacdoAppDataLocalTempquery.txt
 # Bench run logs (A/B harness output captured via tee)
 bench_*_0905_*.log
 bench_AB_0905_*.log
+bench_*_0920_*.log
