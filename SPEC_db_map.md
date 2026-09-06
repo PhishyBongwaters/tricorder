@@ -25,12 +25,20 @@ Current pipeline (`core.py`), all in one in-memory pass before anything is writt
 
 Measured RSS (real pipeline via `scripts/mem_probe.py`):
 
-| Repo | Files | Tags | RSS after walk | Traced peak |
-|------|-------|------|----------------|-------------|
-| vaultwarden | 100 | 219 | 47 MB | ~2 MB |
-| go | 2,500 | 56,304 | 182 MB | 157 MB |
-| go | 6,000 | 111,010 | 377 MB | 568 MB |
-| kotlin | 57,161 | — | ballooned → killed | — |
+| Repo | Files | Tags | RSS after walk | Traced peak | Time |
+|------|-------|------|----------------|-------------|------|
+| vaultwarden | 100 | 219 | 47 MB | 2 MB | 0.1 s |
+| go | 2,500 | 56,303 | 187 MB | 157 MB | 7.7 s |
+| go | 6,000 | 111,010 | 283 MB | 564 MB | 19 s |
+| go@2,500 `--full` | 2,500 | 56,303 | 237 MB (after to_tree) | 157 MB | +8 s |
+| kotlin | 57,161 | — | ballooned → killed | — | — |
+| kotlin @1,000 | 1,000 | 3,690 | 68 MB | 16 MB | 1.3 s |
+
+Key finding: kotlin at 1,000 files is only 68 MB — the blowup is **pure scale**, not
+language. Memory grows roughly linearly with the count of in-memory `(rank, Tag)`
+tuples + the `nx` graph over all files/refs, all held until ranking finishes. At
+~111 K tags (go@6k) RSS is 283 MB and climbs; at 57 K files the graph + tag dicts
+fill the box before `--output` ever runs.
 
 Memory scales super-linearly. A correctly-ordered map cannot be streamed mid-walk
 because page rank depends on references from not-yet-parsed files. The "incremental
@@ -145,3 +153,24 @@ starts. One goal at a time, no parallel agents.
 - Reuse `bench/` for end-to-end confidence on the final merge.
 - A parity script: run map on `main` and on `dev/db-map` for the same repo/flags,
   diff stdout byte-for-byte and compare peak RSS.
+
+### Baseline commands (Goal 1 — the parity oracle)
+All run from `D:/projects/tricorder` (`cd /d/projects/tricorder`), native `D:/` paths
+for python (not MSYS `/d/...`). `rm -rf scripts/__pycache__` first if stale bytecode
+throws `ModuleNotFoundError: resource`.
+
+```
+# vaultwarden
+python scripts/mem_probe.py D:/projects/Tricorder-Testing-Repos/vaultwarden 20000 --max-files 100
+# go @2500, and @6000
+python scripts/mem_probe.py D:/projects/Tricorder-Testing-Repos/go 20000 --max-files 2500
+python scripts/mem_probe.py D:/projects/Tricorder-Testing-Repos/go 20000 --max-files 6000
+# go @2500 --full (output assembly cost)
+python scripts/mem_probe.py D:/projects/Tricorder-Testing-Repos/go 20000 --max-files 2500 --full
+# kotlin @1000 (SAFE cap only — 57k ballooned and OOM'd once)
+python scripts/mem_probe.py D:/projects/Tricorder-Testing-Repos/kotlin 20000 --max-files 1000
+```
+
+Second positional arg = `map_tokens`. Record RSS after `get_ranked_tags` + traced peak
++ tags + seconds; for `--full` also chars/tokens. Any change on `dev/db-map` must
+match output bytes here and beat RSS.
