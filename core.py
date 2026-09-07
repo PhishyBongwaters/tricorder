@@ -1376,6 +1376,8 @@ class Tricorder(TagsCacheMixin):
         all_fnames = list(set(chat_fnames + other_fnames))
 
         db = self._db_store
+        # Fresh scan: never stack onto a previous run's rows in this file.
+        db.reset()
         for fname in all_fnames:
             rel_fname = self.get_rel_fname(fname)
             if not os.path.exists(fname):

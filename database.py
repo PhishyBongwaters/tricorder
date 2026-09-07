@@ -68,6 +68,16 @@ class DBStore:
             rows,
         )
 
+    def reset(self):
+        """Clear all rows: a fresh scan into an existing --db-path must not
+        stack on top of previous runs. ponytail: full clear; per-file
+        incremental recompute is Goal 6."""
+        with self._lock:
+            self.conn.execute("DELETE FROM tags")
+            self.conn.execute("DELETE FROM refs")
+            self.conn.execute("DELETE FROM meta")
+            self.conn.commit()
+
     def set_meta(self, root: str, signature: str):
         self.conn.execute(
             "INSERT INTO meta(schema_version, root, signature) VALUES (?,?,?)",
