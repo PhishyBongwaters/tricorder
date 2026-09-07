@@ -12,13 +12,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from collections import namedtuple, defaultdict
 from typing import List, Dict, Set, Optional, Tuple, Callable, Any, Union
-import shutil
-import sqlite3
 from dataclasses import dataclass
-import diskcache
 import networkx as nx
 from grep_ast import TreeContext
-from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, get_cache_root
+from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget
+from cache import TagsCacheMixin, CACHE_VERSION
 from scm import get_scm_fname
 from importance import filter_important_files
 
@@ -45,10 +43,7 @@ class FileReport:
 
 
 # Constants
-CACHE_VERSION = 1
-
 TAGS_CACHE_DIR = f".tricorder.tags.cache.v{CACHE_VERSION}"
-SQLITE_ERRORS = (sqlite3.OperationalError, sqlite3.DatabaseError)
 
 _COVERAGE_WARN_THRESHOLD = 60.0  # percentage; can be overridden via config
 
@@ -58,8 +53,13 @@ _PARSER_TIMEOUT_S = float(os.environ.get("TRICORDER_PARSER_TIMEOUT_S", "5"))
 
 
 
-class Tricorder:
-    """Main class for generating repository maps."""
+class Tricorder(TagsCacheMixin):
+    """Main class for generating repository maps.
+
+    Per-file tags cache methods (get_tags, load_tags_cache, tags_cache_error,
+    _cache_dir) live in cache.py (TagsCacheMixin) — see cache.py docstring.
+    discover_src_files is in utils.py, not duplicated here.
+    """
     
     def __init__(
         self,
@@ -125,73 +125,6 @@ class Tricorder:
         # Load persistent tags cache
         self.load_tags_cache()
     
-    def _cache_dir(self) -> Path:
-        """TC-003: store the persistent tags cache OUTSIDE the repository.
-
-        A repo must not control security-sensitive cache state (stale reuse,
-        poisoning, metadata contamination). Identity is derived from the
-        resolved repo path + tricorder version + config hash, so distinct
-        repos never share a cache and one repo can't poison another's.
-        ponytail: ~/.tricorder/cache/<sha1(root|version|config)>.
-        """
-        # Canonical cache root -- falls back to home .tricorder/cache if the
-        # explicit root is unavailable, preserving the existing fallback
-        # behavior of load_tags_cache().
-        _root = get_cache_root()
-        if _root is not None:
-            base = _root / "cache"
-        else:
-            base = Path(os.environ.get(
-                "TRICORDER_CACHE_HOME",
-                str(Path.home() / ".tricorder" / "cache"),
-            ))
-        key = f"{self.root.resolve()}|v{CACHE_VERSION}|{self.cache_size_limit}"
-        h = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
-        return base / h
-
-    def load_tags_cache(self):
-        """Load the persistent tags cache from outside the repo (TC-003)."""
-        cache_dir = self._cache_dir()
-        try:
-            self.TAGS_CACHE = diskcache.Cache(
-                str(cache_dir),
-                size_limit=self.cache_size_limit,
-                eviction_policy=self.cache_eviction_policy,
-            )
-        except Exception as e:
-            # Fall back to in-memory cache — common on Windows with
-            # read-only cache files from previous runs.
-            self.output_handlers['warning'](
-                f"Failed to initialize diskcache at {cache_dir}: {e}. "
-                f"Falling back to in-memory cache (not persistent)."
-            )
-            self.TAGS_CACHE = {}
-
-    def _make_writable(self, path: Path):
-        """Try to make a file/directory writable on Windows."""
-        try:
-            import stat
-            path.chmod(path.stat().st_mode | stat.S_IWRITE)
-        except Exception:
-            pass
-
-    def tags_cache_error(self):
-        """Handle tags cache errors."""
-        try:
-            cache_dir = self._cache_dir()
-            if cache_dir.exists():
-                # Make all files writable before removing
-                for root, dirs, files in os.walk(cache_dir, topdown=False):
-                    for name in files:
-                        self._make_writable(Path(root) / name)
-                    for name in dirs:
-                        self._make_writable(Path(root) / name)
-                self._make_writable(cache_dir)
-                shutil.rmtree(cache_dir)
-            self.load_tags_cache()
-        except Exception:
-            self.TAGS_CACHE = {}
-    
     def token_count(self, text: str) -> int:
         """Count tokens in text with sampling optimization for long texts."""
         if not text:
@@ -231,47 +164,6 @@ class Tricorder:
         except FileNotFoundError:
             self.output_handlers['warning'](f"File not found: {fname}")
             return None
-    
-    def get_tags(self, fname: str, rel_fname: str) -> List[Tag]:
-        """Get tags for a file, using cache when possible."""
-        # ponytail: skip files that can't have tree-sitter symbols — saves read+parse per file
-        _SKIP_EXTS = {'.frag', '.vert', '.inc', '.icns', '.plist', '.entitlements',
-                      '.cmake.in', '.h.in', '.cpp.in', '.hpp.in'}
-        if Path(fname).suffix in _SKIP_EXTS or fname.endswith(('.cmake.in', '.h.in', '.cpp.in', '.hpp.in')):
-            return []
-        
-        file_mtime = self.get_mtime(fname)
-        if file_mtime is None:
-            return []
-        
-        # Use lock to prevent TOCTOU race condition in check-then-write
-        with self._tags_cache_lock:
-            try:
-                # Both diskcache.Cache and dict have .get() method
-                cached_entry = self.TAGS_CACHE.get(fname)
-                    
-                if cached_entry and cached_entry.get("mtime") == file_mtime:
-                    try:
-                        with open(os.path.join(self._cache_dir(), "hits.log"), "a") as _hf:
-                            _hf.write(f"hit\tget_tags\t{fname}\n")
-                    except Exception:
-                        pass
-                    return cached_entry["data"]
-            except SQLITE_ERRORS:
-                self.tags_cache_error()
-            
-            # Cache miss or file changed
-            tags = self.get_tags_raw(fname, rel_fname)
-            
-            # Post-process tags to add class context to method names
-            tags = self._add_class_context_to_tags(tags)
-            
-            try:
-                self.TAGS_CACHE[fname] = {"mtime": file_mtime, "data": tags}
-            except SQLITE_ERRORS:
-                self.tags_cache_error()
-            
-            return tags
     
     def _add_class_context_to_tags(self, tags: List[Tag]) -> List[Tag]:
         """Post-process tags to add class context to method names.
