@@ -14,12 +14,13 @@ from collections import namedtuple, defaultdict
 from typing import List, Dict, Set, Optional, Tuple, Callable, Any, Union
 from dataclasses import dataclass
 import networkx as nx
-from grep_ast import TreeContext
 from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget
 from cache import TagsCacheMixin, CACHE_VERSION
 from database import DBStore
 from scm import get_scm_fname
 from importance import filter_important_files
+from report import FileReport
+from render import render_tree, to_tree
 
 
 class TricorderError(Exception):
@@ -30,17 +31,6 @@ class TricorderError(Exception):
 class GrepAstNotAvailableError(TricorderError):
     """Raised when grep-ast is not available."""
     pass
-
-
-@dataclass
-class FileReport:
-    excluded: Dict[str, str]        # File -> exclusion reason with status
-    definition_matches: int         # Total definition tags
-    reference_matches: int          # Total reference tags
-    total_files_considered: int     # Total files provided as input
-    untagged_files: List[str] = None # Files with no tree-sitter symbols
-    coverage_pct: float = 100.0      # % of source files represented in map (issue #18)
-
 
 
 # Constants
@@ -1623,112 +1613,11 @@ class Tricorder(TagsCacheMixin):
         
         return ranked_tags, file_report
     
-    def render_tree(self, abs_fname: str, rel_fname: str, lois: List[int]) -> str:
-        """Render a code snippet with specific lines of interest."""
-        code = self.read_text_func_internal(abs_fname)
-        if not code:
-            return ""
-        
-        # T0 mode (context_lines == 0): just render definition lines directly
-        # TreeContext renders the full file with scope annotations, bloating
-        # token cost 36x for large repos. Skip it when no context is needed.
-        if self.context_lines == 0:
-            lines = code.splitlines()
-            result_lines = [rel_fname]
-            for loi in sorted(set(lois)):
-                if 1 <= loi <= len(lines):
-                    result_lines.append(f"  {loi}: {lines[loi-1]}")
-            return "\n".join(result_lines)
-        
-        # T1 mode: use TreeContext for context rendering
-        try:
-            if rel_fname not in self.tree_context_cache:
-                self.tree_context_cache[rel_fname] = TreeContext(
-                    rel_fname,
-                    code,
-                    color=False
-                )
-            
-            tree_context = self.tree_context_cache[rel_fname]
-            return tree_context.format(lois)
-        except Exception:
-            # Fallback to simple line extraction
-            lines = code.splitlines()
-            result_lines = [f"{rel_fname}:"]
-            
-            for loi in sorted(set(lois)):
-                if 1 <= loi <= len(lines):
-                    result_lines.append(f"{loi:4d}: {lines[loi-1]}")
-            
-            return "\n".join(result_lines)
-    
-    def to_tree(self, tags: List[Tuple[float, Tag]], chat_rel_fnames: Set[str], untagged_files: Optional[List[str]] = None) -> str:
-        """Convert ranked tags to formatted tree output."""
-        if not tags:
-            return ""
-        
-        # Group tags by file
-        file_tags = defaultdict(list)
-        for rank, tag in tags:
-            file_tags[tag.rel_fname].append((rank, tag))
-        
-        # Sort files by importance (max rank of their tags)
-        sorted_files = sorted(
-            file_tags.items(),
-            key=lambda x: max(rank for rank, tag in x[1]),
-            reverse=True
-        )
-        
-        tree_parts = []
-        grouped_files = defaultdict(list)
-        for rel_fname, file_tag_list in sorted_files:
-            grouped_files[Path(rel_fname).parent.as_posix()].append((rel_fname, file_tag_list))
-
-        # Pre-compute line counts for files we're about to render
-        file_abs_paths = {rel: str(self.root / rel) for rel, _ in sorted_files}
-        file_line_counts = {}
-        for rel, abs_path in file_abs_paths.items():
-            code = self.read_text_func_internal(abs_path)
-            if code:
-                file_line_counts[rel] = len(code.splitlines())
-
-        for group_name, files_in_group in sorted(grouped_files.items(), key=lambda item: (item[0] != '.', item[0])):
-            group_parts = []
-            for rel_fname, file_tag_list in files_in_group:
-                lois = [tag.line for rank, tag in file_tag_list]
-                if self.context_lines > 0:
-                    expanded_lois = []
-                    for loi in lois:
-                        for offset in range(-self.context_lines, self.context_lines + 1):
-                            expanded_lois.append(max(1, loi + offset))
-                    lois = sorted(set(expanded_lois))
-
-                abs_fname = str(self.root / rel_fname)
-                max_rank = max(rank for rank, tag in file_tag_list)
-                rendered = self.render_tree(abs_fname, rel_fname, lois)
-                if not rendered:
-                    continue
-
-                rendered_lines = rendered.splitlines()
-                first_line = rendered_lines[0]
-                code_lines = rendered_lines[1:]
-                lc = file_line_counts.get(rel_fname)
-                if lc:
-                    first_line = f"{rel_fname} ({lc} lines)"
-                rank_line = f"(Rank value: {max_rank:.4f})\n"
-                if len(set(rank for rank, _ in file_tag_list)) == 1 and all(
-                    max(r for r, _ in file_tags) == max_rank for _, file_tags in sorted_files
-                ):
-                    rank_line = ""
-                group_parts.append(
-                    f"{first_line}\n{rank_line}\n\n" + "\n".join(code_lines)
-                )
-
-            if group_parts:
-                header = "root" if group_name == "." else group_name
-                tree_parts.append(f"{header}/\n" + "\n\n".join(group_parts))
-
-        return "\n\n".join(tree_parts)
+    # render_tree and to_tree are delegated to render.py (SPEC_db_map Goal 5a).
+    # These thin wrappers keep the public API intact for tricorder.py,
+    # tricorder_server.py, tests, and mem_probe.py.
+    render_tree = render_tree
+    to_tree = to_tree
     
     def to_mermaid(self, chat_fnames: List[str], other_fnames: List[str],
                    mentioned_fnames: Optional[Set[str]] = None,
@@ -1829,9 +1718,17 @@ class Tricorder(TagsCacheMixin):
         max_map_tokens: int,
         mentioned_fnames: Optional[Set[str]] = None,
         mentioned_idents: Optional[Set[str]] = None,
-        force_refresh: bool = False
+        force_refresh: bool = False,
+        output_writer=None,
     ) -> Optional[str]:
         """Get the ranked tags map with persistent disk caching."""
+        # Streaming bypasses cache (output goes to writer, not returned)
+        if output_writer is not None or force_refresh:
+            return self.get_ranked_tags_map_uncached(
+                chat_fnames, other_fnames, max_map_tokens,
+                mentioned_fnames, mentioned_idents, output_writer=output_writer
+            )
+
         cache_key = (
             tuple(sorted(chat_fnames)),
             tuple(sorted(other_fnames)),
@@ -1874,7 +1771,8 @@ class Tricorder(TagsCacheMixin):
         other_fnames: List[str],
         max_map_tokens: int,
         mentioned_fnames: Optional[Set[str]] = None,
-        mentioned_idents: Optional[Set[str]] = None
+        mentioned_idents: Optional[Set[str]] = None,
+        output_writer=None,
     ) -> Tuple[Optional[str], FileReport]:
         """Generate the ranked tags map without caching."""
         ranked_tags, file_report = self.get_ranked_tags(
@@ -1894,7 +1792,11 @@ class Tricorder(TagsCacheMixin):
         
         # Full map: skip token-budget binary search, emit all ranked tags
         if self.full_map:
-            best_tree = self.to_tree(ranked_tags, chat_rel_fnames, important_files)
+            if output_writer is not None:
+                self.to_tree(ranked_tags, chat_rel_fnames, important_files, writer=output_writer)
+                best_tree = None
+            else:
+                best_tree = self.to_tree(ranked_tags, chat_rel_fnames, important_files)
             best_num = len(ranked_tags)
             file_report.total_files_considered = len(other_fnames)
             return best_tree, file_report
@@ -1990,18 +1892,23 @@ class Tricorder(TagsCacheMixin):
         other_files: Optional[List[str]] = None,
         mentioned_fnames: Optional[Set[str]] = None,
         mentioned_idents: Optional[Set[str]] = None,
-        force_refresh: bool = False
+        force_refresh: bool = False,
+        output_writer=None,
     ) -> Tuple[Optional[str], FileReport]:
-        """Generate the repository map with file report."""
+        """Generate the repository map with file report.
+
+        When output_writer is provided (streaming mode), the map content
+        is written to it and None is returned as the string.
+        """
         chat_files = chat_files or []
         other_files = other_files or []
-            
+
         # Create empty report for error cases
         empty_report = FileReport({}, 0, 0, 0, untagged_files=[], coverage_pct=100.0)
-        
+
         if self.max_map_tokens <= 0 or not other_files:
             return None, empty_report
-        
+
         # Adjust max_map_tokens if no chat files
         max_map_tokens = self.max_map_tokens
         if not chat_files and self.max_context_window:
@@ -2011,33 +1918,34 @@ class Tricorder(TagsCacheMixin):
                 max_map_tokens * self.map_mul_no_files,
                 available
             )
-        
+
         try:
             # get_ranked_tags_map returns (map_string, file_report)
             map_string, file_report = self.get_ranked_tags_map(
                 chat_files, other_files, max_map_tokens,
-                mentioned_fnames, mentioned_idents, force_refresh
+                mentioned_fnames, mentioned_idents, force_refresh,
+                output_writer=output_writer
             )
         except RecursionError:
             self.output_handlers['error']("Disabling repo map, git repo too large?")
             self.max_map_tokens = 0
             return None, FileReport({}, 0, 0, 0, untagged_files=[], coverage_pct=100.0)  # Ensure consistent return type
-        
+
         if map_string is None:
             return None, file_report
-        
+
         if self.verbose:
             tokens = self.token_count(map_string)
             self.output_handlers['info'](f"Repo-map: {tokens / 1024:.1f} k-tokens")
-        
+
         # Format final output
         other = "other " if chat_files else ""
-        
+
         if self.repo_content_prefix:
             repo_content = self.repo_content_prefix.format(other=other)
         else:
             repo_content = ""
-        
+
         repo_content += map_string
-        
+
         return repo_content, file_report

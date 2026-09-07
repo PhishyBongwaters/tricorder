@@ -494,15 +494,26 @@ Examples:
                 repo_map.output_handlers['info']("No tags to estimate.")
             sys.exit(0)
 
-        map_content, _ = repo_map.get_repo_map(
+        # ponytail: when --full + --output, stream directly to file
+        output_writer = None
+        if args.full and args.output:
+            output_writer = open(args.output, 'w', encoding='utf-8')
+
+        map_content, file_report = repo_map.get_repo_map(
             chat_files=chat_files,
             other_files=other_files,
             mentioned_fnames=mentioned_fnames,
             mentioned_idents=mentioned_idents,
-            force_refresh=args.force_refresh
+            force_refresh=args.force_refresh,
+            output_writer=output_writer,
         )
 
-        if map_content:
+        if output_writer is not None:
+            # Streaming mode: content is already written to the file
+            output_writer.close()
+            if not args.quiet:
+                tool_output(f"Map written to {args.output}")
+        elif map_content:
             if args.verbose and not args.quiet:
                 tokens = repo_map.token_count(map_content)
                 tool_output(f"Generated map: {len(map_content)} chars, ~{tokens} tokens")
