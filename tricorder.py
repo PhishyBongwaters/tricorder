@@ -265,7 +265,7 @@ Examples:
         "--max-files",
         type=int,
         default=1000,
-        help="Cap on files during auto-discovery when no paths given (default: 1000)"
+        help="Cap on files during auto-discovery when no paths given (default: 1000, 0 = no cap)"
     )
 
     parser.add_argument(
@@ -416,7 +416,7 @@ Examples:
                 p = root_path / path_spec_str
             effective_other_files_unresolved.extend(find_src_files(str(p), exclude_globs=args.exclude_globs))
 
-        if len(effective_other_files_unresolved) > args.max_files:
+        if args.max_files > 0 and len(effective_other_files_unresolved) > args.max_files:
             output_handlers['warning'](
                 f"Explicit paths yielded {len(effective_other_files_unresolved)} files, "
                 f"capping to {args.max_files}"
@@ -429,7 +429,7 @@ Examples:
             output_handlers['info'](f"No explicit files provided, auto-scanning {root_path}...")
             effective_other_files_unresolved = find_src_files(
                 str(root_path), exclude_globs=args.exclude_globs)
-            if len(effective_other_files_unresolved) > args.max_files:
+            if args.max_files > 0 and len(effective_other_files_unresolved) > args.max_files:
                 output_handlers['warning'](
                     f"Auto-scanned {len(effective_other_files_unresolved)} files, "
                     f"capping to {args.max_files}"

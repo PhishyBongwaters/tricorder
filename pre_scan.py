@@ -25,6 +25,7 @@ def scan_repo(repo_path: Path, db_path: Path) -> dict:
         "--db-path", str(db_path),
         "--full",
         "--output", str(out_map),
+        "--max-files", "0",
     ]
     t0 = time.time()
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
