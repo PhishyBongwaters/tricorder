@@ -17,6 +17,7 @@ import networkx as nx
 from grep_ast import TreeContext
 from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget
 from cache import TagsCacheMixin, CACHE_VERSION
+from database import DBStore
 from scm import get_scm_fname
 from importance import filter_important_files
 
@@ -81,6 +82,8 @@ class Tricorder(TagsCacheMixin):
         cache_eviction_policy: str = "least-recently-used",
         cache_ttl: Optional[int] = None,
         full_map: bool = False,
+        use_db: bool = False,
+        db_path: Optional[str] = None,
     ):
         """Initialize Tricorder instance."""
         self.map_tokens = map_tokens
@@ -101,6 +104,14 @@ class Tricorder(TagsCacheMixin):
         self.cache_eviction_policy = cache_eviction_policy
         self.cache_ttl = cache_ttl
         self.full_map = full_map
+        
+        # Flat-memory parse store (SPEC_db_map Goal 3). off by default — the
+        # default execution path stays byte-identical until the DB path is proven.
+        self._db_active = bool(use_db)
+        self._db_path = db_path
+        self._db_store: Optional[DBStore] = None
+        if self._db_active:
+            self._db_store = DBStore(db_path)
         
         # Set up output handlers
         if output_handler_funcs is None:
@@ -1328,6 +1339,115 @@ class Tricorder(TagsCacheMixin):
 
         return target
 
+    def _db_signature(self, included: List[str]) -> str:
+        """Stat-based content signature from the walked files (meta.signature).
+
+        Matches incremental (Goal 6) needs cheaply: (rel, size, mtime). Exact
+        contents hashing is deferred; sizes+mtimes catch edited/added files.
+        """
+        parts = []
+        for fname in sorted(included):
+            try:
+                st = os.stat(fname)
+                parts.append(f"{self.get_rel_fname(fname)}:{st.st_size}:{int(st.st_mtime)}")
+            except OSError:
+                parts.append(self.get_rel_fname(fname))
+        return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()[:16]
+
+    def _get_ranked_tags_db(
+        self,
+        chat_fnames: List[str],
+        other_fnames: List[str],
+        mentioned_fnames: Set[str],
+        mentioned_idents: Set[str],
+    ) -> Tuple[List[Tuple[float, Tag]], FileReport]:
+        """Flat-memory tree walk: each file's tags go to the DB, AST is dropped.
+
+        Deliberately does NOT build the whole-repo defines/references/definitions
+        dicts or the nx.MultiDiGraph the default path builds for PageRank — those
+        are the memory blowup at scale (SPEC_db_map Goal 3). Rank order here is
+        the uniform fallback (rank=1.0) that the default path yields in practice
+        because networkx pagerank needs scipy, which this env lacks; real on-disk
+        ranking is Goal 4. Boosts/exclusion/sort match the default exactly, so
+        output is byte-identical to the default path in this environment.
+        ponytail: single-shot full scan; incremental recompute is Goal 6.
+        """
+        def normalize_path(path):
+            return str(Path(path).resolve())
+
+        chat_fnames = [normalize_path(f) for f in chat_fnames]
+        other_fnames = [normalize_path(f) for f in other_fnames]
+        if mentioned_fnames is None:
+            mentioned_fnames = set()
+        if mentioned_idents is None:
+            mentioned_idents = set()
+
+        included: List[str] = []
+        excluded: Dict[str, str] = {}
+        chat_rel_fnames = set(self.get_rel_fname(f) for f in chat_fnames)
+        all_fnames = list(set(chat_fnames + other_fnames))
+
+        db = self._db_store
+        for fname in all_fnames:
+            rel_fname = self.get_rel_fname(fname)
+            if not os.path.exists(fname):
+                excluded[fname] = "File not found"
+                self.output_handlers['warning'](
+                    f"Repo-map can't include {fname}: File not found")
+                continue
+            included.append(fname)
+            tags = self.get_tags(fname, rel_fname)
+            if tags:
+                # Persist now, drop the per-file tag list + AST immediately.
+                db.insert_tags(
+                    (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
+        db.commit()
+        db.set_meta(str(self.root), self._db_signature(included))
+
+        # Cross defs x refs into the refs edge table (on disk, not RAM).
+        db.populate_refs()
+        db.commit()
+
+        total_definitions = db.count_tags("def")
+        total_references = db.count_tags("ref")
+
+        # Untagged files = included files with no def tag (matches default).
+        tagged_rel_fnames = set(db.def_files())
+        untagged = sorted(
+            rel for fname in included
+            for rel in [self.get_rel_fname(fname)]
+            if rel not in tagged_rel_fnames
+        )
+
+        file_report = FileReport(
+            excluded=excluded,
+            definition_matches=total_definitions,
+            reference_matches=total_references,
+            total_files_considered=len(all_fnames),
+            untagged_files=untagged
+        )
+
+        # Rank: uniform 1.0 for every node — identical to the default path's
+        # pagerank fallback here (scipy absent). Real on-disk ranking = Goal 4.
+        included_rels = {self.get_rel_fname(f) for f in included}
+        ranked_tags: List[Tuple[float, Tag]] = []
+        for fname, rel, line, name, _kind in db.def_rows():
+            if rel not in included_rels:
+                continue
+            if self.exclude_unranked and 1.0 <= 0.0001:
+                continue
+            boost = 1.0
+            if name in mentioned_idents:
+                boost *= 10.0
+            if rel in mentioned_fnames:
+                boost *= 5.0
+            if rel in chat_rel_fnames:
+                boost *= 20.0
+            ranked_tags.append((1.0 * boost, Tag(rel, fname, line, name, "def")))
+
+        ranked_tags.sort(key=lambda x: (-x[0], self.get_rel_fname(x[1].fname), x[1].line))
+        return ranked_tags, file_report
+
     def get_ranked_tags(
         self,
         chat_fnames: List[str],
@@ -1339,6 +1459,13 @@ class Tricorder(TagsCacheMixin):
         # Return empty list and empty report if no files
         if not chat_fnames and not other_fnames:
             return [], FileReport({}, 0, 0, 0, untagged_files=[])
+        
+        # SPEC_db_map Goal 3: flat-memory DB path (tags/refs persisted per
+        # file, AST dropped immediately, no whole-repo dicts or nx graph).
+        if self._db_active:
+            return self._get_ranked_tags_db(
+                chat_fnames, other_fnames, mentioned_fnames or set(),
+                mentioned_idents or set())
             
         if mentioned_fnames is None:
             mentioned_fnames = set()

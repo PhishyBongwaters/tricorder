@@ -88,74 +88,74 @@ Examples:
   %(prog)s --chat-files main.py --other-files src/  # Specify chat vs other files
         """
     )
-    
+
     parser.add_argument(
         "paths",
         nargs="*",
         help="Files or directories to include in the map"
     )
-    
+
     parser.add_argument(
         "--root",
         default=".",
         help="Repository root directory (default: current directory)"
     )
-    
+
     parser.add_argument(
         "--map-tokens",
         type=int,
         default=8192,
         help="Maximum tokens for the generated map (default: 8192)"
     )
-    
+
     parser.add_argument(
         "--chat-files",
         nargs="*",
         help="Files currently being edited (given higher priority)"
     )
-    
+
     parser.add_argument(
         "--other-files",
         nargs="*",
         help="Other files to consider for the map"
     )
-    
+
     parser.add_argument(
         "--mentioned-files",
         nargs="*",
         help="Files explicitly mentioned (given higher priority)"
     )
-    
+
     parser.add_argument(
         "--mentioned-idents",
         nargs="*",
         help="Identifiers explicitly mentioned (given higher priority)"
     )
-    
+
     parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose output"
     )
-    
+
     parser.add_argument(
         "--full",
         action="store_true",
         help="Emit the full map regardless of token budget (disables truncation)"
     )
-    
+
     parser.add_argument(
         "--model",
         default="gpt-4",
         help="Model name for token counting (default: gpt-4)"
     )
-    
+
     parser.add_argument(
         "--max-context-window",
         type=int,
         help="Maximum context window size"
     )
-    
+
     parser.add_argument(
         "--force-refresh",
         action="store_true",
@@ -167,19 +167,19 @@ Examples:
         action="store_true",
         help="Exclude files with Page Rank 0 from the map"
     )
-    
+
     parser.add_argument(
         "--output",
         help="Write map to file instead of stdout"
     )
-    
+
     parser.add_argument(
         "--format",
         choices=["text", "json"],
         default="text",
         help="Output format (default: text)"
     )
-    
+
     parser.add_argument(
         "--top",
         type=int,
@@ -200,13 +200,13 @@ Examples:
         default=3,
         help="Number of context lines around each definition (default: 3)"
     )
-    
+
     parser.add_argument(
         "--mermaid",
         action="store_true",
         help="Output dependency graph as Mermaid flowchart"
     )
-    
+
     parser.add_argument(
         "--mermaid-top",
         type=int,
@@ -260,12 +260,27 @@ Examples:
              "savings_pct = context saved vs reading the repo. No map is built. "
              "Used by the lifecycle plugin to enrich cache meta."
     )
-    
+
     parser.add_argument(
         "--max-files",
         type=int,
         default=1000,
         help="Cap on files during auto-discovery when no paths given (default: 1000)"
+    )
+
+    parser.add_argument(
+        "--db-path",
+        metavar="PATH",
+        help="Persist per-file tags/refs to this sqlite file (flat-memory tree walk, "
+             "SPEC_db_map Goal 3). Default execution path is unchanged unless this or "
+             "--no-db is given."
+    )
+
+    parser.add_argument(
+        "--no-db",
+        action="store_true",
+        help="Run the same flat-memory tree walk against an in-memory sqlite DB "
+             "(self-check; nothing persisted). Mutually exclusive with --db-path."
     )
 
     parser.add_argument(
@@ -292,7 +307,7 @@ Examples:
         "--probe-digest",
         action="store_true",
         help="Print the turn-0 probe digest (language tally + sizes + navigation "
-             "hint) for --root and exit. No map build, no token budget — cheap "
+             "hint) for --root and exit. No map build, no token budget -- cheap "
              "even on huge repos. Emits the same text the Hermes/DSH plugins "
              "inject at turn 0."
     )
@@ -325,18 +340,18 @@ Examples:
         probe = probe_project(args.root, args.exclude_globs)
         digest = format_probe_digest(probe, args.root)
         if not digest or probe.get("total_files", 0) == 0:
-            # Truly empty/non-code repo — nothing useful to inject. Exit clean.
+            # Truly empty/non-code repo -- nothing useful to inject. Exit clean.
             sys.exit(0)
         print(digest)
         sys.exit(0)
-    
+
     # Set up token counter with specified model
     def token_counter(text: str) -> int:
         return count_tokens(text, args.model)
-    
+
     # Set up output handlers
     if args.quiet:
-        # ponytail: quiet mode — suppress all logging, only the map matters
+        # ponytail: quiet mode -- suppress all logging, only the map matters
         output_handlers = {
             'info': lambda *a: None,
             'warning': lambda *a: None,
@@ -348,10 +363,10 @@ Examples:
             'warning': tool_warning,
             'error': tool_error
         }
-    
+
     # Process file arguments
     chat_files_from_args = args.chat_files or [] # These are the paths as strings from the CLI
-    
+
     # Determine the list of unresolved path specifications that will form the 'other_files'
     # These can be files or directories. find_src_files will expand them.
     unresolved_paths_for_other_files_specs = []
@@ -360,7 +375,7 @@ Examples:
     elif args.paths:  # Else, if positional paths are given, they are the source
         unresolved_paths_for_other_files_specs.extend(args.paths)
     # If neither, unresolved_paths_for_other_files_specs remains empty.
-    
+
     if args.root in (None, '.', ''):
         git_root = find_git_root(unresolved_paths_for_other_files_specs[0] if unresolved_paths_for_other_files_specs else '.')
         if git_root:
@@ -403,7 +418,8 @@ Examples:
         if len(effective_other_files_unresolved) > args.max_files:
             output_handlers['warning'](
                 f"Explicit paths yielded {len(effective_other_files_unresolved)} files, "
-                f"capping to {args.max_files}")
+                f"capping to {args.max_files}"
+            )
             effective_other_files_unresolved = effective_other_files_unresolved[:args.max_files]
         other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
 
@@ -415,13 +431,14 @@ Examples:
             if len(effective_other_files_unresolved) > args.max_files:
                 output_handlers['warning'](
                     f"Auto-scanned {len(effective_other_files_unresolved)} files, "
-                    f"capping to {args.max_files}")
+                    f"capping to {args.max_files}"
+                )
                 effective_other_files_unresolved = effective_other_files_unresolved[:args.max_files]
             other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
-    
+
     mentioned_fnames = set(args.mentioned_files) if args.mentioned_files else None
     mentioned_idents = set(args.mentioned_idents) if args.mentioned_idents else None
-    
+
     repo_map = Tricorder(
         map_tokens=args.map_tokens,
         root=str(root_path),
@@ -434,8 +451,10 @@ Examples:
         context_lines=int(args.tier) * args.context_lines,
         exclude_untagged=args.exclude_untagged,
         full_map=args.full,
+        use_db=bool(args.db_path or args.no_db),
+        db_path=args.db_path if args.db_path else None,
     )
-    
+
     try:
         ranked_tags, file_report = repo_map.get_ranked_tags(chat_files, other_files)
 
@@ -447,7 +466,7 @@ Examples:
                 )
             else:
                 repo_map.output_handlers['warning'](
-                    "No tags extracted — tree-sitter may lack parsers for this language. "
+                    "No tags extracted -- tree-sitter may lack parsers for this language. "
                     "Install missing parsers (e.g. pip install tree-sitter-language-pack)."
                 )
 
@@ -518,25 +537,20 @@ Examples:
                 output_text = json.dumps(json_output, indent=2)
             else:
                 output_text = map_content
-            
+
             if args.output:
                 try:
                     safe_write(args.output, output_text, allow_escape=True)
-                except OSError as e:
-                    tool_error(f"Could not write --output {args.output}: {e}")
-                    print(output_text)  # ponytail: stdout safety net, map is never lost
+                except Exception as e:
+                    tool_error(f"Failed to write output: {e}")
                     sys.exit(1)
             else:
                 print(output_text)
         else:
             if not args.quiet:
-                tool_output("No repository map generated.")
-            
-    except KeyboardInterrupt:
-        tool_error("Interrupted by user")
-        sys.exit(1)
+                tool_warning("No map content generated.")
     except Exception as e:
-        tool_error(f"Error generating repository map: {e}")
+        repo_map.output_handlers['error'](f"Error generating map: {e}")
         if args.verbose:
             import traceback
             traceback.print_exc()
