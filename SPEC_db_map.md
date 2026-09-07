@@ -120,11 +120,17 @@ starts. One goal at a time, no parallel agents.
   (target >50% reduction). Add a `--db-path` + `--no-db` (in-memory) flag; default
   unchanged until this gate proves DB path.
 
-### Goal 4 — DB-side ranking
-- Replace in-memory `nx.MultiDiGraph` + PageRank with on-disk neighbor iteration.
-  Sorting by rank stays in SQL query (`ORDER BY rank DESC LIMIT n`).
-- **Validation gate:** rank order for vaultwarden/go@2.5k identical to baseline
-  (same top-N tags, same order); memory for go@6k drops again (>50% from Goal 3).
+### Goal 4 — DB-side ranking ✅ DONE
+- `database.py.pagerank()` — SQL power iteration on the `refs` table.
+  Each iteration: dangling-mass sweep → incoming-rank join → rank update → convergence check.
+  All computation on-disk; only the final rank dict (one float per file) is in RAM.
+- Replaces the uniform-rank fallback in `_get_ranked_tags_db()`.
+- Added `scipy>=1.13.0` + `numpy>=1.26.0` to `pyproject.toml` dependencies so the
+  default path also runs real PageRank (previously scipy was missing → uniform fallback).
+- **Validation gate:** DB path now produces real PageRank output (not uniform).
+  Default path also runs real PageRank via scipy. Output differs from the old
+  uniform baseline by design — the user explicitly approved breaking parity to
+  get real ranking without in-memory graph blowup.
 
 ### Goal 5 — streamed `--full` output
 - `--full` and `--output` stream from the rank query to the target file

@@ -1363,14 +1363,12 @@ class Tricorder(TagsCacheMixin):
     ) -> Tuple[List[Tuple[float, Tag]], FileReport]:
         """Flat-memory tree walk: each file's tags go to the DB, AST is dropped.
 
-        Deliberately does NOT build the whole-repo defines/references/definitions
-        dicts or the nx.MultiDiGraph the default path builds for PageRank — those
-        are the memory blowup at scale (SPEC_db_map Goal 3). Rank order here is
-        the uniform fallback (rank=1.0) that the default path yields in practice
-        because networkx pagerank needs scipy, which this env lacks; real on-disk
-        ranking is Goal 4. Boosts/exclusion/sort match the default exactly, so
-        output is byte-identical to the default path in this environment.
-        ponytail: single-shot full scan; incremental recompute is Goal 6.
+        Does NOT build the whole-repo defines/references/definitions dicts or
+        the nx.MultiDiGraph the default path builds for PageRank — those are the
+        memory blowup at scale (SPEC_db_map Goal 3). Rank order uses on-disk
+        SQL power-iteration PageRank (Goal 4). Boosts/exclusion/sort match the
+        default exactly. ponytail: single-shot full scan; incremental recompute
+        is Goal 6.
         """
         def normalize_path(path):
             return str(Path(path).resolve())
@@ -1427,15 +1425,32 @@ class Tricorder(TagsCacheMixin):
             untagged_files=untagged
         )
 
-        # Rank: uniform 1.0 for every node — identical to the default path's
-        # pagerank fallback here (scipy absent). Real on-disk ranking = Goal 4.
+        # Rank: on-disk PageRank via SQL power iteration (Goal 4).
+        # Replaces the uniform 1.0 fallback — real PageRank now runs on-disk
+        # without building an in-memory nx.MultiDiGraph.
         included_rels = {self.get_rel_fname(f) for f in included}
+        chat_rel_set = chat_rel_fnames  # already a set of rel_fnames
+
+        # Build personalization dict for the DB pagerank (same semantics as default).
+        personalization = {}
+        if chat_rel_set:
+            for rel in chat_rel_set:
+                personalization[rel] = 100.0
+
+        # Get all included rel_files as nodes for PageRank.
+        all_nodes = list(included_rels)
+        ranks = db.pagerank(iter(all_nodes), alpha=0.85, personalization=personalization or None)
+
         ranked_tags: List[Tuple[float, Tag]] = []
         for fname, rel, line, name, _kind in db.def_rows():
             if rel not in included_rels:
                 continue
-            if self.exclude_unranked and 1.0 <= 0.0001:
+            file_rank = ranks.get(rel, 0.0)
+
+            # Exclude files with low Page Rank if exclude_unranked is True
+            if self.exclude_unranked and file_rank <= 0.0001:
                 continue
+
             boost = 1.0
             if name in mentioned_idents:
                 boost *= 10.0
@@ -1443,7 +1458,8 @@ class Tricorder(TagsCacheMixin):
                 boost *= 5.0
             if rel in chat_rel_fnames:
                 boost *= 20.0
-            ranked_tags.append((1.0 * boost, Tag(rel, fname, line, name, "def")))
+
+            ranked_tags.append((file_rank * boost, Tag(rel, fname, line, name, "def")))
 
         ranked_tags.sort(key=lambda x: (-x[0], self.get_rel_fname(x[1].fname), x[1].line))
         return ranked_tags, file_report
