@@ -75,7 +75,7 @@ class DBStore:
         """
         self.conn.execute(
             "INSERT INTO refs(from_file, to_file, name) "
-            "SELECT DISTINCT r.rel_file, d.rel_file, d.name "
+            "SELECT r.rel_file, d.rel_file, d.name "
             "FROM tags r JOIN tags d ON r.name = d.name "
             "WHERE r.kind='ref' AND d.kind='def' AND r.rel_file != d.rel_file"
         )
@@ -162,11 +162,12 @@ class DBStore:
         self.conn.commit()
 
         # Pre-compute out-degree for every node (needed for rank distribution).
+        # COUNT(*) not COUNT(DISTINCT) to match nx.MultiDiGraph edge multiplicity.
         self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _pr_outdeg(node TEXT PRIMARY KEY, deg INTEGER)")
         self.conn.execute("DELETE FROM _pr_outdeg")
         self.conn.execute(
             "INSERT INTO _pr_outdeg SELECT n.node, COALESCE(c.c, 0) FROM _pr_nodes n "
-            "LEFT JOIN (SELECT from_file AS node, COUNT(DISTINCT to_file) AS c FROM refs GROUP BY from_file) c "
+            "LEFT JOIN (SELECT from_file AS node, COUNT(*) AS c FROM refs GROUP BY from_file) c "
             "ON n.node = c.node"
         )
         self.conn.commit()
@@ -207,7 +208,14 @@ class DBStore:
             )
             self.conn.commit()
 
-            # --- Step 4: convergence check ---
+            # --- Step 4: normalize (keep sum=1) and convergence check ---
+            total = self.conn.execute(
+                "SELECT COALESCE(SUM(rank), 0) FROM _pr_new"
+            ).fetchone()[0]
+            if total > 0:
+                self.conn.execute(
+                    "UPDATE _pr_new SET rank = rank / ?", (total,)
+                )
             diff = self.conn.execute(
                 "SELECT COALESCE(SUM(ABS(a.rank - b.rank)), 0) "
                 "FROM _pr_rank a JOIN _pr_new b ON a.node = b.node"
