@@ -82,7 +82,7 @@ class Tricorder(TagsCacheMixin):
         cache_eviction_policy: str = "least-recently-used",
         cache_ttl: Optional[int] = None,
         full_map: bool = False,
-        use_db: bool = False,
+        use_db: bool = True,
         db_path: Optional[str] = None,
     ):
         """Initialize Tricorder instance."""

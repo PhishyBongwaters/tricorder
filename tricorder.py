@@ -271,16 +271,17 @@ Examples:
     parser.add_argument(
         "--db-path",
         metavar="PATH",
-        help="Persist per-file tags/refs to this sqlite file (flat-memory tree walk, "
-             "SPEC_db_map Goal 3). Default execution path is unchanged unless this or "
-             "--no-db is given."
+        help="Persist per-file tags/refs to this sqlite file (flat-memory tree walk). "
+             "DB-backed scan is the DEFAULT; --db-path optionally persists to a file "
+             "instead of in-memory sqlite."
     )
 
     parser.add_argument(
         "--no-db",
         action="store_true",
-        help="Run the same flat-memory tree walk against an in-memory sqlite DB "
-             "(self-check; nothing persisted). Mutually exclusive with --db-path."
+        help="Opt OUT of the DB-backed flat-memory tree walk and use the legacy "
+             "in-memory nx.MultiDiGraph path. Escape hatch for parity/debugging. "
+             "Mutually exclusive with --db-path."
     )
 
     parser.add_argument(
@@ -451,8 +452,8 @@ Examples:
         context_lines=int(args.tier) * args.context_lines,
         exclude_untagged=args.exclude_untagged,
         full_map=args.full,
-        use_db=bool(args.db_path or args.no_db),
-        db_path=args.db_path if args.db_path else None,
+        use_db=not args.no_db,
+        db_path=args.db_path if (args.db_path and not args.no_db) else None,
     )
 
     try:

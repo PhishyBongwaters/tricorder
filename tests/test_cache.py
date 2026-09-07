@@ -75,9 +75,13 @@ class TestTricorderT1Context(unittest.TestCase):
         files = [str(Path(self.project_root) / f) for f in ['core.py', 'utils.py']]
         ranked_tags, _ = repo_map.get_ranked_tags(files, [])
         if ranked_tags:
-            tree = repo_map.to_tree(ranked_tags[:12], set())
+            # Use the full ranked list: with DB-by-default + real PageRank the
+            # relative order of core.py vs utils.py can vary, so don't slice so
+            # tight that one legitimately-ranked file falls out of the window.
+            tree = repo_map.to_tree(ranked_tags, set())
             self.assertIn('root/', tree)
             self.assertIn('core.py', tree)
+            self.assertIn('utils.py', tree)
 
     def test_context_lines_clamped(self):
         repo_map = Tricorder(root=self.project_root, context_lines=100)

@@ -18,6 +18,7 @@ Modes:
 from __future__ import annotations
 
 import sqlite3
+import threading
 from typing import Iterable, Iterator, List, Optional, Sequence, Tuple
 
 SCHEMA_VERSION = 1
@@ -42,7 +43,11 @@ class DBStore:
 
     def __init__(self, path: Optional[str] = None):
         self.path = path
-        self.conn = sqlite3.connect(path if path else ":memory:")
+        # check_same_thread=False: the scan runs via asyncio.to_thread (MCP
+        # server) in a different thread than __init__; all access serialized
+        # by self._lock.
+        self._lock = threading.RLock()
+        self.conn = sqlite3.connect(path if path else ":memory:", check_same_thread=False)
         # WAL keeps reads from blocking the walk's insert bursts on disk builds.
         self.conn.execute(
             "PRAGMA journal_mode=WAL" if path else "PRAGMA journal_mode=MEMORY"
@@ -54,6 +59,10 @@ class DBStore:
     # -- writes -------------------------------------------------------------
     def insert_tags(self, rows: Iterable[_TagRow]):
         """Bulk-insert one file's tags. Rows = (file, rel_file, line, name, kind)."""
+        with self._lock:
+            self._insert_tags_locked(rows)
+
+    def _insert_tags_locked(self, rows: Iterable[_TagRow]):
         self.conn.executemany(
             "INSERT INTO tags(file, rel_file, line, name, kind) VALUES (?,?,?,?,?)",
             rows,
@@ -128,117 +137,118 @@ class DBStore:
         table scan per iteration. Upgrade path: materialize a dangling table
         to avoid the dangling subquery.
         """
-        node_list = list(nodes)
-        n = len(node_list)
-        if n == 0:
-            return {}
+        with self._lock:
+            node_list = list(nodes)
+            n = len(node_list)
+            if n == 0:
+                return {}
 
-        # Build a lookup table for fast personalization and node indexing.
-        self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _pr_nodes(node TEXT PRIMARY KEY)")
-        self.conn.execute("DELETE FROM _pr_nodes")
-        self.conn.executemany("INSERT INTO _pr_nodes VALUES (?)", [(nd,) for nd in node_list])
+            # Build a lookup table for fast personalization and node indexing.
+            self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _pr_nodes(node TEXT PRIMARY KEY)")
+            self.conn.execute("DELETE FROM _pr_nodes")
+            self.conn.executemany("INSERT INTO _pr_nodes VALUES (?)", [(nd,) for nd in node_list])
 
-        # Personalization table (optional).
-        self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _pr_pers(node TEXT PRIMARY KEY, val REAL)")
-        self.conn.execute("DELETE FROM _pr_pers")
-        if personalization:
-            self.conn.executemany(
-                "INSERT INTO _pr_pers VALUES (?, ?)",
-                [(nd, v) for nd, v in personalization.items() if nd in node_list],
-            )
-
-        # Initialize ranks uniformly.
-        self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _pr_rank(node TEXT PRIMARY KEY, rank REAL)")
-        self.conn.execute("DELETE FROM _pr_rank")
-        init = 1.0 / n
-        pers_init = self.conn.execute(
-            "SELECT p.node, p.val FROM _pr_pers p JOIN _pr_nodes n ON p.node = n.node"
-        ).fetchall()
-        pers_map = {r[0]: r[1] for r in pers_init}
-        self.conn.executemany(
-            "INSERT INTO _pr_rank VALUES (?, ?)",
-            [(nd, pers_map.get(nd, init)) for nd in node_list],
-        )
-        self.conn.commit()
-
-        # Pre-compute out-degree for every node (needed for rank distribution).
-        # COUNT(*) not COUNT(DISTINCT) to match nx.MultiDiGraph edge multiplicity.
-        self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _pr_outdeg(node TEXT PRIMARY KEY, deg INTEGER)")
-        self.conn.execute("DELETE FROM _pr_outdeg")
-        self.conn.execute(
-            "INSERT INTO _pr_outdeg SELECT n.node, COALESCE(c.c, 0) FROM _pr_nodes n "
-            "LEFT JOIN (SELECT from_file AS node, COUNT(*) AS c FROM refs GROUP BY from_file) c "
-            "ON n.node = c.node"
-        )
-        self.conn.commit()
-
-        for _ in range(max_iter):
-            # --- Step 1: dangling nodes (out-degree == 0) ---
-            dangling_mass = self.conn.execute(
-                "SELECT COALESCE(SUM(rank), 0) FROM _pr_rank WHERE node IN "
-                "(SELECT node FROM _pr_outdeg WHERE deg = 0)"
-            ).fetchone()[0]
-
-            # --- Step 2: incoming rank per node ---
-            # For each (to_file), sum(prev_rank / out_degree_of_from_file).
-            self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _pr_incoming(node TEXT PRIMARY KEY, incoming REAL)")
-            self.conn.execute("DELETE FROM _pr_incoming")
-            self.conn.execute(
-                "INSERT INTO _pr_incoming "
-                "SELECT r.to_file, SUM(pr.rank / od.deg) "
-                "FROM refs r "
-                "JOIN _pr_rank pr ON r.from_file = pr.node "
-                "JOIN _pr_outdeg od ON r.from_file = od.node "
-                "GROUP BY r.to_file"
-            )
-            self.conn.commit()
-
-            # --- Step 3: update ranks ---
-            # new_rank = (1-alpha)/n + alpha * (incoming + dangling_share)
-            dangling_share = dangling_mass / n if n else 0
-            self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _pr_new(node TEXT PRIMARY KEY, rank REAL)")
-            self.conn.execute("DELETE FROM _pr_new")
-            self.conn.execute(
-                "INSERT INTO _pr_new "
-                "SELECT n.node, "
-                "  (1.0 - ?) / ? + ? * (COALESCE(i.incoming, 0.0) + ?) "
-                "FROM _pr_nodes n "
-                "LEFT JOIN _pr_incoming i ON n.node = i.node",
-                (alpha, n, alpha, dangling_share),
-            )
-            self.conn.commit()
-
-            # --- Step 4: normalize (keep sum=1) and convergence check ---
-            total = self.conn.execute(
-                "SELECT COALESCE(SUM(rank), 0) FROM _pr_new"
-            ).fetchone()[0]
-            if total > 0:
-                self.conn.execute(
-                    "UPDATE _pr_new SET rank = rank / ?", (total,)
+            # Personalization table (optional).
+            self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _pr_pers(node TEXT PRIMARY KEY, val REAL)")
+            self.conn.execute("DELETE FROM _pr_pers")
+            if personalization:
+                self.conn.executemany(
+                    "INSERT INTO _pr_pers VALUES (?, ?)",
+                    [(nd, v) for nd, v in personalization.items() if nd in node_list],
                 )
-            diff = self.conn.execute(
-                "SELECT COALESCE(SUM(ABS(a.rank - b.rank)), 0) "
-                "FROM _pr_rank a JOIN _pr_new b ON a.node = b.node"
-            ).fetchone()[0]
+
+            # Initialize ranks uniformly.
+            self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _pr_rank(node TEXT PRIMARY KEY, rank REAL)")
             self.conn.execute("DELETE FROM _pr_rank")
-            self.conn.execute("INSERT INTO _pr_rank SELECT * FROM _pr_new")
+            init = 1.0 / n
+            pers_init = self.conn.execute(
+                "SELECT p.node, p.val FROM _pr_pers p JOIN _pr_nodes n ON p.node = n.node"
+            ).fetchall()
+            pers_map = {r[0]: r[1] for r in pers_init}
+            self.conn.executemany(
+                "INSERT INTO _pr_rank VALUES (?, ?)",
+                [(nd, pers_map.get(nd, init)) for nd in node_list],
+            )
             self.conn.commit()
 
-            if diff < tol:
-                break
+            # Pre-compute out-degree for every node (needed for rank distribution).
+            # COUNT(*) not COUNT(DISTINCT) to match nx.MultiDiGraph edge multiplicity.
+            self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _pr_outdeg(node TEXT PRIMARY KEY, deg INTEGER)")
+            self.conn.execute("DELETE FROM _pr_outdeg")
+            self.conn.execute(
+                "INSERT INTO _pr_outdeg SELECT n.node, COALESCE(c.c, 0) FROM _pr_nodes n "
+                "LEFT JOIN (SELECT from_file AS node, COUNT(*) AS c FROM refs GROUP BY from_file) c "
+                "ON n.node = c.node"
+            )
+            self.conn.commit()
 
-        # Materialize result.
-        result = {
-            row[0]: row[1]
-            for row in self.conn.execute("SELECT node, rank FROM _pr_rank").fetchall()
-        }
+            for _ in range(max_iter):
+                # --- Step 1: dangling nodes (out-degree == 0) ---
+                dangling_mass = self.conn.execute(
+                    "SELECT COALESCE(SUM(rank), 0) FROM _pr_rank WHERE node IN "
+                    "(SELECT node FROM _pr_outdeg WHERE deg = 0)"
+                ).fetchone()[0]
 
-        # Cleanup temp tables.
-        for tbl in ("_pr_nodes", "_pr_pers", "_pr_rank", "_pr_outdeg", "_pr_incoming", "_pr_new"):
-            self.conn.execute(f"DROP TABLE IF EXISTS {tbl}")
-        self.conn.commit()
+                # --- Step 2: incoming rank per node ---
+                # For each (to_file), sum(prev_rank / out_degree_of_from_file).
+                self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _pr_incoming(node TEXT PRIMARY KEY, incoming REAL)")
+                self.conn.execute("DELETE FROM _pr_incoming")
+                self.conn.execute(
+                    "INSERT INTO _pr_incoming "
+                    "SELECT r.to_file, SUM(pr.rank / od.deg) "
+                    "FROM refs r "
+                    "JOIN _pr_rank pr ON r.from_file = pr.node "
+                    "JOIN _pr_outdeg od ON r.from_file = od.node "
+                    "GROUP BY r.to_file"
+                )
+                self.conn.commit()
 
-        return result
+                # --- Step 3: update ranks ---
+                # new_rank = (1-alpha)/n + alpha * (incoming + dangling_share)
+                dangling_share = dangling_mass / n if n else 0
+                self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _pr_new(node TEXT PRIMARY KEY, rank REAL)")
+                self.conn.execute("DELETE FROM _pr_new")
+                self.conn.execute(
+                    "INSERT INTO _pr_new "
+                    "SELECT n.node, "
+                    "  (1.0 - ?) / ? + ? * (COALESCE(i.incoming, 0.0) + ?) "
+                    "FROM _pr_nodes n "
+                    "LEFT JOIN _pr_incoming i ON n.node = i.node",
+                    (alpha, n, alpha, dangling_share),
+                )
+                self.conn.commit()
+
+                # --- Step 4: normalize (keep sum=1) and convergence check ---
+                total = self.conn.execute(
+                    "SELECT COALESCE(SUM(rank), 0) FROM _pr_new"
+                ).fetchone()[0]
+                if total > 0:
+                    self.conn.execute(
+                        "UPDATE _pr_new SET rank = rank / ?", (total,)
+                    )
+                diff = self.conn.execute(
+                    "SELECT COALESCE(SUM(ABS(a.rank - b.rank)), 0) "
+                    "FROM _pr_rank a JOIN _pr_new b ON a.node = b.node"
+                ).fetchone()[0]
+                self.conn.execute("DELETE FROM _pr_rank")
+                self.conn.execute("INSERT INTO _pr_rank SELECT * FROM _pr_new")
+                self.conn.commit()
+
+                if diff < tol:
+                    break
+
+            # Materialize result.
+            result = {
+                row[0]: row[1]
+                for row in self.conn.execute("SELECT node, rank FROM _pr_rank").fetchall()
+            }
+
+            # Cleanup temp tables.
+            for tbl in ("_pr_nodes", "_pr_pers", "_pr_rank", "_pr_outdeg", "_pr_incoming", "_pr_new"):
+                self.conn.execute(f"DROP TABLE IF EXISTS {tbl}")
+            self.conn.commit()
+
+            return result
 
     def close(self):
         try:

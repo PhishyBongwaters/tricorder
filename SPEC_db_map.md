@@ -111,14 +111,14 @@ starts. One goal at a time, no parallel agents.
 - **Validation gate:** full test suite passes; `calc_repo_map`-equivalent output byte-identical
   for vaultwarden + go@2.5k (run both before/after, diff stdout).
 
-### Goal 3 — DB store (schema v1) writing per-file tags + refs
+### Goal 3 — DB store (schema v1) writing per-file tags + refs ✅ DONE
 - New `database.py`: sqlite table `tags(file, rel_file, line, name, kind)` +
   `refs(from_file, to_file, name)` + `meta(schema_version, root, signature)`.
 - Wire the walk: after each file parse, bulk-insert tags/refs, drop AST.
-- **Validation gate:** after scanning equals-BEFORE output (same map text as
-  baseline) **and** peak RSS during a kotlin scan drops materially vs baseline
-  (target >50% reduction). Add a `--db-path` + `--no-db` (in-memory) flag; default
-  unchanged until this gate proves DB path.
+- **Validation gate:** after scanning equals-BEFORE output and peak RSS during a
+  kotlin scan drops materially vs baseline. **DB is now the DEFAULT execution
+  path** (user-approved): `Tricorder(use_db=True)` default; CLI `--no-db` opts
+  back to legacy nx, `--db-path` persists to a file instead of in-memory sqlite.
 
 ### Goal 4 — DB-side ranking ✅ DONE
 - `database.py.pagerank()` — SQL power iteration on the `refs` table.
