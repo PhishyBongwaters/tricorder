@@ -1376,23 +1376,60 @@ class Tricorder(TagsCacheMixin):
         all_fnames = list(set(chat_fnames + other_fnames))
 
         db = self._db_store
-        # Fresh scan: never stack onto a previous run's rows in this file.
-        db.reset()
-        for fname in all_fnames:
-            rel_fname = self.get_rel_fname(fname)
-            if not os.path.exists(fname):
-                excluded[fname] = "File not found"
-                self.output_handlers['warning'](
-                    f"Repo-map can't include {fname}: File not found")
-                continue
-            included.append(fname)
-            tags = self.get_tags(fname, rel_fname)
-            if tags:
-                # Persist now, drop the per-file tag list + AST immediately.
-                db.insert_tags(
-                    (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
-        db.commit()
-        db.set_meta(str(self.root), self._db_signature(included))
+        
+        # Check if DB already has valid data for the requested files
+        # (Pre-scan case: db_path was provided and DB already populated)
+        needed_rels = {self.get_rel_fname(f) for f in all_fnames}
+        meta = db.get_meta()
+        
+        if meta and meta[0] == 1:  # schema_version == 1
+            stored_root, stored_sig = meta[1], meta[2]
+            stored_rels = db.stored_files()
+            # Check if DB covers all needed files
+            if needed_rels.issubset(stored_rels) and stored_root == str(self.root):
+                # DB has everything we need — skip re-parse, just rank
+                # Populate included with absolute paths for the stored rel files
+                for fname in all_fnames:
+                    if self.get_rel_fname(fname) in stored_rels:
+                        included.append(fname)
+                self.output_handlers['info'](
+                    f"Pre-scan DB hit: {len(needed_rels)} files covered, skipping parse")
+            else:
+                # Fresh scan: never stack onto a previous run's rows in this file.
+                db.reset()
+                for fname in all_fnames:
+                    rel_fname = self.get_rel_fname(fname)
+                    if not os.path.exists(fname):
+                        excluded[fname] = "File not found"
+                        self.output_handlers['warning'](
+                            f"Repo-map can't include {fname}: File not found")
+                        continue
+                    included.append(fname)
+                    tags = self.get_tags(fname, rel_fname)
+                    if tags:
+                        # Persist now, drop the per-file tag list + AST immediately.
+                        db.insert_tags(
+                            (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
+                db.commit()
+                db.set_meta(str(self.root), self._db_signature(included))
+        else:
+            # No meta or wrong schema — fresh scan
+            db.reset()
+            for fname in all_fnames:
+                rel_fname = self.get_rel_fname(fname)
+                if not os.path.exists(fname):
+                    excluded[fname] = "File not found"
+                    self.output_handlers['warning'](
+                        f"Repo-map can't include {fname}: File not found")
+                    continue
+                included.append(fname)
+                tags = self.get_tags(fname, rel_fname)
+                if tags:
+                    # Persist now, drop the per-file tag list + AST immediately.
+                    db.insert_tags(
+                        (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
+            db.commit()
+            db.set_meta(str(self.root), self._db_signature(included))
 
         # Cross defs x refs into the refs edge table (on disk, not RAM).
         db.populate_refs()

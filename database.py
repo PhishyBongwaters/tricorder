@@ -110,6 +110,25 @@ class DBStore:
     def ref_count(self) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM refs").fetchone()[0]
 
+    def get_meta(self):
+        """Latest (schema_version, root, signature) or None if never scanned."""
+        return self.conn.execute(
+            "SELECT schema_version, root, signature FROM meta "
+            "ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+
+    def stored_files(self):
+        """Distinct rel_files with rows (cheap set for hit/subset checks)."""
+        return {r[0] for r in self.conn.execute("SELECT DISTINCT rel_file FROM tags")}
+
+    def count_tags_in(self, kind: str, rels) -> int:
+        """Count kind='def'/'ref' tags restricted to the given rel_files."""
+        rels = list(rels)
+        if not rels:
+            return 0
+        q = f"SELECT COUNT(*) FROM tags WHERE kind=? AND rel_file IN ({','.join('?' * len(rels))})"
+        return self.conn.execute(q, [kind, *rels]).fetchone()[0]
+
     def def_files(self) -> Iterator[str]:
         """rel_files with at least one kind='def' tag."""
         return (r[0] for r in self.conn.execute(

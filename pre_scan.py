@@ -9,7 +9,10 @@ import time
 from pathlib import Path
 
 REPOS_DIR = Path(r"D:\Projects\Tricorder-Testing-Repos")
-DB_DIR = Path(r"D:\Projects\Tricorder-Testing-Repos\pre_scan_dbs")
+# DBs belong in tricorder's canonical cache root (get_cache_root()), NOT a
+# throwaway dir under the testing-repos folder.
+from utils import get_cache_root
+DB_DIR = get_cache_root() / "db"
 TRICORDER = Path(r"D:\Projects\tricorder\tricorder.py")
 
 # projectM is at a different path
