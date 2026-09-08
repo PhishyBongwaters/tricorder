@@ -286,6 +286,7 @@ class RankingMixin:
                                     batch += 1
                                     if batch % 100 == 0:
                                         db.commit()
+                                        db.checkpoint()
                             # Cache hits for non-dirty
                             for fname in all_fnames:
                                 rel = self.get_rel_fname(fname)
@@ -352,6 +353,7 @@ class RankingMixin:
                             batch += 1
                             if batch % 100 == 0:
                                 db.commit()
+                                db.checkpoint()
                 else:
                     batch = 0
                     for fname in all_fnames:
@@ -375,28 +377,65 @@ class RankingMixin:
                         if batch % 100 == 0:
                             db.commit()
                 db.commit()
+                db.checkpoint()
                 db.set_meta(str(self.root), self._db_signature(included))
         else:
-            # No meta or wrong schema — fresh scan
+            # No meta or wrong schema — fresh scan (Tier 2: parallel when large)
             db.reset()
-            for fname in all_fnames:
-                rel_fname = self.get_rel_fname(fname)
-                if not os.path.exists(fname):
-                    excluded[fname] = "File not found"
-                    self.output_handlers['warning'](
-                        f"Repo-map can't include {fname}: File not found")
-                    continue
-                included.append(fname)
-                tags = self.get_tags(fname, rel_fname)
-                if tags:
-                    # Persist now, drop the per-file tag list + AST immediately.
-                    db.insert_tags(
-                        (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
-                try:
-                    st = os.stat(fname)
-                    db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
-                except OSError:
-                    pass
+            # Tier 2: parallel when large, else sequential with batch commit
+            use_parallel_fresh = len(all_fnames) >= 200 and (os.cpu_count() or 1) > 1
+            if use_parallel_fresh:
+                self.output_handlers['info'](f"[DEBUG] Parallel fresh scan: {len(all_fnames)} files, {os.cpu_count()} workers")
+                work_fresh = [(f, self.get_rel_fname(f)) for f in all_fnames if os.path.exists(f)]
+                # Mark excluded for missing
+                for f in all_fnames:
+                    if not os.path.exists(f):
+                        excluded[f] = "File not found"
+                        self.output_handlers['warning'](f"Repo-map can't include {f}: File not found")
+                    else:
+                        included.append(f)
+                batch = 0
+                with concurrent.futures.ProcessPoolExecutor(max_workers=os.cpu_count()) as ex:
+                    self.output_handlers['info'](f"[DEBUG] ProcessPoolExecutor created")
+                    futures = {ex.submit(_parse_worker, w): w for w in work_fresh}
+                    for fut in concurrent.futures.as_completed(futures):
+                        fname, rel_fname = futures[fut]
+                        try:
+                            rows = fut.result(timeout=10)
+                        except Exception:
+                            rows = []
+                        if rows:
+                            db.insert_tags(rows)
+                        try:
+                            st = os.stat(fname)
+                            db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                        except OSError:
+                            pass
+                        batch += 1
+                        if batch % 100 == 0:
+                            db.commit()
+            else:
+                batch = 0
+                for fname in all_fnames:
+                    rel_fname = self.get_rel_fname(fname)
+                    if not os.path.exists(fname):
+                        excluded[fname] = "File not found"
+                        self.output_handlers['warning'](
+                            f"Repo-map can't include {fname}: File not found")
+                        continue
+                    included.append(fname)
+                    tags = self.get_tags(fname, rel_fname)
+                    if tags:
+                        db.insert_tags(
+                            (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
+                    try:
+                        st = os.stat(fname)
+                        db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                    except OSError:
+                        pass
+                    batch += 1
+                    if batch % 100 == 0:
+                        db.commit()
             db.commit()
             db.set_meta(str(self.root), self._db_signature(included))
 

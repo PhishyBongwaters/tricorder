@@ -55,6 +55,11 @@ class DBStore:
         self.conn.execute(
             "PRAGMA journal_mode=WAL" if path else "PRAGMA journal_mode=MEMORY"
         )
+        if path:
+            # Tier 2: keep WAL bounded during large bulk loads (kotlin 69k)
+            self.conn.execute("PRAGMA wal_autocheckpoint=1000")
+            self.conn.execute("PRAGMA journal_size_limit=104857600")  # 100M
+
         for stmt in _DDL:
             self.conn.execute(stmt)
         self.conn.commit()
@@ -302,8 +307,17 @@ class DBStore:
 
             return result
 
+    def checkpoint(self):
+        """Force WAL checkpoint to truncate WAL (large bulk loads)."""
+        try:
+            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self.conn.commit()
+        except Exception:
+            pass
+
     def close(self):
         try:
+            self.checkpoint()
             self.conn.commit()
         finally:
             self.conn.close()
