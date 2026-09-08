@@ -1385,30 +1385,51 @@ class Tricorder(TagsCacheMixin):
         if meta and meta[0] == 1:  # schema_version == 1
             stored_root, stored_sig = meta[1], meta[2]
             stored_rels = db.stored_files()
-            # Check if DB covers all needed files
-            if needed_rels.issubset(stored_rels) and stored_root == str(self.root):
-                # Incremental diff: compare current file stats vs stored file_state.
-                # Only re-parse changed/new files; unchanged files are cache hits.
+            if stored_root == str(self.root):
+                # Handles dirty-file incremental and resume of partial scans
+                # (missing = not yet in DB). ponytail: one dirty set covers both.
                 file_state = db.get_file_state()
-                # Old DB without file_state: fall back to signature check
+                # Old DB without file_state: fall back to signature check (subset only)
                 if not file_state:
-                    current_sig = self._db_signature(all_fnames)
-                    if current_sig == stored_sig:
-                        for fname in all_fnames:
-                            included.append(fname)
-                        # Backfill file_state so future edits are incremental
-                        for fname in all_fnames:
-                            rel = self.get_rel_fname(fname)
-                            try:
-                                st = os.stat(fname)
-                                db.set_file_state(rel, st.st_size, int(st.st_mtime))
-                            except OSError:
-                                pass
-                        db.commit()
-                        self.output_handlers['info'](
-                            f"Pre-scan DB hit: {len(needed_rels)} files covered, skipping parse")
-                    else:
-                        # Signature mismatch but no per-file state -> full rescan
+                    if needed_rels.issubset(stored_rels):
+                        current_sig = self._db_signature(all_fnames)
+                        if current_sig == stored_sig:
+                            for fname in all_fnames:
+                                included.append(fname)
+                            # Backfill file_state so future edits are incremental
+                            for fname in all_fnames:
+                                rel = self.get_rel_fname(fname)
+                                try:
+                                    st = os.stat(fname)
+                                    db.set_file_state(rel, st.st_size, int(st.st_mtime))
+                                except OSError:
+                                    pass
+                            db.commit()
+                            self.output_handlers['info'](
+                                f"Pre-scan DB hit: {len(needed_rels)} files covered, skipping parse")
+                        else:
+                            # Signature mismatch but no per-file state -> full rescan
+                            db.reset()
+                            for fname in all_fnames:
+                                rel_fname = self.get_rel_fname(fname)
+                                if not os.path.exists(fname):
+                                    excluded[fname] = "File not found"
+                                    self.output_handlers['warning'](
+                                        f"Repo-map can't include {fname}: File not found")
+                                    continue
+                                included.append(fname)
+                                tags = self.get_tags(fname, rel_fname)
+                                if tags:
+                                    db.insert_tags(
+                                        (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
+                                try:
+                                    st = os.stat(fname)
+                                    db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                                except OSError:
+                                    pass
+                            db.commit()
+                            db.set_meta(str(self.root), self._db_signature(included))
+                    else:  # superset + empty file_state (old partial DB) -> full rescan
                         db.reset()
                         for fname in all_fnames:
                             rel_fname = self.get_rel_fname(fname)
@@ -1429,7 +1450,7 @@ class Tricorder(TagsCacheMixin):
                                 pass
                         db.commit()
                         db.set_meta(str(self.root), self._db_signature(included))
-                else:
+                else:  # file_state present -> dirty/missing diff covers resume
                     dirty_rels = set()
                     rel_to_fname = {self.get_rel_fname(f): f for f in all_fnames}
                     for rel in needed_rels:
