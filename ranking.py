@@ -1,7 +1,7 @@
 """
 Ranking mixin — DB-backed ranking + map (from core.py, DB-only).
 """
-import os, sys, hashlib, threading
+import os, sys, hashlib, threading, concurrent.futures
 import networkx as nx
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -16,6 +16,83 @@ from collections import defaultdict
 from utils import Tag
 from report import FileReport
 _COVERAGE_WARN_THRESHOLD = 60.0
+
+
+# Tier 2 — ProcessPool worker (pure, picklable). Runs in child process, no DB.
+def _parse_worker(args):
+    """Parse one file, return [(fname, rel_fname, line, name, kind), ...]. Top-level for pickle."""
+    fname, rel_fname = args
+    try:
+        from utils import detect_lang, read_text
+        from scm import get_scm_fname
+        from grep_ast.tsl import get_language, get_parser
+        from tree_sitter import Query, QueryCursor
+        import threading
+        _PARSER_TIMEOUT_S = float(os.environ.get("TRICORDER_PARSER_TIMEOUT_S", "5"))
+        # per-worker parser cache (Tier 1)
+        cache = getattr(_parse_worker, "_cache", None)
+        if cache is None:
+            cache = {}
+            _parse_worker._cache = cache  # type: ignore[attr-defined]
+        lang = detect_lang(fname)
+        if not lang:
+            return []
+        try:
+            cached = cache.get(lang)
+            if cached is not None:
+                language, parser = cached
+            else:
+                language = get_language(lang)
+                parser = get_parser(lang)
+                cache[lang] = (language, parser)
+        except Exception:
+            return []
+        scm_fname = get_scm_fname(lang)
+        if not scm_fname:
+            return []
+        code = read_text(fname)
+        if not code or not code.strip():
+            return []
+        # parse with timeout thread (isolated per worker)
+        result = {}
+        def _run():
+            try:
+                result["tree"] = parser.parse(bytes(code, "utf-8"))
+            except Exception as e:
+                result["err"] = e
+        th = threading.Thread(target=_run, daemon=True)
+        th.start()
+        th.join(_PARSER_TIMEOUT_S)
+        if th.is_alive() or "err" in result:
+            return []
+        tree = result.get("tree")
+        if tree is None:
+            return []
+        query_text = read_text(scm_fname, silent=True)
+        if not query_text:
+            return []
+        query = Query(language, query_text)
+        cursor = QueryCursor(query)
+        captures = cursor.captures(tree.root_node)
+        out = []
+        for cap_name, nodes in captures.items():
+            if "name.definition" in cap_name:
+                kind = "def"
+            elif "name.reference" in cap_name:
+                kind = "ref"
+            else:
+                continue
+            for node in nodes:
+                try:
+                    line = node.start_point[0] + 1
+                    name = node.text.decode("utf-8") if node.text else ""
+                    out.append((fname, rel_fname, line, name, kind))
+                except Exception:
+                    continue
+        return out
+    except Exception:
+        return []
+
 
 class RankingMixin:
     def _db_signature(self, included: List[str]) -> str:
@@ -168,55 +245,135 @@ class RankingMixin:
                         self.output_handlers['info'](
                             f"Pre-scan DB hit: {len(needed_rels)} files covered, skipping parse")
                     else:
-                        # Incremental: re-parse only dirty files
-                        for fname in all_fnames:
-                            rel = self.get_rel_fname(fname)
-                            if rel in dirty_rels:
-                                if not os.path.exists(fname):
-                                    excluded[fname] = "File not found"
-                                    self.output_handlers['warning'](
-                                        f"Repo-map can't include {fname}: File not found")
+                        # Incremental: re-parse only dirty files — parallel when large (Tier 2)
+                        # ponytail: ProcessPool, chunk 200, batch commit 100. Ceiling: spawn overhead ~0.5s.
+                        use_parallel = len(dirty_rels) >= 200 and (os.cpu_count() or 1) > 1
+                        if use_parallel:
+                            # Prepare work list for dirty files that exist
+                            work = []
+                            rel_to_fname = {self.get_rel_fname(f): f for f in all_fnames}
+                            for rel in dirty_rels:
+                                fname = rel_to_fname.get(rel)
+                                if fname and os.path.exists(fname):
+                                    work.append((fname, rel))
+                                else:
+                                    # Missing file — delete tags, mark excluded
+                                    if rel in rel_to_fname:
+                                        excluded[rel_to_fname[rel]] = "File not found"
                                     db.delete_tags_for_file(rel)
-                                    continue
+                            # Clear dirty tags before re-insert (avoid dup)
+                            for _, rel in work:
                                 db.delete_tags_for_file(rel)
-                                included.append(fname)
-                                tags = self.get_tags(fname, rel)
-                                if tags:
-                                    db.insert_tags(
-                                        (fname, rel, t.line, t.name, t.kind) for t in tags)
-                                try:
-                                    st = os.stat(fname)
-                                    db.set_file_state(rel, st.st_size, int(st.st_mtime))
-                                except OSError:
-                                    pass
-                            else:
-                                # Cache hit — keep existing tags
-                                included.append(fname)
+                            # Parse in workers
+                            batch = 0
+                            with concurrent.futures.ProcessPoolExecutor(max_workers=os.cpu_count()) as ex:
+                                # chunk 200 via executor.map with timeout per future
+                                futures = {ex.submit(_parse_worker, w): w for w in work}
+                                for fut in concurrent.futures.as_completed(futures):
+                                    fname, rel = futures[fut]
+                                    try:
+                                        rows = fut.result(timeout=10)
+                                    except Exception:
+                                        rows = []
+                                    if rows:
+                                        db.insert_tags(rows)
+                                    try:
+                                        st = os.stat(fname)
+                                        db.set_file_state(rel, st.st_size, int(st.st_mtime))
+                                    except OSError:
+                                        pass
+                                    included.append(fname)
+                                    batch += 1
+                                    if batch % 100 == 0:
+                                        db.commit()
+                            # Cache hits for non-dirty
+                            for fname in all_fnames:
+                                rel = self.get_rel_fname(fname)
+                                if rel not in dirty_rels:
+                                    included.append(fname)
+                        else:
+                            for fname in all_fnames:
+                                rel = self.get_rel_fname(fname)
+                                if rel in dirty_rels:
+                                    if not os.path.exists(fname):
+                                        excluded[fname] = "File not found"
+                                        self.output_handlers['warning'](
+                                            f"Repo-map can't include {fname}: File not found")
+                                        db.delete_tags_for_file(rel)
+                                        continue
+                                    db.delete_tags_for_file(rel)
+                                    included.append(fname)
+                                    tags = self.get_tags(fname, rel)
+                                    if tags:
+                                        db.insert_tags(
+                                            (fname, rel, t.line, t.name, t.kind) for t in tags)
+                                    try:
+                                        st = os.stat(fname)
+                                        db.set_file_state(rel, st.st_size, int(st.st_mtime))
+                                    except OSError:
+                                        pass
+                                else:
+                                    # Cache hit — keep existing tags
+                                    included.append(fname)
                         db.commit()
                         db.set_meta(str(self.root), self._db_signature(included))
                         self.output_handlers['info'](
-                            f"Incremental: {len(dirty_rels)} dirty, {len(needed_rels)-len(dirty_rels)} cache hits")
+                            f"Incremental: {len(dirty_rels)} dirty, {len(needed_rels)-len(dirty_rels)} cache hits{' [parallel]' if use_parallel else ''}")
             else:
                 # Fresh scan: never stack onto a previous run's rows in this file.
                 db.reset()
-                for fname in all_fnames:
-                    rel_fname = self.get_rel_fname(fname)
-                    if not os.path.exists(fname):
-                        excluded[fname] = "File not found"
-                        self.output_handlers['warning'](
-                            f"Repo-map can't include {fname}: File not found")
-                        continue
-                    included.append(fname)
-                    tags = self.get_tags(fname, rel_fname)
-                    if tags:
-                        # Persist now, drop the per-file tag list + AST immediately.
-                        db.insert_tags(
-                            (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
-                    try:
-                        st = os.stat(fname)
-                        db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
-                    except OSError:
-                        pass
+                # Tier 2: parallel when large, else sequential with batch commit
+                use_parallel_fresh = len(all_fnames) >= 200 and (os.cpu_count() or 1) > 1
+                if use_parallel_fresh:
+                    work_fresh = [(f, self.get_rel_fname(f)) for f in all_fnames if os.path.exists(f)]
+                    # Mark excluded for missing
+                    for f in all_fnames:
+                        if not os.path.exists(f):
+                            excluded[f] = "File not found"
+                            self.output_handlers['warning'](f"Repo-map can't include {f}: File not found")
+                        else:
+                            included.append(f)
+                    batch = 0
+                    with concurrent.futures.ProcessPoolExecutor(max_workers=os.cpu_count()) as ex:
+                        futures = {ex.submit(_parse_worker, w): w for w in work_fresh}
+                        for fut in concurrent.futures.as_completed(futures):
+                            fname, rel_fname = futures[fut]
+                            try:
+                                rows = fut.result(timeout=10)
+                            except Exception:
+                                rows = []
+                            if rows:
+                                db.insert_tags(rows)
+                            try:
+                                st = os.stat(fname)
+                                db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                            except OSError:
+                                pass
+                            batch += 1
+                            if batch % 100 == 0:
+                                db.commit()
+                else:
+                    batch = 0
+                    for fname in all_fnames:
+                        rel_fname = self.get_rel_fname(fname)
+                        if not os.path.exists(fname):
+                            excluded[fname] = "File not found"
+                            self.output_handlers['warning'](
+                                f"Repo-map can't include {fname}: File not found")
+                            continue
+                        included.append(fname)
+                        tags = self.get_tags(fname, rel_fname)
+                        if tags:
+                            db.insert_tags(
+                                (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
+                        try:
+                            st = os.stat(fname)
+                            db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                        except OSError:
+                            pass
+                        batch += 1
+                        if batch % 100 == 0:
+                            db.commit()
                 db.commit()
                 db.set_meta(str(self.root), self._db_signature(included))
         else:

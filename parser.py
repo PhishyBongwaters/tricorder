@@ -8,6 +8,7 @@ from typing import List, Dict, Optional
 import os
 from utils import Tag, SymbolRecord, detect_lang, read_text
 _PARSER_TIMEOUT_S = float(os.environ.get("TRICORDER_PARSER_TIMEOUT_S", "5"))
+_PARSER_CACHE: dict = {}  # lang -> (language, parser) ponytail: one per language, not per file
 from scm import get_scm_fname
 
 class ParserMixin:
@@ -101,8 +102,13 @@ class ParserMixin:
             return []
         
         try:
-            language = get_language(lang)
-            parser = get_parser(lang)
+            cached = _PARSER_CACHE.get(lang)
+            if cached is not None:
+                language, parser = cached
+            else:
+                language = get_language(lang)
+                parser = get_parser(lang)
+                _PARSER_CACHE[lang] = (language, parser)
         except Exception as err:
             self.output_handlers['error'](f"Skipping file {fname}: {err}")
             return []
