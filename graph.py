@@ -6,7 +6,9 @@ import networkx as nx
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Tuple, Optional, Any
-from utils import SymbolRecord, Tag
+from utils import SymbolRecord, Tag, discover_src_files, repo_budget, count_tokens, detect_lang, read_text
+import json as _json
+from scm import get_scm_fname
 from collections import defaultdict
 
 class GraphMixin:

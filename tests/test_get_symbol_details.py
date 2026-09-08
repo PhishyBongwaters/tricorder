@@ -32,7 +32,7 @@ class TestGetSymbolDetails(unittest.TestCase):
         """Body is truncated to 500 chars."""
         result = asyncio.run(tricorder_detail(
             project_root=self.project_root,
-            file="core.py",
+            file="ranking.py",
             name="get_ranked_tags"
         ))
         self.assertNotIn("error", result)
@@ -62,7 +62,7 @@ class TestGetSymbolDetails(unittest.TestCase):
         """Callers and callees are populated from in-file references."""
         result = asyncio.run(tricorder_detail(
             project_root=self.project_root,
-            file="core.py",
+            file="graph.py",
             name="get_symbol_detail"
         ))
         self.assertNotIn("error", result)
@@ -96,10 +96,10 @@ class TestGetSymbolDetails(unittest.TestCase):
 
     def test_cross_file_callees(self):
         """Cross-file callees are detected when a symbol calls something defined elsewhere."""
-        # get_symbol_detail in core.py calls read_text (defined in utils.py)
+        # get_symbol_detail in graph.py calls read_text (defined in utils.py)
         result = asyncio.run(tricorder_detail(
             project_root=self.project_root,
-            file="core.py",
+            file="graph.py",
             name="get_symbol_detail"
         ))
         self.assertNotIn("error", result)

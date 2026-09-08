@@ -22,20 +22,15 @@ from scm import get_scm_fname
 from importance import filter_important_files
 from ctags_probe import probe_and_narrow
 
-# Pre-scan DB directory lives in tricorder's canonical cache root
-# (get_cache_root() -> D:/Projects/tricorder/.tricorder/), NOT a throwaway
-# dir under the testing-repos folder.
+# Pre-scan DB lives in canonical cache root (get_cache_root() -> .tricorder/db)
 PRE_SCAN_DB_DIR = get_cache_root() / "db"
 
-
-_WORD_SPLIT = re.compile(r"[_\\-\\s\\./]+")
-
+_WORD_SPLIT = re.compile(r"[_\-\s\./]+")
 
 def _camel_split(word: str):
     """Split a camelCase/CamelCase/screaming token into words. Deterministic."""
     return [w for w in re.split(
         r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", word) if w]
-
 
 def _query_variants(query: str):
     """Deterministic orthographic variants for a retrieve-0 rescue (no LLM).
@@ -75,7 +70,6 @@ def _query_variants(query: str):
             return 3
         return 2
     return sorted(variants, key=lambda s: (_rank(s), len(s), s))
-
 
 # Thin wrapper kept for backward compat (tests import this name).
 def find_src_files(directory: str, exclude_globs: Optional[List[str]] = None) -> List[str]:
@@ -198,7 +192,6 @@ def _validate_project_root(project_root: str) -> tuple[Optional[str], Optional[P
 
     return (None, root_path)
 
-
 def _validate_file_containment(file_path: str, project_root: Path) -> Optional[str]:
     """TC-006: verify a resolved file path stays inside project_root.
 
@@ -210,7 +203,6 @@ def _validate_file_containment(file_path: str, project_root: Path) -> Optional[s
     except ValueError:
         return f"File path escapes project root: {file_path}"
     return None
-
 
 def _savings_pct(token_estimate: int, full_repo_estimate: int) -> float:
     """% of full-repo context saved by a token estimate. 0 when repo is empty or
@@ -246,7 +238,6 @@ _TRUST_METADATA = {
     "source": "scanned_repository",
     "trust": "untrusted_repository_content",
 }
-
 
 def _mark_untrusted(resp: dict) -> dict:
     """TC-005: stamp repository-content trust metadata on response dicts."""
@@ -338,11 +329,11 @@ async def tricorder_scan(
         token_limit = int(token_limit) if token_limit else 8192
     except (TypeError, ValueError):
         token_limit = 8192
-
+    
     # Ensure token_limit is positive
     if token_limit <= 0:
         token_limit = 8192
-
+    
     # TC-007: clamp max_files server-side — prevents callers from requesting
     # absurd scan sizes (e.g. 999999999) that could exhaust resources.
     # Discovery already early-stops at 20_000 (MAX_SCAN_FILES in utils.py),
@@ -350,7 +341,7 @@ async def tricorder_scan(
     MAX_ALLOWED_FILES_ENV = os.environ.get("TRICORDER_MAX_ALLOWED_FILES")
     MAX_ALLOWED_FILES = 999999999 if (MAX_ALLOWED_FILES_ENV is not None and MAX_ALLOWED_FILES_ENV == "0") else (int(MAX_ALLOWED_FILES_ENV) if MAX_ALLOWED_FILES_ENV else 10000)
     max_files = min(max_files, MAX_ALLOWED_FILES)
-
+    
     chat_files_list = chat_files or []
     mentioned_fnames_set = set(mentioned_files) if mentioned_files else None
     mentioned_idents_set = set(mentioned_idents) if mentioned_idents else None
@@ -375,7 +366,7 @@ async def tricorder_scan(
                 effective_other_files = probed_rel_files
             else:
                 log.warning(f"Ctags probe found no matches for '{pre_index}', falling back to auto-scan.")
-
+        
         if not effective_other_files:
             log.info("No other_files provided, scanning root directory for context...")
             effective_other_files = find_src_files(project_root, exclude_globs=exclude_globs)
@@ -396,25 +387,25 @@ async def tricorder_scan(
     root_path = Path(project_root).resolve()
     abs_chat_files = [str(Path(str(root_path / f)).resolve()) for f in chat_files_list]
     abs_other_files = [str(Path(str(root_path / f)).resolve()) for f in effective_other_files]
-
+    
     # TC-006: reject any file paths that resolve outside the project root
     for f in abs_chat_files + abs_other_files:
         err = _validate_file_containment(f, root_path)
         if err:
             return {"error": err}
-
+    
     # Remove any chat files from the other_files list to avoid duplication
     abs_chat_files_set = set(abs_chat_files)
     abs_other_files = [f for f in abs_other_files if f not in abs_chat_files_set]
 
     # 4. Instantiate and run Tricorder
     # Check for pre-scan DB
-    root_name = root_path.name
-    db_path = None
+    root_name2 = root_path.name
+    db_path2 = None
     if PRE_SCAN_DB_DIR.exists():
-        candidate = PRE_SCAN_DB_DIR / f"{root_name}.db"
-        if candidate.exists():
-            db_path = str(candidate)
+        candidate2 = PRE_SCAN_DB_DIR / f"{root_name2}.db"
+        if candidate2.exists():
+            db_path2 = str(candidate2)
 
     try:
         repo_mapper = Tricorder(
@@ -430,7 +421,7 @@ async def tricorder_scan(
             exclude_globs=exclude_globs,
             full_map=full,
             use_db=True,
-            db_path=db_path,
+            db_path=db_path2,
         )
     except Exception as e:
         log.exception(f"Failed to initialize Tricorder for project '{project_root}': {e}")
@@ -506,320 +497,496 @@ async def tricorder_scan(
                     if len(capped_excluded) * 20 + entry_size > remaining_chars:
                         break
                     capped_excluded[path] = reason
-
-            # Write map to output_file
-            try:
-                safe_write(output_file, map_content or "", allow_escape=True)
-            except Exception as e:
-                log.exception(f"Failed to write output file: {e}")
-                return {"error": f"Failed to write output file: {e}"}
-
-            return _attach_scan_warning(_mark_untrusted({
-                "map_file": output_file,
-                "token_estimate": map_tokens_actual,
-                "tier": tier,
-                "format": output_format,
-                "report": {
+                report_dict = {
                     "excluded": capped_excluded,
+                    "excluded_total": len(file_report.excluded),
                     "definition_matches": file_report.definition_matches,
                     "reference_matches": file_report.reference_matches,
                     "total_files_considered": file_report.total_files_considered,
-                    "untagged_files": file_report.untagged_files,
-                },
-            }))
+                    "coverage_pct": file_report.coverage_pct,
+                }
 
-        # Normal return path — return map + report in context
-        map_content, file_report = await asyncio.to_thread(
-            repo_mapper.get_repo_map,
-            chat_files=abs_chat_files,
-            other_files=abs_other_files,
-            mentioned_fnames=mentioned_fnames_set,
-            mentioned_idents=mentioned_idents_set,
-            force_refresh=force_refresh
-        )
+            token_estimate = count_tokens(map_content or "", "gpt-4")
+            full_repo_estimate = _full_repo_tokens(project_root)
 
-        if not map_content:
-            return {"error": "No map content generated."}
+            # TC-008: contain output_file writes to tricorder-managed storage only.
+            # safe_write enforces the cache-root boundary; server output lives
+            # under get_cache_root()/.tricorder/output (honors TRICORDER_CACHE_HOME).
+            out_path = get_cache_root() / "output" / Path(output_file).name
+            safe_write(out_path, map_content)
+            result: Dict[str, Any] = {
+                "map_file": str(out_path),
+                "token_estimate": token_estimate,
+                "full_repo_estimate": full_repo_estimate,
+                "savings_pct": _savings_pct(token_estimate, full_repo_estimate),
+                "tags": len(ranked_tags),
+                "tokens_per_tag": round(tokens_per_tag, 0),
+                "tags_at_budget": tags_at_budget,
+                "estimated_index_tokens": int(tokens_per_tag * len(ranked_tags)),
+                "tier": tier,
+                "format": output_format,
+                "report": report_dict,
+                "coverage_pct": file_report.coverage_pct,
+            }
+            # Advisory tier hint: T0 incomplete (truncated at budget)
+            if tags_at_budget < len(ranked_tags):
+                pct = round(tags_at_budget / len(ranked_tags) * 100, 1)
+                result["tier_hint"] = f"T0 incomplete: {tags_at_budget}/{len(ranked_tags)} tags fit ({pct}%). Consider tier=1 or higher token_limit."
+            # Advisory tier hint: upgrade from previous tier
+            prev = _tier_history_get(project_root)
+            if prev:
+                if tier > prev["last_tier"] and prev.get("map_file"):
+                    result["tier_hint"] = (
+                        f"Upgrading from T{prev['last_tier']} to T{tier}. "
+                        f"The T{prev['last_tier']} map at {prev['map_file']} may have been sufficient — "
+                        f"only escalate tiers if the previous tier genuinely failed to answer your question."
+                    )
+            _tier_history_set(project_root, {"last_tier": tier, "last_format": output_format, "map_file": str(out_path)})
+            return _attach_scan_warning(_mark_untrusted(result))
 
-        map_tokens_actual = count_tokens(map_content, "gpt-4")
-        full_repo_estimate = _full_repo_tokens(project_root)
-
-        result = {
-            "map": map_content,
-            "report": {
-                "excluded": file_report.excluded,
+        # Stdout path (backward compat — no output_file, no dry_run)
+        if output_format == "mermaid":
+            map_content = await asyncio.to_thread(
+                repo_mapper.to_mermaid,
+                chat_fnames=abs_chat_files,
+                other_fnames=abs_other_files,
+                mentioned_fnames=mentioned_fnames_set,
+                mentioned_idents=mentioned_idents_set
+            )
+            report_dict = {"excluded": {}, "definition_matches": 0, "reference_matches": 0, "total_files_considered": 0}
+        else:
+            map_content, file_report = await asyncio.to_thread(
+                repo_mapper.get_repo_map,
+                chat_files=abs_chat_files,
+                other_files=abs_other_files,
+                mentioned_fnames=mentioned_fnames_set,
+                mentioned_idents=mentioned_idents_set,
+                force_refresh=force_refresh
+            )
+            map_tokens_actual = count_tokens(map_content or "", "gpt-4")
+            remaining_tokens = max(0, token_limit - map_tokens_actual)
+            remaining_chars = remaining_tokens * 4
+            excluded_list = list(file_report.excluded.items())
+            capped_excluded = {}
+            for path, reason in excluded_list:
+                entry_size = len(path) + len(reason) + 20
+                if len(capped_excluded) * 20 + entry_size > remaining_chars:
+                    break
+                capped_excluded[path] = reason
+            report_dict = {
+                "excluded": capped_excluded,
+                "excluded_total": len(file_report.excluded),
                 "definition_matches": file_report.definition_matches,
                 "reference_matches": file_report.reference_matches,
                 "total_files_considered": file_report.total_files_considered,
-                "untagged_files": file_report.untagged_files,
-            },
-            "token_estimate": map_tokens_actual,
-            "full_repo_estimate": full_repo_estimate,
-            "savings_pct": _savings_pct(map_tokens_actual, full_repo_estimate),
-        }
-
-        return _attach_scan_warning(_mark_untrusted(result))
+                "coverage_pct": file_report.coverage_pct,
+            }
+        _tok = count_tokens(map_content or "", "gpt-4")
+        _full = _full_repo_tokens(project_root)
+        return _attach_scan_warning(_mark_untrusted({"map": wrap_untrusted_content(map_content), "report": report_dict,
+                "token_estimate": _tok,
+                "full_repo_estimate": _full,
+                "savings_pct": _savings_pct(_tok, _full),
+                "coverage_pct": file_report.coverage_pct}))
 
     except Exception as e:
-        log.exception(f"Error generating map for project '{project_root}': {e}")
-        return {"error": f"Error generating map: {str(e)}"}
-
-
+        log.exception(f"Error generating repository map for project '{project_root}': {e}")
+        return {"error": f"Error generating repository map: {str(e)}"}
+    
 @mcp.tool()
 async def tricorder_detect(
     project_root: str,
     query: str,
-    max_results: int = 20,
-    token_limit: int = 2048,
+    max_results: int = 50,
+    context_lines: int = 2,
+    include_definitions: bool = True,
+    include_references: bool = True,
+    pre_index: Optional[str] = None,
+    pre_index_max_files: int = 100,
+    pre_index_include_parents: int = 0,
+    search_mode: str = "substring",  # "exact", "substring", "regex"
 ) -> Dict[str, Any]:
-    """Search for identifiers across the repository using substring matching.
+    """Search for identifiers in code files. Get back a list of matching identifiers with their file, line number, and context.
 
-    Use this as the FIRST step when you don't know exact file paths — it finds
-    all symbols matching a pattern so you can then call tricorder_symbols or
-    tricorder_detail for specifics.
-
-    :param project_root: Root directory of the project to search.
-    :param query: Substring to search for in symbol names (case-insensitive).
-    :param max_results: Maximum number of results to return.
-    :param token_limit: Token budget for the response.
-    :returns: Dict with 'results' (list of {name, file, line, type, language}) and budget metadata.
+    Args:
+        project_root: Root directory of the project to search.  (must be an absolute path!)
+        query: Search query (identifier name)
+        max_results: Maximum number of results to return
+        context_lines: Number of lines of context to show
+        include_definitions: Whether to include definition occurrences
+        include_references: Whether to include reference occurrences
+        pre_index: Optional symbol to pre-index (narrow file set before search)
+        pre_index_max_files: Max files from pre-index
+        pre_index_include_parents: Include N parent dirs of matched files
+        search_mode: Search mode - "exact" (whole word), "substring" (contains), "regex" (Python regex). Default: "substring".
+    
+    Returns:
+        Dictionary containing search results or error message
     """
     err, root_path = _validate_project_root(project_root)
     if err:
         return {"error": err}
 
-    # Reuse cached Tricorder instance
-    repo_mapper = _get_tricorder(project_root)
+    project_root = str(root_path)
+
+    # Validate search_mode
+    if search_mode not in ("exact", "substring", "regex"):
+        return {"error": f"Invalid search_mode: {search_mode}. Must be 'exact', 'substring', or 'regex'."}
 
     try:
-        # Build cross-file index if needed
-        repo_mapper._build_cross_file_index()
+        # Initialize Tricorder with search-specific settings
+        repo_map = _get_tricorder(project_root)
 
-        # Search across all known definitions
-        results = []
+        # Find all source files in the project
+        all_files = find_src_files(project_root)
+        # Pre-index probe: narrow the file set to files containing the probe
+        # symbol (same fast path tricorder_scan uses). Prevents full-tree walks
+        # on huge repos (e.g. the Linux kernel) where a blind search across
+        # every file is slow and cold-cache-flaky. Mirrors --pre-index on the CLI.
+        if pre_index:
+            probed = probe_and_narrow(
+                project_root, pre_index,
+                max_files=pre_index_max_files,
+                include_parents=pre_index_include_parents,
+            )
+            if probed:
+                # probe_and_narrow returns paths relative to project_root; normalize
+                # to absolute to match find_src_files() contract (the tag loop does
+                # Path(file_path).relative_to(project_root), which raises on rel input).
+                all_files = [str(Path(project_root) / f) for f in probed]
+                
+        # Get all tags (definitions and references) for all files
+        all_tags = []
+        for file_path in all_files:
+            rel_path = str(Path(file_path).relative_to(project_root))
+            tags = repo_map.get_tags(file_path, rel_path)
+            all_tags.extend(tags)
+
+        # Filter tags based on search query and options
+        matching_tags = []
         query_lower = query.lower()
-        defs, refs = repo_mapper._cross_file_index_cache
+        
+        # Compile regex if needed
+        regex_pattern = None
+        if search_mode == "regex":
+            try:
+                regex_pattern = re.compile(query, re.IGNORECASE)
+            except re.error as e:
+                return {"error": f"Invalid regex pattern: {e}"}
 
-        for symbol_name, locations in defs.items():
-            if query_lower in symbol_name.lower():
-                for file_path, line in locations:
-                    if len(results) >= max_results:
-                        break
-                    rel = repo_mapper.get_rel_fname(file_path)
-                    results.append({
-                        "name": symbol_name,
-                        "file": rel,
-                        "line": line,
-                        "type": "def",
-                    })
-            if len(results) >= max_results:
-                break
+        for tag in all_tags:
+            name = tag.name
+            name_lower = name.lower()
+            
+            match = False
+            if search_mode == "exact":
+                match = name_lower == query_lower
+            elif search_mode == "substring":
+                match = query_lower in name_lower
+            elif search_mode == "regex":
+                match = bool(regex_pattern.search(name))
+            
+            if match:
+                if (tag.kind == "def" and include_definitions) or \
+                   (tag.kind == "ref" and include_references):
+                    matching_tags.append(tag)
 
-        # Also search references if we need more results
-        if len(results) < max_results:
-            for symbol_name, locations in refs.items():
-                if query_lower in symbol_name.lower():
-                    for file_path, line in locations:
-                        if len(results) >= max_results:
-                            break
-                        rel = repo_mapper.get_rel_fname(file_path)
-                        results.append({
-                            "name": symbol_name,
-                            "file": rel,
-                            "line": line,
-                            "type": "ref",
-                        })
-                if len(results) >= max_results:
+        # Sort by relevance (definitions first, then references)
+        matching_tags.sort(key=lambda x: (x.kind != "def", x.name.lower().find(query_lower)))
+
+        # Limit results
+        matching_tags = matching_tags[:max_results]
+
+        # Retrieve-0 rescue: the substring query matched nothing (e.g. because
+        # the agent typed a decorated/qualified/differently-cased name). Retry
+        # over deterministic orthographic variants so a dead-end lookup becomes
+        # a set of near-lookalike candidates instead of an empty result. Flag
+        # them 'fuzzy' so the consumer knows they are not exact-name hits and
+        # must be verified against source. No LLM, reproducible.
+        rescue_used = False
+        if not matching_tags and query:
+            seen = set()
+            for cand in _query_variants(query):
+                if len(cand) < 2:
+                    continue
+                cand_l = cand.lower()
+                for tag in all_tags:
+                    if id(tag) in seen:
+                        continue
+                    if cand_l in tag.name.lower():
+                        if (tag.kind == "def" and include_definitions) or \
+                           (tag.kind == "ref" and include_references):
+                            matching_tags.append(tag)
+                            seen.add(id(tag))
+                if len(matching_tags) >= max_results * 2:
                     break
+            if matching_tags:
+                rescue_used = True
 
-        full_repo_tokens = _full_repo_tokens(project_root)
-        result = {
-            "results": results,
-            "query": query,
-            "total_matches": len(results),
-            "token_estimate": count_tokens(json.dumps(results), "gpt-4"),
-            "full_repo_estimate": full_repo_tokens,
-            "savings_pct": _savings_pct(count_tokens(json.dumps(results), "gpt-4"), full_repo_tokens),
-        }
-        return _attach_scan_warning(_mark_untrusted(result))
+        # Format results with context
+        results = []
+        for tag in matching_tags:
+            file_path = str(Path(project_root) / tag.rel_fname)
+            
+            # Calculate context range based on context_lines parameter
+            start_line = max(1, tag.line - context_lines)
+            end_line = tag.line + context_lines
+            context_range = list(range(start_line, end_line + 1))
+            
+            context = repo_map.render_tree(
+                file_path,
+                tag.rel_fname,
+                context_range
+            )
+            
+            if context:
+                results.append({
+                    "file": tag.rel_fname,
+                    "line": tag.line,
+                    "name": tag.name,
+                    "kind": tag.kind,
+                    "context": context,
+                    "quality": "fuzzy" if rescue_used else "exact"
+                })
+
+        resp = {"results": results}
+        resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
+        return _mark_untrusted(resp)
 
     except Exception as e:
-        log.exception(f"Error in tricorder_detect for project '{project_root}': {e}")
-        return {"error": f"Error in detect: {str(e)}"}
-
+        log.exception(f"Error searching identifiers in project '{project_root}': {e}")
+        return {"error": f"Error searching identifiers: {str(e)}"}
 
 @mcp.tool()
 async def tricorder_symbols(
     project_root: str,
-    file_path: str,
+    query: str = "",
+    type: Optional[str] = None,
+    file: Optional[str] = None,
+    limit: int = 50,
 ) -> Dict[str, Any]:
-    """Get all symbols (functions, classes, methods, etc.) defined in a specific file.
+    """Search for code symbols by name, type, or file path. Returns matching symbols with their name, type, file, line range, signature, docstring, language, and tree-sitter kind.
 
-    Use this after tricorder_detect narrows down to a file, or when you know
-    the exact file and want its symbol outline.
+    Args:
+        project_root: Root directory of the project to search. (must be an absolute path!)
+        query: Substring match on symbol name (case-insensitive). Empty string matches all.
+        type: Filter by symbol type — function, class, type, variable, method, or import. Exact match.
+        file: Filter by file path — path contains the given string.
+        limit: Maximum results to return. Defaults to 50, caps at 200.
 
-    :param project_root: Root directory of the project.
-    :param file_path: Path to the file (relative to project_root or absolute).
-    :returns: Dict with 'symbols' (list of {name, type, line, end_line, signature, docstring, language}).
+    Returns:
+        Dictionary containing 'symbols' (list of symbol records) or 'error' key.
     """
     err, root_path = _validate_project_root(project_root)
     if err:
         return {"error": err}
 
-    # Resolve file path
-    try:
-        abs_file = str((root_path / file_path).resolve())
-        _validate_file_containment(abs_file, root_path)
-    except Exception as e:
-        return {"error": f"Invalid file path: {e}"}
+    project_root = str(root_path)
 
-    if not os.path.isfile(abs_file):
-        return {"error": f"File not found: {file_path}"}
-
-    # Reuse cached Tricorder instance
-    repo_mapper = _get_tricorder(project_root)
+    # Enforce limit cap
+    limit = min(max(limit, 1), 200)
 
     try:
-        rel = repo_mapper.get_rel_fname(abs_file)
-        symbols = repo_mapper.get_symbols(abs_file, rel)
+        repo_map = _get_tricorder(project_root)
 
+        all_files = find_src_files(project_root)
+        all_symbols = []
+
+        for file_path in all_files:
+            rel_path = str(Path(file_path).relative_to(project_root))
+
+            # File filter - match against relative path (POSIX normalized)
+            if file and file.lower() not in rel_path.replace('\\', '/').lower():
+                continue
+
+            symbols = repo_map.get_symbols(file_path, rel_path)
+            all_symbols.extend(symbols)
+
+        # Apply filters
         results = []
-        for sym in symbols:
-            results.append({
-                "name": sym.name,
-                "type": sym.type,
-                "line": sym.line,
-                "end_line": sym.end_line,
-                "signature": sym.signature,
-                "docstring": sym.docstring,
-                "language": sym.language,
-            })
+        query_lower = query.lower()
 
-        full_repo_tokens = _full_repo_tokens(project_root)
-        result = {
-            "file": file_path,
-            "symbols": results,
-            "token_estimate": count_tokens(json.dumps(results), "gpt-4"),
-            "full_repo_estimate": full_repo_tokens,
-            "savings_pct": _savings_pct(count_tokens(json.dumps(results), "gpt-4"), full_repo_tokens),
-        }
-        return _attach_scan_warning(_mark_untrusted(result))
+        for sym in all_symbols:
+            # Name filter (substring, case-insensitive)
+            if query and query_lower not in sym.name.lower():
+                continue
+
+            # Type filter (exact match)
+            if type and sym.type != type:
+                continue
+
+            results.append(sym.to_dict())
+
+        # Sort: definitions first, then by name
+        results.sort(key=lambda x: (x["type"], x["name"].lower()))
+
+        # Retrieve-0 rescue (mirror detect): retry over orthographic variants
+        # when the plain substring query matched nothing, so decorated/cased
+        # lookups still surface near-lookalike symbols. Flagged 'fuzzy'.
+        rescue = False
+        if query and not results:
+            seen = set()
+            for cand in _query_variants(query):
+                if len(cand) < 2:
+                    continue
+                cand_l = cand.lower()
+                for sym in all_symbols:
+                    if id(sym) in seen:
+                        continue
+                    if type and sym.type != type:
+                        continue
+                    if cand_l in sym.name.lower():
+                        results.append(sym.to_dict())
+                        seen.add(id(sym))
+                if len(results) >= limit * 2:
+                    break
+            if results:
+                rescue = True
+
+        # Apply limit
+        results = results[:limit]
+
+        if rescue:
+            for r_ in results:
+                r_["quality"] = "fuzzy"
+
+        resp = {"symbols": results, "total": len(results), "limit": limit}
+        resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
+        return _mark_untrusted(resp)
 
     except Exception as e:
-        log.exception(f"Error in tricorder_symbols for file '{file_path}': {e}")
-        return {"error": f"Error in symbols: {str(e)}"}
-
+        log.exception(f"Error searching symbols in project '{project_root}': {e}")
+        return {"error": f"Error searching symbols: {str(e)}"}
 
 @mcp.tool()
 async def tricorder_detail(
     project_root: str,
-    file_path: str,
-    symbol_name: str,
+    file: str,
+    name: str,
     line: int = 0,
 ) -> Dict[str, Any]:
-    """Get full details for a single symbol: body, callers, callees, cross-file.
+    """Get full details for a specific code symbol by file path, name, and optional line number.
 
-    Call this after tricorder_symbols identifies the exact symbol. Returns
-    the symbol's code body (first 500 chars), in-file callers/callees within
-    its scope, and cross-file callers/callees resolved via import tracking.
+    Returns the symbol record with additional fields:
+      - body: the actual code body (first 500 chars)
+      - callers: list of {file, line, cross_file} dicts — references to this symbol
+      - callees: list of {name, file, line, cross_file} dicts — symbols this symbol calls
+    Callers/callees are populated from tree-sitter reference captures:
+      - In-file: references within the same file
+      - Cross-file: full-repo scan matching references to definitions
+    cross_file=True means the reference/definition is in a different file.
 
-    :param project_root: Root directory of the project.
-    :param file_path: Path to the file containing the symbol.
-    :param symbol_name: Exact symbol name (as returned by tricorder_symbols).
-    :param line: Optional line number to disambiguate overloaded symbols.
-    :returns: SymbolRecord dict with body, callers, callees populated.
+    If the symbol is not found, returns {"error": "not found"} with exit code 0.
+
+    Args:
+        project_root: Root directory of the project. (must be an absolute path!)
+        file: File path containing the symbol (relative to project_root or absolute).
+        name: Symbol name to look up.
+        line: Optional line number to disambiguate symbols with the same name.
+
+    Returns:
+        Dictionary containing 'symbol' (symbol record dict) or 'error' key.
     """
-    err, root_path = _validate_project_root(project_root)
+    if not os.path.isdir(project_root):
+        return {"error": f"Project root directory not found: {project_root}"}
+
+    project_root = str(Path(project_root).resolve())
+
+    # Resolve file path — accept relative or absolute
+    file_path = Path(file)
+    if not file_path.is_absolute():
+        file_path = Path(project_root) / file_path
+    file_path = str(file_path.resolve())
+    
+    # TC-006: reject file paths that escape the project root
+    err = _validate_file_containment(file_path, Path(project_root))
     if err:
         return {"error": err}
 
-    # Resolve file path
-    try:
-        abs_file = str((root_path / file_path).resolve())
-        _validate_file_containment(abs_file, root_path)
-    except Exception as e:
-        return {"error": f"Invalid file path: {e}"}
-
-    if not os.path.isfile(abs_file):
-        return {"error": f"File not found: {file_path}"}
-
-    # Reuse cached Tricorder instance
-    repo_mapper = _get_tricorder(project_root)
+    if not os.path.isfile(file_path):
+        return {"error": "not found"}
 
     try:
-        detail = repo_mapper.get_symbol_detail(abs_file, symbol_name, line)
+        repo_map = _get_tricorder(project_root)
 
+        detail = repo_map.get_symbol_detail(file_path, name, line)
         if detail is None:
-            return {"error": f"Symbol '{symbol_name}' not found in {file_path}"}
+            return {"error": "not found"}
 
-        # Convert to dict for JSON response
-        result = {
-            "name": detail.name,
-            "type": detail.type,
-            "file": file_path,
-            "line": detail.line,
-            "end_line": detail.end_line,
-            "signature": detail.signature,
-            "docstring": detail.docstring,
-            "language": detail.language,
-            "body": getattr(detail, "body", ""),
-            "callers": getattr(detail, "callers", []),
-            "callees": getattr(detail, "callees", []),
-        }
-
-        full_repo_tokens = _full_repo_tokens(project_root)
-        result["token_estimate"] = count_tokens(json.dumps(result), "gpt-4")
-        result["full_repo_estimate"] = full_repo_tokens
-        result["savings_pct"] = _savings_pct(result["token_estimate"], full_repo_tokens)
-
-        return _attach_scan_warning(_mark_untrusted(result))
+        resp = {"symbol": detail.to_dict()}
+        resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
+        return _mark_untrusted(resp)
 
     except Exception as e:
-        log.exception(f"Error in tricorder_detail for '{symbol_name}' in '{file_path}': {e}")
-        return {"error": f"Error in detail: {str(e)}"}
+        log.exception(f"Error getting symbol details for '{name}' in '{file_path}': {e}")
+        return {"error": f"Error getting symbol details: {str(e)}"}
 
 
 @mcp.tool()
 async def tricorder_query(
     project_root: str,
-    dsl: str,
+    query: str,
     token_limit: int = 2048,
 ) -> Dict[str, Any]:
-    """Execute a graph traversal query on the repository's call graph.
+    """Execute a graph traversal query on the codebase.
 
-    The DSL supports: `callers`, `callees`, `refs`, `defs` with modifiers:
-    `depth=N`, `limit=N`, `symbol_type=TYPE`, `include=GLOB`, `exclude=GLOB`.
+    DSL Grammar:
+        query := traversal ('|' traversal)*
+        traversal := kind '(' target ')' modifiers?
+        kind := "callers" | "callees" | "refs" | "defs"
+        target := quoted string (single or double quotes)
+        modifiers := (modifier)*
+        modifier := "depth=" INT | "exclude=" GLOB | "include=" GLOB
+                  | "type=" ("function"|"class"|"method"|"variable") | "limit=" INT
 
-    Example: `callers(get_buffer, depth=2, limit=10)` — find callers of get_buffer up to 2 hops.
+    Examples:
+        "callers('authenticate') depth=2"              # all callers up to 2 hops
+        "callees('main') depth=1 exclude=tests/**"     # direct callees, skip tests
+        "refs('Config') type=class limit=50"           # all references to class Config
+        "callers('foo') | callees('bar') depth=3"      # chained traversals
 
-    :param project_root: Root directory of the project.
-    :param dsl: Query DSL string.
-    :param token_limit: Token budget for response (used for truncation hint).
-    :returns: Dict with nodes, edges, token_estimate, savings_pct, and stats.
+    Args:
+        project_root: Root directory of the project (must be absolute path!)
+        query: Graph query DSL string
+        token_limit: Maximum tokens for response (default 2048)
+
+    Returns:
+        Dictionary with:
+        - nodes: list of {name, file, line, type}
+        - edges: list of {from, to, from_file, to_file, from_line, to_line, type}
+        - token_estimate, full_repo_estimate, savings_pct
+        - tier_hint (if response truncated)
+        - stats: {nodes_visited, edges_traversed}
     """
-    err, root_path = _validate_project_root(project_root)
-    if err:
-        return {"error": err}
+    if not os.path.isdir(project_root):
+        return {"error": f"Project root directory not found: {project_root}"}
 
-    # Reuse cached Tricorder instance
-    repo_mapper = _get_tricorder(project_root)
+    project_root = str(Path(project_root).resolve())
+
+    # Parse query DSL
+    try:
+        parsed = parse_query_dsl(query)
+    except ValueError as e:
+        return {"error": f"Invalid query syntax: {e}"}
+
+    if not parsed.steps:
+        return {"error": "Empty query"}
 
     try:
-        from utils import parse_query_dsl
-        parsed = parse_query_dsl(dsl)
+        repo_map = _get_tricorder(project_root)
 
-        result = repo_mapper.query_graph(parsed, token_limit)
-        full_repo_tokens = _full_repo_tokens(project_root)
-        result["full_repo_estimate"] = full_repo_tokens
-        result["savings_pct"] = _savings_pct(result["token_estimate"], full_repo_tokens)
-
-        return _attach_scan_warning(_mark_untrusted(result))
+        result = repo_map.query_graph(parsed, token_limit=token_limit)
+        return _mark_untrusted(result)
 
     except Exception as e:
-        log.exception(f"Error in tricorder_query for project '{project_root}': {e}")
-        return {"error": f"Error in query: {str(e)}"}
+        log.exception(f"Error executing graph query '{query}' on project '{project_root}': {e}")
+        return {"error": f"Error executing graph query: {str(e)}"}
 
+# --- Main Entry Point ---
+def main():
+    # Run the MCP server
+    log.debug("Starting FastMCP server...")
+    mcp.run()
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(mcp.streamable_http_app(), host="127.0.0.1", port=8000, log_level="error")
+    main()
