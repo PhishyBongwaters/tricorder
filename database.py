@@ -31,8 +31,11 @@ _DDL = [
     " from_file TEXT NOT NULL, to_file TEXT NOT NULL, name TEXT NOT NULL)",
     "CREATE TABLE IF NOT EXISTS meta("
     " schema_version INTEGER NOT NULL, root TEXT, signature TEXT)",
+    "CREATE TABLE IF NOT EXISTS file_state("
+    " rel_file TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS idx_tags_kind_name ON tags(kind, name)",
     "CREATE INDEX IF NOT EXISTS idx_tags_file ON tags(file)",
+    "CREATE INDEX IF NOT EXISTS idx_tags_rel_file ON tags(rel_file)",
 ]
 
 _TagRow = Tuple[str, str, int, str, str]  # file, rel_file, line, name, kind
@@ -76,7 +79,25 @@ class DBStore:
             self.conn.execute("DELETE FROM tags")
             self.conn.execute("DELETE FROM refs")
             self.conn.execute("DELETE FROM meta")
+            self.conn.execute("DELETE FROM file_state")
             self.conn.commit()
+
+    def delete_tags_for_file(self, rel_file: str):
+        """Remove all tags for one rel_file (incremental update)."""
+        with self._lock:
+            self.conn.execute("DELETE FROM tags WHERE rel_file=?", (rel_file,))
+            self.conn.execute("DELETE FROM file_state WHERE rel_file=?", (rel_file,))
+
+    def get_file_state(self) -> dict:
+        """Return {rel_file: (size, mtime)} for incremental diff."""
+        return {r[0]: (r[1], r[2]) for r in self.conn.execute("SELECT rel_file, size, mtime FROM file_state")}
+
+    def set_file_state(self, rel_file: str, size: int, mtime: int):
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO file_state(rel_file, size, mtime) VALUES (?,?,?)",
+                (rel_file, size, mtime),
+            )
 
     def set_meta(self, root: str, signature: str):
         self.conn.execute(
@@ -91,7 +112,9 @@ class DBStore:
         the same (ref, def) from different names stay distinct rows, so the
         multiplicity the MultiDiGraph used for ranking survives on disk.
         Uses rel_file (the graph's node identity).
+        Idempotent: clears refs before repopulating (needed for incremental).
         """
+        self.conn.execute("DELETE FROM refs")
         self.conn.execute(
             "INSERT INTO refs(from_file, to_file, name) "
             "SELECT r.rel_file, d.rel_file, d.name "
