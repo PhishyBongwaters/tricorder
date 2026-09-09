@@ -57,6 +57,7 @@ class DBStore:
         )
         if path:
             # Tier 2: keep WAL bounded during large bulk loads (kotlin 69k)
+            self.conn.execute("PRAGMA busy_timeout=30000")
             self.conn.execute("PRAGMA wal_autocheckpoint=1000")
             self.conn.execute("PRAGMA journal_size_limit=104857600")  # 100M
 

@@ -247,7 +247,7 @@ class RankingMixin:
                     else:
                         # Incremental: re-parse only dirty files — parallel when large (Tier 2)
                         # ponytail: ProcessPool, chunk 200, batch commit 100. Ceiling: spawn overhead ~0.5s.
-                        use_parallel = len(dirty_rels) >= 200 and (os.cpu_count() or 1) > 1
+                        use_parallel = len(dirty_rels) >= 200 and (os.cpu_count() or 1) > 1 and len(dirty_rels) <= 10000 and len(all_fnames) <= 15000  # ponytail: large->serial to avoid 50G WAL
                         if use_parallel:
                             # Prepare work list for dirty files that exist
                             work = []
@@ -266,7 +266,7 @@ class RankingMixin:
                                 db.delete_tags_for_file(rel)
                             # Parse in workers
                             batch = 0
-                            with concurrent.futures.ProcessPoolExecutor(max_workers=os.cpu_count()) as ex:
+                            with concurrent.futures.ProcessPoolExecutor(max_workers=min(4, os.cpu_count() or 4)) as ex:
                                 # chunk 200 via executor.map with timeout per future
                                 futures = {ex.submit(_parse_worker, w): w for w in work}
                                 for fut in concurrent.futures.as_completed(futures):
@@ -284,7 +284,7 @@ class RankingMixin:
                                         pass
                                     included.append(fname)
                                     batch += 1
-                                    if batch % 100 == 0:
+                                    if batch % 50 == 0:
                                         db.commit()
                                         db.checkpoint()
                             # Cache hits for non-dirty
@@ -324,7 +324,7 @@ class RankingMixin:
                 # Fresh scan: never stack onto a previous run's rows in this file.
                 db.reset()
                 # Tier 2: parallel when large, else sequential with batch commit
-                use_parallel_fresh = len(all_fnames) >= 200 and (os.cpu_count() or 1) > 1
+                use_parallel_fresh = len(all_fnames) >= 200 and (os.cpu_count() or 1) > 1 and len(all_fnames) <= 15000
                 if use_parallel_fresh:
                     work_fresh = [(f, self.get_rel_fname(f)) for f in all_fnames if os.path.exists(f)]
                     # Mark excluded for missing
@@ -335,7 +335,7 @@ class RankingMixin:
                         else:
                             included.append(f)
                     batch = 0
-                    with concurrent.futures.ProcessPoolExecutor(max_workers=os.cpu_count()) as ex:
+                    with concurrent.futures.ProcessPoolExecutor(max_workers=min(4, os.cpu_count() or 4)) as ex:
                         futures = {ex.submit(_parse_worker, w): w for w in work_fresh}
                         for fut in concurrent.futures.as_completed(futures):
                             fname, rel_fname = futures[fut]
@@ -351,7 +351,7 @@ class RankingMixin:
                             except OSError:
                                 pass
                             batch += 1
-                            if batch % 100 == 0:
+                            if batch % 50 == 0:
                                 db.commit()
                                 db.checkpoint()
                 else:
@@ -374,7 +374,7 @@ class RankingMixin:
                         except OSError:
                             pass
                         batch += 1
-                        if batch % 100 == 0:
+                        if batch % 50 == 0:
                             db.commit()
                 db.commit()
                 db.checkpoint()
@@ -383,7 +383,7 @@ class RankingMixin:
             # No meta or wrong schema — fresh scan (Tier 2: parallel when large)
             db.reset()
             # Tier 2: parallel when large, else sequential with batch commit
-            use_parallel_fresh = len(all_fnames) >= 200 and (os.cpu_count() or 1) > 1
+            use_parallel_fresh = len(all_fnames) >= 200 and (os.cpu_count() or 1) > 1 and len(all_fnames) <= 15000
             if use_parallel_fresh:
                 self.output_handlers['info'](f"[DEBUG] Parallel fresh scan: {len(all_fnames)} files, {os.cpu_count()} workers")
                 work_fresh = [(f, self.get_rel_fname(f)) for f in all_fnames if os.path.exists(f)]
@@ -395,7 +395,7 @@ class RankingMixin:
                     else:
                         included.append(f)
                 batch = 0
-                with concurrent.futures.ProcessPoolExecutor(max_workers=os.cpu_count()) as ex:
+                with concurrent.futures.ProcessPoolExecutor(max_workers=min(4, os.cpu_count() or 4)) as ex:
                     self.output_handlers['info'](f"[DEBUG] ProcessPoolExecutor created")
                     futures = {ex.submit(_parse_worker, w): w for w in work_fresh}
                     for fut in concurrent.futures.as_completed(futures):
@@ -412,7 +412,7 @@ class RankingMixin:
                         except OSError:
                             pass
                         batch += 1
-                        if batch % 100 == 0:
+                        if batch % 50 == 0:
                             db.commit()
             else:
                 batch = 0
@@ -434,7 +434,7 @@ class RankingMixin:
                     except OSError:
                         pass
                     batch += 1
-                    if batch % 100 == 0:
+                    if batch % 50 == 0:
                         db.commit()
             db.commit()
             db.set_meta(str(self.root), self._db_signature(included))
