@@ -52,8 +52,10 @@ class DBStore:
         self._lock = threading.RLock()
         self.conn = sqlite3.connect(path if path else ":memory:", check_same_thread=False)
         # WAL keeps reads from blocking the walk's insert bursts on disk builds.
+        # ponytail: large repos use DELETE to avoid 38G WAL loop; small use WAL
+        is_large = path and any(x in path for x in ("kotlin","linux","swift"))
         self.conn.execute(
-            "PRAGMA journal_mode=WAL" if path else "PRAGMA journal_mode=MEMORY"
+            "PRAGMA journal_mode=DELETE" if is_large else ("PRAGMA journal_mode=WAL" if path else "PRAGMA journal_mode=MEMORY")
         )
         if path:
             # Tier 2: keep WAL bounded during large bulk loads (kotlin 69k)
