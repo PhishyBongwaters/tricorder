@@ -123,11 +123,15 @@ class DBStore:
         Idempotent: clears refs before repopulating (needed for incremental).
         """
         self.conn.execute("DELETE FROM refs")
+        # ponytail: skip stop-names (def in >50 files) — unresolvable by name,
+        # and their cross product is the 30M-edge bloat. Ceiling: fixed 50.
         self.conn.execute(
             "INSERT INTO refs(from_file, to_file, name) "
             "SELECT r.rel_file, d.rel_file, d.name "
             "FROM tags r JOIN tags d ON r.name = d.name "
-            "WHERE r.kind='ref' AND d.kind='def' AND r.rel_file != d.rel_file"
+            "WHERE r.kind='ref' AND d.kind='def' AND r.rel_file != d.rel_file "
+            "AND d.name NOT IN (SELECT name FROM tags WHERE kind='def' "
+            "GROUP BY name HAVING COUNT(DISTINCT rel_file) > 50)"
         )
 
     # -- reads --------------------------------------------------------------
