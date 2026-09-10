@@ -125,6 +125,9 @@ class ParserMixin:
         # saves a parse() call per file, which is the bottleneck on large repos
         if not code.strip():
             return []
+        # ponytail: fast-path tiny files (<50 chars) — likely generated/empty, skip parse
+        if len(code) < 50:
+            return []
         
         try:
             tree = self._parse_with_timeout(parser, code, fname)
