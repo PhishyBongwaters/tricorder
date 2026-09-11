@@ -234,6 +234,158 @@ def _env_float(name: str, default: float) -> float:
     return default
 
 
+def _discover_src_files_threaded(directory, skip_dirs, exclude_globs, report,
+                                 workers, max_scan_depth, max_total_bytes,
+                                 max_scan_files, max_scan_time_s,
+                                 max_source_file_size, root_depth, start):
+    """Bounded-pool directory walk. Same filters/budgets as the serial path.
+
+    Controls: fixed worker count, one lock around budget counters, stop
+    flag checked per directory, reservations made before appends (budgets
+    can never overshoot), output sorted for determinism.
+    """
+    import queue as _queue
+    import threading as _threading
+
+    if report is not None:
+        report.clear()
+    lock = _threading.Lock()
+    stop = {"reason": None}
+    # state: files, total_bytes, oversized_skipped, depth_skipped, pending
+    st = {"files": [], "bytes": 0, "oversized": 0, "depth": 0, "pending": 1}
+    q: _queue.Queue = _queue.Queue()
+    _root_resolved = str(Path(directory).resolve())
+    q.put(_root_resolved)
+
+    def process_dir(d):
+        try:
+            entries = list(os.scandir(d))
+        except OSError:
+            return []
+        depth = len(Path(d).parts) - root_depth
+        subdirs = []
+        if depth <= max_scan_depth:
+            for e in entries:
+                try:
+                    if not e.is_dir(follow_symlinks=False):
+                        continue
+                except OSError:
+                    continue
+                if e.name.startswith('.') or e.name in skip_dirs:
+                    continue
+                if depth + 1 > max_scan_depth:
+                    with lock:
+                        st["depth"] += 1
+                    continue
+                subdirs.append(e.path)
+        else:
+            with lock:
+                st["depth"] += len([e for e in entries
+                                    if e.is_dir(follow_symlinks=False)])
+        for e in entries:
+            if stop["reason"]:
+                return subdirs
+            try:
+                if e.is_dir(follow_symlinks=False) or e.name.startswith('.'):
+                    continue
+            except OSError:
+                continue
+            low = e.name.lower()
+            if any(low.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS | _ARCHIVE_EXTS | _DATA_EXTS):
+                continue
+            try:
+                sz = e.stat(follow_symlinks=False).st_size
+            except OSError:
+                sz = 0
+            if sz > max_source_file_size:
+                with lock:
+                    st["oversized"] += 1
+                continue
+            if exclude_globs:
+                try:
+                    rel = os.path.relpath(e.path, directory).replace(os.sep, '/')
+                    if any(fnmatch.fnmatch(rel, pat) for pat in exclude_globs):
+                        continue
+                except ValueError:
+                    continue
+            with lock:
+                if stop["reason"]:
+                    return subdirs
+                if max_scan_files > 0 and len(st["files"]) >= max_scan_files:
+                    stop["reason"] = f"reached file-count limit ({max_scan_files})"
+                    return subdirs
+                if max_total_bytes > 0 and st["bytes"] + sz >= max_total_bytes:
+                    stop["reason"] = f"reached total-byte limit ({max_total_bytes} bytes)"
+                    return subdirs
+                if max_scan_time_s > 0 and (time.monotonic() - start) >= max_scan_time_s:
+                    stop["reason"] = f"reached scan-time limit ({max_scan_time_s}s)"
+                    return subdirs
+                # Emit in serial-path format (os.path.join off the as-given
+                # root) so threaded/serial runs are byte-identical inputs
+                # downstream — DB rel keys and cap prefixes must not shift.
+                st["files"].append(os.path.join(
+                    directory, os.path.relpath(e.path, _root_resolved)))
+                st["bytes"] += sz
+        return subdirs
+
+    def worker():
+        while True:
+            if stop["reason"]:
+                # Drain without processing; pending handled by main loop below.
+                try:
+                    d = q.get(timeout=0.1)
+                except _queue.Empty:
+                    return
+                if d is None:
+                    q.task_done()
+                    return
+                with lock:
+                    st["pending"] -= 1
+                    if st["pending"] == 0:
+                        for _ in range(workers):
+                            q.put(None)
+                q.task_done()
+                continue
+            try:
+                d = q.get(timeout=0.5)
+            except _queue.Empty:
+                with lock:
+                    if st["pending"] == 0:
+                        return
+                continue
+            if d is None:
+                q.task_done()
+                return
+            for sub in process_dir(d):
+                q.put(sub)
+                with lock:
+                    st["pending"] += 1
+            with lock:
+                st["pending"] -= 1
+                if st["pending"] == 0:
+                    for _ in range(workers):
+                        q.put(None)
+            q.task_done()
+
+    threads = [_threading.Thread(target=worker, daemon=True) for _ in range(workers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    files = sorted(st["files"])
+    if report is not None:
+        report["files_considered"] = len(files)
+        report["oversized_skipped"] = st["oversized"]
+        report["depth_skipped"] = st["depth"]
+        if stop["reason"]:
+            report["warning"] = (
+                f"Scan completed with limits: skipped {st['oversized']} "
+                f"oversized files, {st['depth']} files beyond depth "
+                f"{max_scan_depth}; {stop['reason']}."
+            )
+    return files
+
+
 def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs: Optional[List[str]] = None, report: Optional[dict] = None) -> List[str]:
     """Walk a directory and return source files, skipping noise.
 
@@ -267,18 +419,36 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
             p = p.parent
         gitignore_dirs = parse_gitignore(git_root or directory)
     skip_dirs = gitignore_dirs | _BUILTIN_SKIP_DIRS | {'vendor'}
-    src_files = []
-    total_bytes = 0
-    oversized_skipped = 0
-    depth_skipped = 0
-    start = time.monotonic()
-    root_depth = Path(directory).resolve().parts.__len__()
     # TC-002: read envelope budgets at call time so env overrides (incl. tests) work.
     max_scan_depth = _env_int("TRICORDER_MAX_SCAN_DEPTH", _MAX_SCAN_DEPTH)
     max_total_bytes = _env_int("TRICORDER_MAX_TOTAL_BYTES", _MAX_TOTAL_BYTES)
     max_scan_files = _env_int("TRICORDER_MAX_SCAN_FILES", _MAX_SCAN_FILES)
     max_scan_time_s = _env_float("TRICORDER_MAX_SCAN_TIME_S", _MAX_SCAN_TIME_S)
     max_source_file_size = _env_int("TRICORDER_MAX_SOURCE_FILE_SIZE", _MAX_SOURCE_FILE_SIZE)
+    start = time.monotonic()
+    root_depth = Path(directory).resolve().parts.__len__()
+    # Threaded walk: directory listing on Windows is latency-bound, so a
+    # small bounded pool beats a serial walk 3-5x. Controls against flood:
+    # fixed worker count (env TRICORDER_WALK_WORKERS, default min(8, cpu)),
+    # one shared lock for budget counters + stop flag, deterministic sorted
+    # output. 0/1 = serial legacy path.
+    import concurrent.futures as _cf
+    try:
+        _workers = int(os.environ.get("TRICORDER_WALK_WORKERS", "0"))
+    except ValueError:
+        _workers = 0
+    if _workers <= 0:
+        _workers = min(8, os.cpu_count() or 4)
+    if _workers > 1:
+        return _discover_src_files_threaded(
+            directory, skip_dirs, exclude_globs, report, _workers,
+            max_scan_depth, max_total_bytes, max_scan_files,
+            max_scan_time_s, max_source_file_size, root_depth, start,
+        )
+    src_files = []
+    total_bytes = 0
+    oversized_skipped = 0
+    depth_skipped = 0
     for r, d, f_list in os.walk(directory):
         # TC-002: directory-depth budget.
         depth = Path(r).resolve().parts.__len__() - root_depth
