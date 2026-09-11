@@ -425,25 +425,25 @@ class TestRepoBudgetCaching(unittest.TestCase):
     """Test repo_budget caching behavior."""
 
     def setUp(self):
-        self.project_root = str(Path(__file__).parent.parent.resolve())
-        # Start clean so tests don't interfere with each other
-        _tr = Path(self.project_root) / ".tricorder"
-        if _tr.exists():
-            import shutil
-            shutil.rmtree(_tr, ignore_errors=True)
+        # NEVER touch the real repo .tricorder (holds multi-GB scan DBs).
+        # Use an isolated temp project root instead.
+        import tempfile
+        self._tmpdir = tempfile.mkdtemp(prefix="tricorder_test_proj_")
+        self.project_root = self._tmpdir
 
     def tearDown(self):
-        _tr = Path(self.project_root) / ".tricorder"
-        if _tr.exists():
-            import shutil
-            shutil.rmtree(_tr, ignore_errors=True)
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_cache_path_under_project_tricorder(self):
-        """Budget cache is written under .tricorder/cache/ in the project root."""
+        """Budget cache is written under .tricorder/cache/ in the cache root."""
+        from utils import _get_budget_cache_path
         repo_budget(self.project_root, 1000)
+        cache_path = _get_budget_cache_path(self.project_root)
+        self.assertIsNotNone(cache_path)
         self.assertTrue(
-            (Path(self.project_root) / ".tricorder" / "cache").exists(),
-            "Cache should be created under project/.tricorder/cache/",
+            Path(cache_path).exists(),
+            "Budget cache file should be created under cache root",
         )
 
     def test_second_call_uses_cache(self):
