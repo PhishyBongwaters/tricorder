@@ -6,12 +6,10 @@ compact repo map is produced once and fed to the agent automatically:
 
 1. ``on_session_start`` — resolve the configured active project
    (``plugins.entries.tricorder.active_project`` in config.yaml — never
-   guessed) and build a current map to the plugin cache dir once.
-2. ``pre_llm_call`` — on the first turn (or when a fresh map exists) return a
-   short digest (map file path + token stats + top symbols) that Hermes
-   injects into the user message. Bounded on purpose: the point is context
-   economy (~1.5% of full-repo cost), so we inject a pointer + digest, not
-   the whole map.
+   guessed). Probe only; never builds at session start.
+2. ``pre_llm_call`` — first turn only: if a pre-scan DB covers the
+   project, inject coverage + retrieval steering from sqlite (no walk);
+   else the cheap probe digest marked not-pre-mapped.
 3. Slash commands for on-demand access: ``/tricorder scan|find|detail|root|status``.
 
 All real work delegates to the tricorder binaries in its own venv
@@ -432,17 +430,70 @@ def _on_session_start(session_id: str = "", **_: Any) -> None:
     logger.debug("tricorder: turn-0 probe-only (no map build) for %s", root)
 
 
+def _tricorder_db_for(root: str) -> Optional[str]:
+    """Canonical pre-scan DB for root, or None if not mapped.
+
+    Same convention as pre_scan.py: <cache_root>/db/<basename>.db.
+    Cache root resolved without hardcoding: TRICORDER_CACHE_HOME env,
+    else <cli-venv>/../.tricorder (derived from the discovered CLI path).
+    Read-only use — never creates or writes.
+    """
+    import sqlite3 as _sq
+    name = Path(root).name + ".db"
+    candidates = []
+    env = os.environ.get("TRICORDER_CACHE_HOME")
+    if env:
+        candidates.append(Path(env) / "db" / name)
+    cli = _get_tricorder_cli()
+    if cli:
+        candidates.append(Path(cli).resolve().parent.parent / ".tricorder" / "db" / name)
+    for db in candidates:
+        try:
+            if db.exists():
+                con = _sq.connect(f"file:{db}?mode=ro", uri=True)
+                n = con.execute("SELECT COUNT(DISTINCT rel_file) FROM tags").fetchone()[0]
+                con.close()
+                if n > 0:
+                    return str(db)
+        except Exception:
+            continue
+    return None
+
+
+def _db_coverage_line(db_path: str, root: str) -> str:
+    """One-line coverage + steering from the pre-scan DB. Read-only."""
+    import sqlite3 as _sq
+    con = _sq.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        files = con.execute("SELECT COUNT(DISTINCT rel_file) FROM tags").fetchone()[0]
+        tags = con.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
+        meta = con.execute(
+            "SELECT root, signature FROM meta ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+    finally:
+        con.close()
+    sig = (meta[1][:8] if meta and meta[1] else "?")
+    return (
+        f"mapped: {files} files, {tags} tags (db sig {sig}). "
+        "Retrieve, don't rescan: mcp_tricorder_detect to locate, "
+        "mcp_tricorder_symbols for shape, mcp_tricorder_detail for "
+        "body+callers, mcp_tricorder_query to traverse."
+    )
+
+
 def _on_pre_llm_call(
     session_id: str = "",
     is_first_turn: bool = False,
     user_message: str = "",
     **_: Any,
 ) -> Optional[str]:
-    """Return the unified turn-0 probe digest to inject into the user message.
+    """Return turn-0 steering to inject into the user message.
 
-    Same text the CLI --probe-digest emits and DSH injects. Navigation-only:
-    cheap os.walk tally + pointer to MCP tools for depth. First turn only;
-    later turns stay silent. Never triggers a full map build on turn 0.
+    DB-first (retrieval, not generation): if a pre-scan DB covers the
+    active project, emit coverage + tool steering from sqlite — no
+    filesystem walk. Otherwise fall back to the cheap probe digest and
+    say plainly the repo isn't mapped. First turn only; later turns
+    stay silent. Never triggers a map build.
     """
     root = _active_project()
     if not root:
@@ -450,10 +501,16 @@ def _on_pre_llm_call(
     if not is_first_turn:
         # Only the first turn carries the digest; later turns stay quiet.
         return None
+    db = _tricorder_db_for(root)
+    if db:
+        try:
+            return f"[tricorder] {root} — {_db_coverage_line(db, root)}"
+        except Exception:
+            pass
     digest = _probe_digest_cli(root)
     if not digest:
         return None
-    return f"[tricorder] {root} — {digest}"
+    return f"[tricorder] {root} — {digest} (not pre-mapped; probe only)"
 
 
 # ---------------------------------------------------------------------------
