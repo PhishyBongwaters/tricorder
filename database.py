@@ -113,10 +113,13 @@ class DBStore:
             )
 
     def set_meta(self, root: str, signature: str):
-        self.conn.execute(
-            "INSERT INTO meta(schema_version, root, signature) VALUES (?,?,?)",
-            (SCHEMA_VERSION, root, signature),
-        )
+        """Replace (not append): meta holds exactly one row per DB."""
+        with self._lock:
+            self.conn.execute("DELETE FROM meta")
+            self.conn.execute(
+                "INSERT INTO meta(schema_version, root, signature) VALUES (?,?,?)",
+                (SCHEMA_VERSION, root, signature),
+            )
 
     def populate_refs(self):
         """Materialize refs edge table from def/ref tags (cross join on name).
