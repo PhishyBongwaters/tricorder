@@ -504,6 +504,9 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
                     report["oversized_skipped"] = oversized_skipped
                     report["depth_skipped"] = depth_skipped
                 return src_files
+    # Deterministic order: window stability across runs requires the walk
+    # prefix to be stable, so the serial path sorts like the threaded one.
+    src_files.sort()
     if report is not None:
         report["files_considered"] = len(src_files)
         report["oversized_skipped"] = oversized_skipped

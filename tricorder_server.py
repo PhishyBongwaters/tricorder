@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastmcp import FastMCP, settings
 from core import Tricorder
+from database import drop_mapped_files
 from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write
 from scm import get_scm_fname
 from importance import filter_important_files
@@ -370,6 +371,11 @@ async def tricorder_scan(
         if not effective_other_files:
             log.info("No other_files provided, scanning root directory for context...")
             effective_other_files = find_src_files(project_root, exclude_globs=exclude_globs)
+            # Sliding window: already-mapped files don't count against the cap.
+            _cand = PRE_SCAN_DB_DIR / f"{Path(project_root).name}.db"
+            effective_other_files = drop_mapped_files(
+                effective_other_files, project_root,
+                str(_cand) if _cand.exists() else None)
             if len(effective_other_files) > max_files:
                 log.warning(f"Auto-scanned {len(effective_other_files)} files, capping to {max_files}")
                 effective_other_files = effective_other_files[:max_files]

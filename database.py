@@ -17,6 +17,7 @@ Modes:
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 from typing import Iterable, Iterator, List, Optional, Sequence, Tuple
@@ -54,9 +55,8 @@ class DBStore:
         # WAL keeps reads from blocking the walk's insert bursts on disk builds.
         # ponytail: DELETE for large existing DBs (>500MB) to avoid WAL loop;
         # WAL otherwise. Size-based, no repo names.
-        import os as _os
         try:
-            is_large = bool(path) and _os.path.getsize(path) > 500_000_000
+            is_large = bool(path) and os.path.getsize(path) > 500_000_000
         except OSError:
             is_large = False
         self.conn.execute(
@@ -333,6 +333,47 @@ class DBStore:
             self.conn.commit()
         finally:
             self.conn.close()
+
+    def mapped_rels(self) -> set:
+        """Rel files the DB already covers (file_state keys). Read-only."""
+        try:
+            return set(self.get_file_state().keys())
+        except Exception:
+            return set()
+
+
+def drop_mapped_files(files, root, db_path):
+    """Sliding window: drop walked files already mapped in the DB so a
+    --max-files cap limits *unmapped* files, not the walk prefix.
+
+    Same-file helper for CLI + MCP (one implementation, no drift).
+    No DB or any mapped set -> input unchanged. Pure path-string work.
+    """
+    if not db_path or not files:
+        return files
+    try:
+        db = DBStore(db_path)
+        try:
+            mapped = db.mapped_rels()
+        finally:
+            db.close()
+    except Exception:
+        return files
+    if not mapped:
+        return files
+    root_s = str(root)
+    kept = []
+    for f in files:
+        try:
+            # Same rel form as Tricorder.get_rel_fname (Path.relative_to):
+            # os.path.relpath matches it on identical paths (backslashes).
+            rel = os.path.relpath(os.path.realpath(f), root_s)
+        except ValueError:
+            kept.append(f)
+            continue
+        if rel not in mapped:
+            kept.append(f)
+    return kept
 
 
 def demo() -> int:

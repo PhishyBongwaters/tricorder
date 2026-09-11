@@ -23,6 +23,7 @@ from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_fi
 from scm import get_scm_fname
 from importance import filter_important_files
 from core import Tricorder
+from database import drop_mapped_files
 from ctags_probe import probe_and_narrow
 
 
@@ -416,6 +417,10 @@ Examples:
                 p = root_path / path_spec_str
             effective_other_files_unresolved.extend(find_src_files(str(p), exclude_globs=args.exclude_globs))
 
+        # Sliding window: already-mapped files don't count against the cap.
+        effective_other_files_unresolved = drop_mapped_files(
+            effective_other_files_unresolved, root_path,
+            args.db_path if (args.db_path and not args.no_db) else None)
         if args.max_files > 0 and len(effective_other_files_unresolved) > args.max_files:
             output_handlers['warning'](
                 f"Explicit paths yielded {len(effective_other_files_unresolved)} files, "
@@ -429,6 +434,10 @@ Examples:
             output_handlers['info'](f"No explicit files provided, auto-scanning {root_path}...")
             effective_other_files_unresolved = find_src_files(
                 str(root_path), exclude_globs=args.exclude_globs)
+            # Sliding window: already-mapped files don't count against the cap.
+            effective_other_files_unresolved = drop_mapped_files(
+                effective_other_files_unresolved, root_path,
+                args.db_path if (args.db_path and not args.no_db) else None)
             if args.max_files > 0 and len(effective_other_files_unresolved) > args.max_files:
                 output_handlers['warning'](
                     f"Auto-scanned {len(effective_other_files_unresolved)} files, "
