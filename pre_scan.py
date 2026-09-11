@@ -15,9 +15,6 @@ from utils import get_cache_root
 DB_DIR = get_cache_root() / "db"
 TRICORDER = Path(r"D:\Projects\tricorder\tricorder.py")
 
-# projectM is at a different path
-PROJECTM = Path(r"D:\Projects\projectm")
-
 
 def scan_repo(repo_path: Path, db_path: Path) -> dict:
     """Run tricorder --db-path + --full --output on a single repo."""
@@ -48,6 +45,7 @@ def scan_repo(repo_path: Path, db_path: Path) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Pre-scan repos for tricorder DB index")
     parser.add_argument("--repos", nargs="*", help="Specific repos to scan (default: all)")
+    parser.add_argument("--extra", nargs="*", default=[], help="Additional repo paths outside the testing-repos dir")
     parser.add_argument("--dry-run", action="store_true", help="List repos without scanning")
     args = parser.parse_args()
 
@@ -58,9 +56,11 @@ def main():
     else:
         repos = sorted([d for d in REPOS_DIR.iterdir() if d.is_dir() and d.name != "bench_temp"])
 
-    # Add projectM separately
-    if PROJECTM.exists():
-        repos.append(PROJECTM)
+    # Additional repos outside the testing-repos dir (e.g. --extra D:\Projects\projectm)
+    for extra in args.extra:
+        p = Path(extra)
+        if p.exists():
+            repos.append(p)
 
     if args.dry_run:
         for r in repos:

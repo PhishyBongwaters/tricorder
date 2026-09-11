@@ -1,5 +1,7 @@
 import subprocess, sys, time
-repos = ["kotlin","linux","swift"]
+repos = sys.argv[1:]
+if not repos:
+    raise SystemExit("usage: chunk_resume.py <repo> [repo ...]")
 for repo in repos:
     print(f"=== {repo} chunked resume ===")
     for attempt in range(1, 7):
