@@ -136,6 +136,11 @@ WIDER_LANGUAGE_PACK = [
         "(defun add (a b)\n"
         "  (+ a b))\n"
     )),
+    ("erlang", ".erl", (
+        "-module(calc).\n"
+        "-export([add/2]).\n"
+        "add(A, B) -> A + B.\n"
+    )),
 ]
 
 

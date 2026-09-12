@@ -19,6 +19,7 @@ def get_scm_fname(lang: str) -> Optional[str]:
         'elisp': 'elisp-tags.scm',
         'elixir': 'elixir-tags.scm',
         'elm': 'elm-tags.scm',
+        'erlang': 'erlang-tags.scm',
         'gleam': 'gleam-tags.scm',
         'go': 'go-tags.scm',
         'javascript': 'javascript-tags.scm',

@@ -23,7 +23,8 @@ Requires Python ≥3.11 and `rg` (ripgrep) on PATH. Full fresh-system guide:
 ## Docs
 
 `00-scan-first.md` · `01-pipeline.md` · `02-tiering-and-retrieval.md` ·
-`03-operations.md` · `04-internals.md` · `05-setup.md`
+`03-operations.md` · `04-internals.md` · `05-setup.md` ·
+`06-languages.md`
 
 ## Use
 
