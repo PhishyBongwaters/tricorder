@@ -50,8 +50,8 @@ plugins:
 Or `/tricorder root /path/to/repo` in-session (persisted to config).
 Turn-0 behavior: mapped repo → one-line DB coverage + steering, no
 walk; unmapped → cheap probe digest marked not-pre-mapped; later
-turns silent. MCP tools (`tricorder-mcp` server: scan, detect,
-symbols, detail, query) attach the same DB automatically.
+turns silent. MCP tools (`tricorder-mcp` server over stdio: scan,
+detect, symbols, detail, query) attach the same DB automatically.
 
 ## 5b. DSH harness
 

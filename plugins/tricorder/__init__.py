@@ -339,11 +339,17 @@ def build_map(project_root: str) -> Optional[dict]:
         logger.debug("tricorder: CLI not found; skipping map")
         return None
     out = _cache_file(project_root)
+    # Canonical in-repo DB: slash scans populate the same sqlite that turn-0,
+    # MCP tools, and chunk_resume.py read (same convention as --init).
+    _root = Path(project_root).resolve()
+    _db = _root / ".tricorder" / "db" / (_root.name + ".db")
+    _db.parent.mkdir(parents=True, exist_ok=True)  # DBStore won't create dirs
     cmd = [
         cli, "--root", project_root,
         "--tier", "0",
         "--map-tokens", str(_map_tokens()),
         "--exclude-untagged",
+        "--db-path", str(_db),
         "--output", str(out),
         ".",
     ]
