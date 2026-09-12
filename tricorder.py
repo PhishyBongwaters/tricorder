@@ -19,7 +19,7 @@ from typing import List, Optional
 # venv/site-packages (e.g. the Hermes agent's own utils.py when tricorder is
 # launched through an editable install that shares a process's sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES, safe_write
+from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES, safe_write, get_cache_root
 from scm import get_scm_fname
 from importance import filter_important_files
 from core import Tricorder
@@ -328,6 +328,15 @@ Examples:
              "inject at turn 0."
     )
 
+    parser.add_argument(
+        "--db-coverage",
+        action="store_true",
+        help="Print one-line mapped-DB coverage for --root (mapped: N files, "
+             "M tags, db sig X) and exit. Prints nothing when unmapped. "
+             "Shared by the Hermes and DSH turn-0 injectors so both stay "
+             "byte-identical on mapped repos."
+    )
+
     args = parser.parse_args()
 
     if args.wipe and not args.init:
@@ -343,6 +352,44 @@ Examples:
             init_db.unlink()
         DBStore(str(init_db)).conn.close()
         print(str(init_db))
+        sys.exit(0)
+
+    # --db-coverage: one-line mapped-DB summary for turn-0 injectors (Hermes
+    # + DSH). Prints nothing when unmapped. Read-only; never creates or writes
+    # (no blind sqlite connect — existence checked first).
+    if args.db_coverage:
+        import sqlite3 as _sq
+        _cov_root = Path(args.root).resolve()
+        _cov_name = _cov_root.name + ".db"
+        _cov_cands = [_cov_root / ".tricorder" / "db" / _cov_name]
+        try:
+            _cov_cands.append(get_cache_root() / "db" / _cov_name)
+        except Exception:
+            pass
+        for _cand in _cov_cands:
+            try:
+                if not _cand.exists():
+                    continue
+                _con = _sq.connect(f"file:{_cand}?mode=ro", uri=True)
+                try:
+                    _n = _con.execute(
+                        "SELECT COUNT(DISTINCT rel_file) FROM tags").fetchone()[0]
+                    if _n > 0:
+                        _t = _con.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
+                        _m = _con.execute(
+                            "SELECT root, signature FROM meta ORDER BY rowid DESC LIMIT 1"
+                        ).fetchone()
+                        _sig = (_m[1][:8] if _m and _m[1] else "?")
+                        print(
+                            f"mapped: {_n} files, {_t} tags (db sig {_sig}). "
+                            "Retrieve, don't rescan: mcp_tricorder_detect to locate, "
+                            "mcp_tricorder_symbols for shape, mcp_tricorder_detail for "
+                            "body+callers, mcp_tricorder_query to traverse.")
+                        break
+                finally:
+                    _con.close()
+            except Exception:
+                continue
         sys.exit(0)
 
     # --signature-only: stat-hash, no map build. Early exit.

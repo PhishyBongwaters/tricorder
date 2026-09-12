@@ -20,7 +20,9 @@ the sliding window that makes resume-by-rerun work.
 ## 2. Parse (`parser.py:ParserMixin.get_tags_raw`, `cache.py:get_tags`)
 
 Per file: extension → grammar (`detect_lang`), tree-sitter parse via
-`grep_ast.tsl` (parser cached per language), `.scm` query extracts
+`grep_ast.tsl` (parser cached per language; `.scm` tag queries ship
+inside the grep-ast package — details in `04-internals.md`), `.scm`
+query extracts
 `Tag(rel_fname, fname, line, name, kind)` with kind `def` or `ref`.
 Code is never executed. One bad file (missing grammar, binary junk,
 pathological nesting) yields zero tags + a warning; the walk continues.
@@ -30,6 +32,9 @@ pathological nesting) yields zero tags + a warning; the walk continues.
 - `cache.py:get_tags` sits in front: mtime-keyed diskcache hit skips
   parsing; a fixed `_SKIP_EXTS` set (`.frag`, `.vert`, `.cmake.in`,
   …) skips files that cannot hold symbols.
+- Dirty-file parsing parallelizes: ProcessPool, chunk 200, batch
+  commit 100; 2 workers past 15k files, else up to 4 (worker model in
+  `04-internals.md`).
 - `--pre-index SYMBOL` narrows giant trees *before* the walk:
   rg-first lookup, optional ctags index fallback, capped by
   `--pre-index-max-files` / `--pre-index-include-parents`.

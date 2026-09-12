@@ -27,7 +27,12 @@ stop at the first that answers. Before asserting or editing anything
 found this way, open the exact file lines — the map navigates, the
 file is truth.
 
-## CLI retrieval (no agent loop needed)
+## Session recipe (mapped repo, CLI)
+
+1. `tricorder <path> --db-path <db> --tier 0` — orient (defs only).
+2. `--pre-index NAME` or `--probe-digest` — locate, don't browse.
+3. `--tier 1` on the files that matter — read context.
+4. Open the real files. Edit. Re-run: only dirty files reparse.
 
 - `tricorder <path> --db-path <db> --tier 0` — definitions fast path.
 - `--pre-index SYMBOL` — narrow giant trees before walking.
