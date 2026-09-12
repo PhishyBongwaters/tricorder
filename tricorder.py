@@ -23,7 +23,7 @@ from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_fi
 from scm import get_scm_fname
 from importance import filter_important_files
 from core import Tricorder
-from database import drop_mapped_files
+from database import DBStore, drop_mapped_files
 from ctags_probe import probe_and_narrow
 
 
@@ -286,6 +286,20 @@ Examples:
     )
 
     parser.add_argument(
+        "--init",
+        action="store_true",
+        help="Create/open the canonical DB at <root>/.tricorder/db/<name>.db "
+             "(journal mode auto by size), print its path and exit. Idempotent; "
+             "never wipes without --wipe."
+    )
+
+    parser.add_argument(
+        "--wipe",
+        action="store_true",
+        help="With --init only: delete the existing canonical DB first."
+    )
+
+    parser.add_argument(
         "--pre-index",
         metavar="SYMBOL",
         help="Enable ctags probe: build/use ctags index, look up SYMBOL, narrow scan to matching files"
@@ -315,6 +329,21 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    if args.wipe and not args.init:
+        parser.error("--wipe requires --init")
+
+    # --init: canonical DB path, create dirs, open (schema + journal by size
+    # handled in DBStore.__init__), print path, exit. Early, like --probe-digest.
+    if args.init:
+        init_root = Path(args.root).resolve()
+        init_db = init_root / ".tricorder" / "db" / f"{init_root.name}.db"
+        init_db.parent.mkdir(parents=True, exist_ok=True)
+        if args.wipe and init_db.exists():
+            init_db.unlink()
+        DBStore(str(init_db)).conn.close()
+        print(str(init_db))
+        sys.exit(0)
 
     # --signature-only: stat-hash, no map build. Early exit.
     if args.signature_only:
