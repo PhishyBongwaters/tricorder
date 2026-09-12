@@ -185,6 +185,132 @@ WIDER_LANGUAGE_PACK = [
         "  }\n"
         "}\n"
     )),
+    ("bash", ".sh", (
+        "greet() {\n"
+        "  echo hi\n"
+        "}\n"
+    )),
+    ("powershell", ".ps1", (
+        "function Add($a, $b) {\n"
+        "  return $a + $b\n"
+        "}\n"
+    )),
+    ("perl", ".pl", (
+        "sub add {\n"
+        "  my ($a, $b) = @_;\n"
+        "  return $a + $b;\n"
+        "}\n"
+    )),
+    ("haskell", ".hs", (
+        "add a b = a + b\n"
+    )),
+    ("julia", ".jl", (
+        "function add(a, b)\n"
+        "  return a + b\n"
+        "end\n"
+    )),
+    ("zig", ".zig", (
+        "fn add(a: i32, b: i32) i32 {\n"
+        "  return a + b;\n"
+        "}\n"
+    )),
+    ("verilog", ".v", (
+        "module adder(input [31:0] a, output [31:0] s);\n"
+        "  assign s = a + 1;\n"
+        "endmodule\n"
+    )),
+    ("groovy", ".groovy", (
+        "def add(a, b) {\n"
+        "  return a + b\n"
+        "}\n"
+    )),
+    ("hack", ".hack", (
+        "function add(int $a, int $b): int {\n"
+        "  return $a + $b;\n"
+        "}\n"
+    )),
+    ("pascal", ".pas", (
+        "function Add(a, b: Integer): Integer;\n"
+        "begin\n"
+        "  Add := a + b;\n"
+        "end;\n"
+    )),
+    ("matlab", ".m", (
+        "function s = add(a, b)\n"
+        "  s = a + b;\n"
+        "end\n"
+    )),
+    ("fortran", ".f90", (
+        "function add(a, b)\n"
+        "  integer :: add, a, b\n"
+        "  add = a + b\n"
+        "end function add\n"
+    )),
+    ("clojure", ".clj", (
+        "(ns calc)\n"
+        "(defn add [a b]\n"
+        "  (+ a b))\n"
+    )),
+    ("gdscript", ".gd", (
+        "func add(a, b):\n"
+        "  return a + b\n"
+    )),
+    ("cairo", ".cairo", (
+        "fn add(a: u32, b: u32) -> u32 {\n"
+        "  a + b\n"
+        "}\n"
+    )),
+    ("sql", ".sql", (
+        "CREATE PROCEDURE addem(a INT, b INT)\n"
+        "BEGIN\n"
+        "  SELECT a + b;\n"
+        "END;\n"
+    )),
+    ("proto", ".proto", (
+        "syntax = \"proto3\";\n"
+        "message Calc {\n"
+        "  int32 a = 1;\n"
+        "}\n"
+    )),
+    ("make", ".mk", (
+        "build: main.o\n"
+        "\tgcc -o app main.o\n"
+    )),
+    ("cmake", ".cmake", (
+        "function(build target)\n"
+        "  add_executable(${target} main.cpp)\n"
+        "endfunction()\n"
+    )),
+    ("glsl", ".glsl", (
+        "void main() {\n"
+        "  gl_FragColor = vec4(1.0);\n"
+        "}\n"
+    )),
+    ("func", ".fc", (
+        "() recv_internal(int x) {\n"
+        "  return x + 1;\n"
+        "}\n"
+    )),
+    ("tsx", ".tsx", (
+        "function add(a: number, b: number): number {\n"
+        "  return a + b;\n"
+        "}\n"
+    )),
+    ("uxntal", ".tal", (
+        "@add ( a b -- c )\n"
+        "  + JMP2r\n"
+    )),
+    ("llvm", ".ll", (
+        "define i32 @add(i32 %a, i32 %b) {\n"
+        "entry:\n"
+        "  ret i32 %a\n"
+        "}\n"
+    )),
+    ("tablegen", ".td", (
+        "class Calc {\n"
+        "  int A = 1;\n"
+        "}\n"
+    )),
 ]
 
 

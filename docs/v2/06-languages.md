@@ -4,12 +4,15 @@ Authority: `tests/test_language_matrix.py`. A language is **validated**
 only if the matrix enforces it. Query files without matrix samples are
 present, not proven.
 
-## Validated (31, matrix-enforced)
+## Validated (56, matrix-enforced)
 
 Full signature: python, javascript, typescript, c, cpp, java, go,
 rust, swift, csharp, ruby. Definition-only: kotlin, php, scala, dart,
 elixir, ocaml, lua, commonlisp, erlang, arduino, chatito, d, elisp,
-elm, gleam, ocaml_interface, pony, r, racket, solidity.
+elm, gleam, ocaml_interface, pony, r, racket, solidity, bash,
+powershell, perl, haskell, julia, zig, verilog, groovy, hack, pascal,
+matlab, fortran, clojure, gdscript, cairo, sql, proto, make, cmake,
+glsl, func, tsx, uxntal, llvm, tablegen.
 
 ## Query present, not in matrix (4)
 
@@ -24,9 +27,9 @@ elm, gleam, ocaml_interface, pony, r, racket, solidity.
 ## Potential (51, grammar but no query)
 
 bash, cairo, clojure, cmake, css, dockerfile, fortran, gdscript, glsl,
-groovy, hack, haskell, html, json, julia, latex, llvm, make, markdown,
-matlab, pascal, perl, powershell, proto, sql, svelte, toml, tsx,
-verilog, vue, yaml, zig, and the rest. The grammar parses; nothing
+html, json, latex, llvm, make, markdown,
+matlab, proto, sql, svelte, toml, tsx,
+vue, yaml, and the rest. The grammar parses; nothing
 extracts tags, so these scan as `no-query`. (Non-code formats like
 json/toml never need queries — `no-query` is correct for them.)
 
