@@ -48,19 +48,25 @@ def main():
     parser.add_argument("--start-cap", type=int, default=5000)
     parser.add_argument("--step", type=int, default=5000)
     parser.add_argument("--timeout", type=int, default=3600)
+    parser.add_argument("--db-path", default=None,
+        help="Resume a custom DB instead of the --init canonical path")
     args = parser.parse_args()
 
     repo = Path(args.repo).resolve()
     total = len(discover_src_files(str(repo)))
 
-    init = subprocess.run(
-        [sys.executable, str(TRICORDER), "--init", "--root", str(repo)],
-        capture_output=True, text=True,
-    )
-    if init.returncode != 0:
-        print(f"INIT FAIL: {init.stderr.strip()[-200:]}")
-        raise SystemExit(1)
-    db = Path(init.stdout.strip())
+    if args.db_path:
+        db = Path(args.db_path)
+        db.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        init = subprocess.run(
+            [sys.executable, str(TRICORDER), "--init", "--root", str(repo)],
+            capture_output=True, text=True,
+        )
+        if init.returncode != 0:
+            print(f"INIT FAIL: {init.stderr.strip()[-200:]}")
+            raise SystemExit(1)
+        db = Path(init.stdout.strip())
     out_map = db.with_suffix(".map")
 
     cap, stall, prev = args.start_cap, 0, -1

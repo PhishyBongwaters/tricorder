@@ -16,11 +16,11 @@ DB_DIR = get_cache_root() / "db"
 TRICORDER = Path(r"D:\Projects\tricorder\tricorder.py")
 
 
-def scan_repo(repo_path: Path, db_path: Path) -> dict:
+def scan_repo(repo_path: Path, db_path: Path, tricorder: Path = TRICORDER) -> dict:
     """Run tricorder --db-path + --full --output on a single repo."""
     out_map = db_path.with_suffix(".map")
     cmd = [
-        sys.executable, str(TRICORDER),
+        sys.executable, str(tricorder),
         str(repo_path),
         "--db-path", str(db_path),
         "--full",
@@ -47,14 +47,24 @@ def main():
     parser.add_argument("--repos", nargs="*", help="Specific repos to scan (default: all)")
     parser.add_argument("--extra", nargs="*", default=[], help="Additional repo paths outside the testing-repos dir")
     parser.add_argument("--dry-run", action="store_true", help="List repos without scanning")
+    parser.add_argument("--db-dir", default=None,
+        help="DB output dir (default: canonical cache db dir). Point at a repo's "
+             ".tricorder/db to share one home with --init scans.")
+    parser.add_argument("--repos-dir", default=None,
+        help="Repo collection dir (default: Tricorder-Testing-Repos next to checkout)")
+    parser.add_argument("--tricorder", default=None,
+        help="tricorder.py path (default: tricorder.py next to this script)")
     args = parser.parse_args()
 
-    DB_DIR.mkdir(exist_ok=True)
+    db_dir = Path(args.db_dir) if args.db_dir else DB_DIR
+    db_dir.mkdir(exist_ok=True, parents=True)
+    repos_dir = Path(args.repos_dir) if args.repos_dir else REPOS_DIR
+    tricorder = Path(args.tricorder) if args.tricorder else TRICORDER
 
     if args.repos:
-        repos = [REPOS_DIR / r for r in args.repos]
+        repos = [repos_dir / r for r in args.repos]
     else:
-        repos = sorted([d for d in REPOS_DIR.iterdir() if d.is_dir() and d.name != "bench_temp"])
+        repos = sorted([d for d in repos_dir.iterdir() if d.is_dir() and d.name != "bench_temp"])
 
     # Additional repos outside the testing-repos dir (e.g. --extra D:\Projects\projectm)
     for extra in args.extra:
@@ -69,10 +79,10 @@ def main():
 
     results = []
     for repo in repos:
-        db_path = DB_DIR / f"{repo.name}.db"
+        db_path = db_dir / f"{repo.name}.db"
         print(f"[{repo.name}] scanning...", end=" ", flush=True)
         try:
-            res = scan_repo(repo, db_path)
+            res = scan_repo(repo, db_path, tricorder)
             results.append(res)
             status = "OK" if res["ok"] else f"FAIL ({res['stderr'][:80]})"
             print(f"{res['elapsed_s']}s db={res['db_bytes']/1024:.0f}KB map={res['map_bytes']/1024:.0f}KB {status}")
