@@ -27,7 +27,7 @@ import diskcache
 
 from utils import get_cache_root, Tag
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2  # bumped: stop-name guard changed index contents
 
 SQLITE_ERRORS = (sqlite3.OperationalError, sqlite3.DatabaseError)
 
@@ -142,3 +142,24 @@ class TagsCacheMixin:
                 self.tags_cache_error()
 
             return tags
+
+    def get_file_text(self, fname: str) -> str:
+        """Whole-file text, mtime-keyed like tags. Spares detail/callers
+        repeat disk reads; same store, namespaced key, no new infra."""
+        file_mtime = self.get_mtime(fname)
+        if file_mtime is None:
+            return ""
+        key = "text:" + fname
+        with self._tags_cache_lock:
+            try:
+                cached = self.TAGS_CACHE.get(key)
+                if cached and cached.get("mtime") == file_mtime:
+                    return cached["data"]
+            except SQLITE_ERRORS:
+                self.tags_cache_error()
+            text = self.read_text_func_internal(fname) or ""
+            try:
+                self.TAGS_CACHE[key] = {"mtime": file_mtime, "data": text}
+            except SQLITE_ERRORS:
+                self.tags_cache_error()
+            return text

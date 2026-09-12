@@ -3,13 +3,15 @@
 ## DB invariants (guarded by `tests/test_db_invariants.py`)
 
 - `SELECT COUNT(*) FROM meta` == 1. More rows = stacked scans.
-- `reset()` clears tags, refs, meta, file_state together. Partial
+- `reset()` clears all six tables together. Partial
   clears are a corruption vector — never add one.
 - `file_state` keys ⊇ walked files and == `mapped_rels()` (the resume
   set). `COUNT(*) FROM file_state` is coverage; tags-distinct is not
   (tagless files).
 - `populate_refs()` output is stable across reruns (DELETE + INSERT,
-  no accumulation).
+  no accumulation); `stop_names` persists the skipped set with it.
+- `sync_file_flags`: tagless files carry a reason, tagged files carry
+  none (tagged wins on conflict).
 
 ## Hard ceilings (ponytail markers in code)
 

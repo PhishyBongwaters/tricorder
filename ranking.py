@@ -443,6 +443,26 @@ class RankingMixin:
         db.populate_refs()
         db.commit()
 
+        # file_flags sync — single point for all scan branches (no per-loop
+        # edits): tagless scanned files record their reason (no-grammar,
+        # empty, parsed-zero-tags...); newly-tagged files clear stale flags.
+        # Note: "tagless" = zero tags of any kind, while FileReport untagged
+        # below means no DEF tag. Different questions, both answered.
+        try:
+            _tagged = {r[0] for r in
+                       db.conn.execute("SELECT DISTINCT rel_file FROM tags")}
+            _reasons = {}
+            for _f in included:
+                _rel = self.get_rel_fname(_f)
+                if _rel not in _tagged:
+                    try:
+                        _reasons[_rel] = self.untagged_reason(_f)
+                    except Exception:
+                        continue
+            db.sync_file_flags(_tagged, _reasons)
+        except Exception:
+            pass
+
         total_definitions = db.count_tags("def")
         total_references = db.count_tags("ref")
 

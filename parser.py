@@ -12,6 +12,30 @@ _PARSER_CACHE: dict = {}  # lang -> (language, parser) ponytail: one per languag
 from scm import get_scm_fname
 
 class ParserMixin:
+    _SKIP_EXTS = {'.frag', '.vert', '.inc', '.icns', '.plist', '.entitlements',
+                  '.cmake.in', '.h.in', '.cpp.in', '.hpp.in'}
+
+    def untagged_reason(self, fname: str) -> str:
+        """Why a file owns zero tags, without parsing. Mirrors get_tags
+        early-outs so file_flags answers 'no grammar' vs 'empty' vs
+        'parsed but symbol-free' instead of silence."""
+        if Path(fname).suffix in self._SKIP_EXTS or fname.endswith(
+                ('.cmake.in', '.h.in', '.cpp.in', '.hpp.in')):
+            return "skip-ext"
+        try:
+            if os.path.getsize(fname) == 0:
+                return "empty"
+        except OSError:
+            return "missing"
+        lang = detect_lang(fname)
+        if not lang:
+            return "no-grammar"
+        if not get_scm_fname(lang):
+            return "no-query"
+        code = read_text(fname, silent=True)
+        if not code or not code.strip():
+            return "empty"
+        return "parsed-zero-tags"
     def _add_class_context_to_tags(self, tags: List[Tag]) -> List[Tag]:
         """Post-process tags to add class context to method names.
         

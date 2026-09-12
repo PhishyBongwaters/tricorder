@@ -10,6 +10,9 @@ Schema v1:
     tags(file, rel_file, line, name, kind)   -- one row per tag (kind in def/ref)
     refs(from_file, to_file, name)           -- one row per cross-file reference edge
     meta(schema_version, root, signature)    -- identity used by incremental recompute
+    file_state(rel_file, size, mtime)        -- per-file stat fingerprint
+    stop_names(name)                         -- def-names skipped by populate_refs (>50 files)
+    file_flags(rel_file, reason)             -- why a scanned file owns zero tags
 
 Modes:
     DBStore(path)    -> file-backed sqlite (--db-path)
@@ -34,6 +37,10 @@ _DDL = [
     " schema_version INTEGER NOT NULL, root TEXT, signature TEXT)",
     "CREATE TABLE IF NOT EXISTS file_state("
     " rel_file TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime INTEGER NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS stop_names("
+    " name TEXT PRIMARY KEY)",
+    "CREATE TABLE IF NOT EXISTS file_flags("
+    " rel_file TEXT PRIMARY KEY, reason TEXT NOT NULL)",
     "CREATE INDEX IF NOT EXISTS idx_tags_kind_name ON tags(kind, name)",
     "CREATE INDEX IF NOT EXISTS idx_tags_file ON tags(file)",
     "CREATE INDEX IF NOT EXISTS idx_tags_rel_file ON tags(rel_file)",
@@ -93,6 +100,8 @@ class DBStore:
             self.conn.execute("DELETE FROM refs")
             self.conn.execute("DELETE FROM meta")
             self.conn.execute("DELETE FROM file_state")
+            self.conn.execute("DELETE FROM stop_names")
+            self.conn.execute("DELETE FROM file_flags")
             self.conn.commit()
 
     def delete_tags_for_file(self, rel_file: str):
@@ -141,6 +150,14 @@ class DBStore:
             "AND d.name NOT IN (SELECT name FROM tags WHERE kind='def' "
             "GROUP BY name HAVING COUNT(DISTINCT rel_file) > 50)"
         )
+        # Persist the skipped set so consumers can tell "no callers" apart
+        # from "too common to resolve". Same predicate, same run.
+        self.conn.execute("DELETE FROM stop_names")
+        self.conn.execute(
+            "INSERT INTO stop_names(name) "
+            "SELECT name FROM tags WHERE kind='def' "
+            "GROUP BY name HAVING COUNT(DISTINCT rel_file) > 50"
+        )
 
     # -- reads --------------------------------------------------------------
     def count_tags(self, kind: Optional[str] = None) -> int:
@@ -176,6 +193,47 @@ class DBStore:
         """rel_files with at least one kind='def' tag."""
         return (r[0] for r in self.conn.execute(
             "SELECT DISTINCT rel_file FROM tags WHERE kind='def'"))
+
+    def is_stop_name(self, name: str) -> bool:
+        """True if name was skipped by populate_refs (def in >50 files)."""
+        return self.conn.execute(
+            "SELECT 1 FROM stop_names WHERE name=?", (name,)).fetchone() is not None
+
+    def get_stop_names(self) -> set:
+        return {r[0] for r in self.conn.execute("SELECT name FROM stop_names")}
+
+    def set_file_flag(self, rel_file: str, reason: str):
+        """Record why a scanned file owns zero tags (no-grammar, empty, ...)."""
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO file_flags(rel_file, reason) VALUES (?,?)",
+                (rel_file, reason),
+            )
+
+    def clear_file_flag(self, rel_file: str):
+        with self._lock:
+            self.conn.execute("DELETE FROM file_flags WHERE rel_file=?", (rel_file,))
+
+    def get_file_flag(self, rel_file: str) -> Optional[str]:
+        row = self.conn.execute(
+            "SELECT reason FROM file_flags WHERE rel_file=?", (rel_file,)).fetchone()
+        return row[0] if row else None
+
+    def sync_file_flags(self, tagged: set, reasons: dict):
+        """One-shot flag maintenance, called once per scan (not per file):
+        record reasons for the tagless, then clear flags for anything
+        tagged (tagged wins: a flag on a tagged file is stale)."""
+        with self._lock:
+            for rel, reason in reasons.items():
+                self.conn.execute(
+                    "INSERT OR REPLACE INTO file_flags(rel_file, reason) VALUES (?,?)",
+                    (rel, reason),
+                )
+            if tagged:
+                q = (f"DELETE FROM file_flags WHERE rel_file "
+                     f"IN ({','.join('?' * len(tagged))})")
+                self.conn.execute(q, list(tagged))
+            self.conn.commit()
 
     def def_rows(self) -> Iterator[_TagRow]:
         """All def tags as (file, rel_file, line, name, 'def'), ordered like a file's tags."""

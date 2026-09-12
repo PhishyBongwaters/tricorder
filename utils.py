@@ -101,6 +101,8 @@ class SymbolRecord:
     body: str = ""     # code body, first 500 chars (get_symbol_details)
     callers: list = None  # list of {file, line} dicts (get_symbol_details)
     callees: list = None  # list of {name, file, line} dicts (get_symbol_details)
+    stop_note: str = ""  # set when name is a stop-name: cross-file callers
+                         # intentionally unresolved (def in >50 files)
 
     def to_dict(self) -> dict:
         return asdict(self)

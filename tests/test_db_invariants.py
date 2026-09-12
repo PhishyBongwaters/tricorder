@@ -35,7 +35,8 @@ class TestDbInvariants(unittest.TestCase):
         db.set_meta("/root", "sig")
         db.populate_refs()
         db.reset()
-        for tbl in ("tags", "refs", "meta", "file_state"):
+        for tbl in ("tags", "refs", "meta", "file_state",
+                    "stop_names", "file_flags"):
             n = db.conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
             self.assertEqual(n, 0, tbl)
 
@@ -58,6 +59,35 @@ class TestDbInvariants(unittest.TestCase):
         db.populate_refs()
         second = db.conn.execute("SELECT COUNT(*) FROM refs").fetchone()[0]
         self.assertEqual(first, second)
+
+    def test_stop_names_persisted(self):
+        # 51 defs of one name across 51 files -> stop-name, no edges.
+        db = DBStore(None)
+        rows = [(f"f{i}.py", f"f{i}.py", 1, "common", "def") for i in range(51)]
+        rows.append(("r.py", "r.py", 1, "common", "ref"))
+        db.insert_tags(rows)
+        db.populate_refs()
+        self.assertTrue(db.is_stop_name("common"))
+        self.assertEqual(db.get_stop_names(), {"common"})
+        n = db.conn.execute(
+            "SELECT COUNT(*) FROM refs WHERE name='common'").fetchone()[0]
+        self.assertEqual(n, 0)
+        db.populate_refs()  # idempotent, not accumulating
+        self.assertEqual(db.get_stop_names(), {"common"})
+        self.assertFalse(db.is_stop_name("foo"))
+
+    def test_file_flags_roundtrip(self):
+        db = DBStore(None)
+        db.set_file_flag("a.sql", "no-grammar")
+        self.assertEqual(db.get_file_flag("a.sql"), "no-grammar")
+        self.assertIsNone(db.get_file_flag("b.py"))
+        db.clear_file_flag("a.sql")
+        self.assertIsNone(db.get_file_flag("a.sql"))
+        # sync: tagged cleared, untagged recorded
+        db.insert_tags(_sample_tags())
+        db.sync_file_flags({"a.py"}, {"b.sql": "no-grammar", "a.py": "stale"})
+        self.assertIsNone(db.get_file_flag("a.py"))
+        self.assertEqual(db.get_file_flag("b.sql"), "no-grammar")
 
 
 if __name__ == "__main__":

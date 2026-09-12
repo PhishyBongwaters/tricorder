@@ -10,6 +10,7 @@ from utils import SymbolRecord, Tag, discover_src_files, repo_budget, count_toke
 import json as _json
 from scm import get_scm_fname
 from collections import defaultdict
+from cache import CACHE_VERSION
 
 class GraphMixin:
     def _discover_files(self) -> List[str]:
@@ -35,7 +36,10 @@ class GraphMixin:
                 continue
             entries.append((self.get_rel_fname(fpath).replace("\\", "/"), m))
         entries.sort()
-        return hashlib.sha256(repr(entries).encode("utf-8")).hexdigest()
+        # CACHE_VERSION: index format/logic changes must invalidate old
+        # bundles (a matching fingerprint must mean valid for THIS code too).
+        return hashlib.sha256(
+            (repr(entries) + f"|cv{CACHE_VERSION}").encode("utf-8")).hexdigest()
 
     def _load_cross_ref_disk(self) -> bool:
         """Restore the import+cross-file indexes from diskcache if valid.
@@ -198,6 +202,13 @@ class GraphMixin:
                         # No import mapping — use bare name
                         refs[bare_name].append((fpath, ref["line"]))
 
+            # Stop-names (mirror populate_refs' >50-file guard): names
+            # defined in >50 files are unresolvable by name. Drop their ref
+            # entries so detail/query agree with the DB instead of showing
+            # fake precision the ranker never had. Defs stay (tags are facts).
+            for _n in [n for n, ds in defs.items()
+                       if len({f for f, _ in ds}) > 50]:
+                refs.pop(_n, None)
             result = (dict(defs), dict(refs))
             self._cross_file_index_cache = result
             self._file_refs_index = file_refs_index
@@ -547,8 +558,8 @@ class GraphMixin:
         if target is None:
             return None
 
-        # Extract body: read the lines for this symbol, truncate to 500 chars
-        code = self.read_text_func_internal(file_path)
+        # Extract body: mtime-cached file text, truncate to 500 chars
+        code = self.get_file_text(file_path)
         if not code:
             target.body = ""
             return target
@@ -622,6 +633,19 @@ class GraphMixin:
 
         target.callers = callers
         target.callees = callees
+
+        # Stop-name note: no cross-file callers may mean "too common to
+        # resolve", not "uncalled". The DB persists the skipped set.
+        try:
+            _db = getattr(self, "_db_store", None)
+            if (_db is not None and
+                    not any(c.get("cross_file") for c in callers) and
+                    _db.is_stop_name(_base(symbol_name))):
+                target.stop_note = (
+                    f"'{symbol_name}' is defined in >50 files: too common "
+                    "to resolve callers by name.")
+        except Exception:
+            pass
 
         return target
 

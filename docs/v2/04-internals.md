@@ -64,6 +64,15 @@ Two consumers of the same tags:
 - Symbol navigation (detail body, callers/callees, `query()` DSL
   traversal, mermaid edges) uses `GraphMixin` structures built from
   tags on demand. The DB stores facts; the graph answers questions.
+- Both enforce the >50-file stop-name guard (DB in `populate_refs`,
+  index in `_build_cross_file_index`) so detail/query never show
+  edges the ranker never had. `detail` reports the skip via
+  `stop_note` instead of an empty callers list.
+- The disk cross-ref bundle is fingerprinted on repo files **plus**
+  `CACHE_VERSION` — index-logic changes invalidate old bundles.
+- `detail` bodies come from `get_file_text`: whole-file text cached
+  by mtime in the same diskcache as tags, so repeat lookups skip
+  disk.
 
 ## Token counting (`utils.py:count_tokens`)
 

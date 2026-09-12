@@ -41,15 +41,20 @@ pathological nesting) yields zero tags + a warning; the walk continues.
 
 ## 3. Into the DB (`database.py:DBStore`)
 
-Schema v1, four tables:
+Schema v1, six tables:
 
 - `tags(file, rel_file, line, name, kind)` — one row per def/ref.
 - `refs(from_file, to_file, name)` — materialized edges (stage 6).
 - `meta(schema_version, root, signature)` — exactly one row.
 - `file_state(rel_file, size, mtime)` — per-file stat fingerprint.
+- `stop_names(name)` — def-names skipped by `populate_refs` (>50
+  files), persisted so "no callers" vs "too common" stays answerable.
+- `file_flags(rel_file, reason)` — why a scanned file owns zero tags
+  (`no-grammar`, `no-query`, `empty`, `skip-ext`,
+  `parsed-zero-tags`); synced once per scan, tagged files clear it.
 
 One file's tags bulk-insert, then its AST is dropped — the walk never
-holds the repo in RAM. `reset()` clears all four tables so reusing
+holds the repo in RAM. `reset()` clears all six tables so reusing
 `--db-path` never stacks. Journal mode is size-based, no repo names:
 DELETE above 500MB, WAL below, MEMORY for `--no-db`.
 
