@@ -579,6 +579,36 @@ def detect_lang(fname: str) -> Optional[str]:
     patterns (struct, function, enum, typedef) are all in cpp-tags.scm.
     """
     from grep_ast import filename_to_lang
+    # Local extension table, checked BEFORE grep-ast: grammars the pack
+    # ships but filename_to_lang doesn't map. Colliding extensions
+    # (.fs forth/fsharp, .v verilog/V, .m matlab/objc) stay unmapped
+    # here — ambiguity needs content sniffing, not a coin flip.
+    _LOCAL_EXTS = {
+        ".nim": "nim", ".nims": "nim",
+        ".vb": "vb",
+        ".mojo": "mojo",
+        ".cr": "crystal",
+        ".awk": "awk",
+        ".pyx": "cython", ".pxd": "cython",
+        ".st": "smalltalk",
+        ".sml": "sml",
+        ".vala": "vala", ".vapi": "vala",
+        ".graphql": "graphql", ".gql": "graphql",
+        ".lean": "lean",
+        ".ql": "ql", ".qll": "ql",
+        ".wast": "wast", ".wat": "wat",
+        ".fsi": "fsharp", ".fsx": "fsharp",
+        ".mo": "motoko",
+        ".re": "reason", ".rei": "reason",
+        ".res": "rescript",
+        ".sw": "sway",
+        ".tact": "tact",
+        ".yang": "yang",
+        ".yul": "yul",
+    }
+    for ext, lang in _LOCAL_EXTS.items():
+        if fname.endswith(ext):
+            return lang
     lang = filename_to_lang(fname)
     if lang == "c" and fname.endswith((".h", ".H")):
         return "cpp"

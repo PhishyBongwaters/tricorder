@@ -400,6 +400,110 @@ WIDER_LANGUAGE_PACK = [
         "  return a + b;\n"
         "}\n"
     )),
+    ("nim", ".nim", (
+        "proc add(a, b: int): int =\n"
+        "  return a + b\n"
+    )),
+    ("crystal", ".cr", (
+        "def add(a, b)\n"
+        "  a + b\n"
+        "end\n"
+    )),
+    ("awk", ".awk", (
+        "function add(a, b) {\n"
+        "  return a + b\n"
+        "}\n"
+    )),
+    ("cython", ".pyx", (
+        "def add(a, b):\n"
+        "  return a + b\n"
+    )),
+    ("sml", ".sml", (
+        "fun add (a, b) = a + b\n"
+    )),
+    ("vala", ".vala", (
+        "class Calc : Object {\n"
+        "  public int add(int a, int b) {\n"
+        "    return a + b;\n"
+        "  }\n"
+        "}\n"
+    )),
+    ("graphql", ".graphql", (
+        "type Calc {\n"
+        "  add(a: Int, b: Int): Int\n"
+        "}\n"
+    )),
+    ("lean", ".lean", (
+        "def add (a b : Nat) : Nat := a + b\n"
+    )),
+    ("vb", ".vb", (
+        "Public Class Calc\n"
+        "  Public Function Add(a As Integer, b As Integer) As Integer\n"
+        "    Return a + b\n"
+        "  End Function\n"
+        "End Class\n"
+    )),
+    ("fsharp", ".fsi", (
+        "module Calc\n"
+        "let add a b = a + b\n"
+    )),
+    ("rescript", ".res", (
+        "let add = (a, b) => a + b;\n"
+    )),
+    ("sway", ".sw", (
+        "fn add(a: u64, b: u64) -> u64 {\n"
+        "  a + b\n"
+        "}\n"
+    )),
+    ("tact", ".tact", (
+        "fun add(a: Int, b: Int): Int {\n"
+        "  return a + b;\n"
+        "}\n"
+    )),
+    ("yang", ".yang", (
+        "module calc {\n"
+        "  container data {\n"
+        "  }\n"
+        "}\n"
+    )),
+    ("yul", ".yul", (
+        "object \"Calc\" {\n"
+        "  code {\n"
+        "    function add(a, b) -> c {\n"
+        "      c := add(a, b)\n"
+        "    }\n"
+        "  }\n"
+        "}\n"
+    )),
+    ("ql", ".ql", (
+        "predicate isThree(int x) {\n"
+        "  x = 3\n"
+        "}\n"
+    )),
+    ("wast", ".wast", (
+        "(module\n"
+        "  (func $add (param $a i32) (result i32)\n"
+        "    local.get $a))\n"
+    )),
+    ("wat", ".wat", (
+        "(module\n"
+        "  (func $add (param $a i32) (result i32)\n"
+        "    local.get $a))\n"
+    )),
+    ("mojo", ".mojo", (
+        "fn add(a: Int, b: Int) -> Int:\n"
+        "  return a + b\n"
+    )),
+    ("motoko", ".mo", (
+        "actor Calc {\n"
+        "  public func add(a : Nat, b : Nat) : async Nat {\n"
+        "    return a + b;\n"
+        "  };\n"
+        "};\n"
+    )),
+    ("reason", ".re", (
+        "let add = (a, b) => a + b;\n"
+    )),
 ]
 
 

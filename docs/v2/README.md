@@ -37,6 +37,15 @@ tricorder <path> --db-path <db> --tier 0 # orient, defs only
 Scan first — everything else reads the DB. Session recipe, tiering,
 and MCP/CLI split: `00-scan-first.md`, `02-tiering-and-retrieval.md`.
 
+## Supported languages
+
+93 validated by `tests/test_language_matrix.py` — C/C++/C#, Java, Go,
+Rust, Swift, Kotlin, Python, JS/TS (incl. TSX), Ruby, PHP, Scala,
+Dart, Erlang, Elixir, Haskell, OCaml, Lua, SQL, Proto, Fortran,
+Nim, Zig, Odin, shell (bash/fish/zsh), Perl, PowerShell, VHDL,
+Verilog, Solidity, and more. Full tiers + how to add one:
+`06-languages.md`.
+
 ## How it works
 
 Tree-sitter parse per file → tags into sqlite → name-resolved ref

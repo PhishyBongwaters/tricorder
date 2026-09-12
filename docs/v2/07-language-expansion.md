@@ -55,14 +55,14 @@ Tier A — DONE (16/16, matrix green): actionscript, ada, fish, hare,
 haxe, janet, nix, odin, qmljs, scheme, starlark, tcl, thrift, vhdl,
 vim, wgsl.
 
-Tier B — needs ext mapping first (grammar live, no extension maps):
-nim (.nim), fsharp (.fs — collides with forth, needs care), vb
-(.vb), mojo (.mojo), crystal (.cr), awk (.awk), cython (.pyx),
-smalltalk (.st), sml (.sml), vala (.vala), v (.v — collides with
-verilog, needs care), graphql (.graphql), lean (.lean), ql (.ql),
-wast (.wast), wat (.wat). Fix lives in OUR `detect_lang`
-(`utils.py` wraps grep-ast): a local ext→lang table checked before
-`filename_to_lang`. Then Tier A path.
+Tier B — DONE: local ext table in `detect_lang` + queries green for
+nim, crystal, awk, cython, sml, vala, graphql, lean, vb, fsharp,
+mojo, motoko, reason, rescript, sway, tact, yang, yul, ql, wast,
+wat. Left out with reasons: smalltalk + move (weak grammars, ERROR
+nodes on basic syntax), v (.v stays verilog), fsharp .fs (stays
+forth) — collisions need content sniffing. `.m` (matlab/objc) same
+class, untouched. Binary-adjacent mappings (`.mo` gettext, `.res`
+resources) parse as their language; binary files yield no tags.
 
 Already covered by alias (no work): zsh → bash query, systemverilog
 → verilog query, wgsl_bevy → wgsl (once written), terraform → hcl

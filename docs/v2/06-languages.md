@@ -4,7 +4,7 @@ Authority: `tests/test_language_matrix.py`. A language is **validated**
 only if the matrix enforces it. Query files without matrix samples are
 present, not proven.
 
-## Validated (72, matrix-enforced)
+## Validated (93, matrix-enforced)
 
 Full signature: python, javascript, typescript, c, cpp, java, go,
 rust, swift, csharp, ruby. Definition-only: kotlin, php, scala, dart,
@@ -14,15 +14,15 @@ powershell, perl, haskell, julia, zig, verilog, groovy, hack, pascal,
 matlab, fortran, clojure, gdscript, cairo, sql, proto, make, cmake,
 glsl, func, tsx, uxntal, llvm, tablegen, actionscript, ada, fish,
 hare, haxe, janet, nix, odin, qmljs, scheme, starlark, tcl, thrift,
-vhdl, vim, wgsl.
+vhdl, vim, wgsl, nim, crystal, awk, cython, sml, vala, graphql,
+lean, vb, fsharp, mojo, motoko, reason, rescript, sway, tact, yang,
+yul, ql, wast, wat.
 
-## Query present, not in matrix (4)
+## Query present, not in matrix (3)
 
 - hcl — extracts attribute junk as defs (weak query), not promotable
   as-is; needs a block-aware query rewrite.
 - properties — extracts keys; config format, same class as below.
-- ql — unreachable: no file extension maps to the grammar in
-  grep-ast, so auto-detect never fires. Needs upstream ext mapping.
 - udev — rule files have no definitions by nature; correctly
   unprovable.
 
