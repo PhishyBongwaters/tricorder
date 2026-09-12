@@ -4,18 +4,22 @@ Authority: `tests/test_language_matrix.py`. A language is **validated**
 only if the matrix enforces it. Query files without matrix samples are
 present, not proven.
 
-## Validated (20, matrix-enforced)
+## Validated (31, matrix-enforced)
 
 Full signature: python, javascript, typescript, c, cpp, java, go,
 rust, swift, csharp, ruby. Definition-only: kotlin, php, scala, dart,
-elixir, ocaml, lua, commonlisp, erlang.
+elixir, ocaml, lua, commonlisp, erlang, arduino, chatito, d, elisp,
+elm, gleam, ocaml_interface, pony, r, racket, solidity.
 
-## Query present, not in matrix (15)
+## Query present, not in matrix (4)
 
-arduino, chatito, d, elisp, elm, gleam, hcl, ocaml_interface, pony,
-properties, ql, r, racket, solidity, udev. Grammar + `.scm` ship, but
-no test pins them — treat as working-but-unproven. Promote by adding
-a matrix sample (step 4 below).
+- hcl — extracts attribute junk as defs (weak query), not promotable
+  as-is; needs a block-aware query rewrite.
+- properties — extracts keys; config format, same class as below.
+- ql — unreachable: no file extension maps to the grammar in
+  grep-ast, so auto-detect never fires. Needs upstream ext mapping.
+- udev — rule files have no definitions by nature; correctly
+  unprovable.
 
 ## Potential (51, grammar but no query)
 

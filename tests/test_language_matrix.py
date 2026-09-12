@@ -141,6 +141,50 @@ WIDER_LANGUAGE_PACK = [
         "-export([add/2]).\n"
         "add(A, B) -> A + B.\n"
     )),
+    ("arduino", ".ino", (
+        "void setup() {}\n"
+        "void loop() {}\n"
+    )),
+    ("chatito", ".chatito", (
+        "%[greet]\n"
+        "    ~[hi]\n"
+    )),
+    ("d", ".d", (
+        "int add(int a, int b) {\n"
+        "  return a + b;\n"
+        "}\n"
+    )),
+    ("elisp", ".el", (
+        "(defun add (a b)\n"
+        "  (+ a b))\n"
+    )),
+    ("elm", ".elm", (
+        "add a b = a + b\n"
+    )),
+    ("gleam", ".gleam", (
+        "fn add(a: Int, b: Int) -> Int { a + b }\n"
+    )),
+    ("ocaml_interface", ".mli", (
+        "val add : int -> int -> int\n"
+    )),
+    ("pony", ".pony", (
+        "actor Main\n"
+        "  new create(env: Env) => None\n"
+    )),
+    ("r", ".r", (
+        "add <- function(a, b) a + b\n"
+    )),
+    ("racket", ".rkt", (
+        "#lang racket\n"
+        "(define (add a b) (+ a b))\n"
+    )),
+    ("solidity", ".sol", (
+        "contract C {\n"
+        "  function add(uint a, uint b) public returns (uint) {\n"
+        "    return a + b;\n"
+        "  }\n"
+        "}\n"
+    )),
 ]
 
 
