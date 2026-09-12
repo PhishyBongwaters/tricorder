@@ -311,6 +311,95 @@ WIDER_LANGUAGE_PACK = [
         "  int A = 1;\n"
         "}\n"
     )),
+    ("actionscript", ".as", (
+        "package calc {\n"
+        "  public class Calc {\n"
+        "    public function add(a:int, b:int):int {\n"
+        "      return a + b;\n"
+        "    }\n"
+        "  }\n"
+        "}\n"
+    )),
+    ("ada", ".adb", (
+        "package body Calc is\n"
+        "  function Add(A, B : Integer) return Integer is\n"
+        "  begin\n"
+        "    return A + B;\n"
+        "  end Add;\n"
+        "end Calc;\n"
+    )),
+    ("fish", ".fish", (
+        "function greet\n"
+        "  echo hi\n"
+        "end\n"
+    )),
+    ("hare", ".ha", (
+        "fn add(a: int, b: int) int = {\n"
+        "  return a + b;\n"
+        "};\n"
+    )),
+    ("haxe", ".hx", (
+        "class Calc {\n"
+        "  public function add(a:Int, b:Int):Int {\n"
+        "    return a + b;\n"
+        "  }\n"
+        "}\n"
+    )),
+    ("janet", ".janet", (
+        "(defn add [a b]\n"
+        "  (+ a b))\n"
+    )),
+    ("nix", ".nix", (
+        "mkShell {\n"
+        "  buildInputs = [ pkgs.hello ];\n"
+        "}\n"
+    )),
+    ("odin", ".odin", (
+        "package calc\n"
+        "add :: proc(a, b: int) -> int {\n"
+        "  return a + b\n"
+        "}\n"
+    )),
+    ("qmljs", ".qml", (
+        "Item {\n"
+        "  function add(a, b) {\n"
+        "    return a + b;\n"
+        "  }\n"
+        "}\n"
+    )),
+    ("scheme", ".scm", (
+        "(define (add a b)\n"
+        "  (+ a b))\n"
+    )),
+    ("starlark", ".bzl", (
+        "def add(a, b):\n"
+        "  return a + b\n"
+    )),
+    ("tcl", ".tcl", (
+        "proc add {a b} {\n"
+        "  return $a\n"
+        "}\n"
+    )),
+    ("thrift", ".thrift", (
+        "service Calc {\n"
+        "  i32 add(1: i32 a, 2: i32 b);\n"
+        "}\n"
+    )),
+    ("vhdl", ".vhd", (
+        "entity adder is\n"
+        "  port (a : in bit);\n"
+        "end entity;\n"
+    )),
+    ("vim", ".vim", (
+        "function! Add(a, b)\n"
+        "  return a:a + a:b\n"
+        "endfunction\n"
+    )),
+    ("wgsl", ".wgsl", (
+        "fn add(a: u32, b: u32) -> u32 {\n"
+        "  return a + b;\n"
+        "}\n"
+    )),
 ]
 
 

@@ -4,7 +4,7 @@ Authority: `tests/test_language_matrix.py`. A language is **validated**
 only if the matrix enforces it. Query files without matrix samples are
 present, not proven.
 
-## Validated (56, matrix-enforced)
+## Validated (72, matrix-enforced)
 
 Full signature: python, javascript, typescript, c, cpp, java, go,
 rust, swift, csharp, ruby. Definition-only: kotlin, php, scala, dart,
@@ -12,7 +12,9 @@ elixir, ocaml, lua, commonlisp, erlang, arduino, chatito, d, elisp,
 elm, gleam, ocaml_interface, pony, r, racket, solidity, bash,
 powershell, perl, haskell, julia, zig, verilog, groovy, hack, pascal,
 matlab, fortran, clojure, gdscript, cairo, sql, proto, make, cmake,
-glsl, func, tsx, uxntal, llvm, tablegen.
+glsl, func, tsx, uxntal, llvm, tablegen, actionscript, ada, fish,
+hare, haxe, janet, nix, odin, qmljs, scheme, starlark, tcl, thrift,
+vhdl, vim, wgsl.
 
 ## Query present, not in matrix (4)
 

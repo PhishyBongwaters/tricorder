@@ -51,9 +51,9 @@ by design.
 
 ## Backlog — next languages (probed Sep 2026)
 
-Tier A — query only (ext + grammar both live): actionscript, ada,
-fish, hare, haxe, janet, nix, odin, qmljs, scheme, starlark, tcl,
-thrift, vhdl, vim, wgsl. Same 5-step path as batches 1–6.
+Tier A — DONE (16/16, matrix green): actionscript, ada, fish, hare,
+haxe, janet, nix, odin, qmljs, scheme, starlark, tcl, thrift, vhdl,
+vim, wgsl.
 
 Tier B — needs ext mapping first (grammar live, no extension maps):
 nim (.nim), fsharp (.fs — collides with forth, needs care), vb
