@@ -440,7 +440,8 @@ def _tricorder_db_for(root: str) -> Optional[str]:
     """
     import sqlite3 as _sq
     name = Path(root).name + ".db"
-    candidates = []
+    # In-repo canonical (--init) first, cache-root homes as fallback.
+    candidates = [Path(root) / ".tricorder" / "db" / name]
     env = os.environ.get("TRICORDER_CACHE_HOME")
     if env:
         candidates.append(Path(env) / "db" / name)

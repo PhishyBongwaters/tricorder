@@ -111,6 +111,21 @@ settings.stateless_http = True
 mcp = FastMCP("tricorder")
 
 @lru_cache(maxsize=32)
+def _canonical_db_for(project_root: str) -> Optional[str]:
+    """First existing DB: <root>/.tricorder/db/<name>.db (--init canonical),
+    else <cache>/db/<name>.db (pre_scan default). None if neither mapped."""
+    name = f"{Path(project_root).name}.db"
+    for cand in (Path(project_root) / ".tricorder" / "db" / name,
+                 PRE_SCAN_DB_DIR / name):
+        try:
+            if cand.exists():
+                return str(cand)
+        except Exception:
+            continue
+    return None
+
+
+@lru_cache(maxsize=32)
 def _get_tricorder(project_root: str) -> "Tricorder":
     """Reuse one Tricorder per root across tool calls (TC-011).
 
@@ -122,13 +137,8 @@ def _get_tricorder(project_root: str) -> "Tricorder":
     untagged/bloat files (per user: bloat -> exclude always).
     ponytail: single key (root), bounded LRU.
     """
-    # Check for pre-scan DB
-    root_name = Path(project_root).name
-    db_path = None
-    if PRE_SCAN_DB_DIR.exists():
-        candidate = PRE_SCAN_DB_DIR / f"{root_name}.db"
-        if candidate.exists():
-            db_path = str(candidate)
+    # Check for pre-scan DB (in-repo canonical first, cache fallback)
+    db_path = _canonical_db_for(project_root)
 
     return Tricorder(
         root=project_root,
@@ -372,10 +382,9 @@ async def tricorder_scan(
             log.info("No other_files provided, scanning root directory for context...")
             effective_other_files = find_src_files(project_root, exclude_globs=exclude_globs)
             # Sliding window: already-mapped files don't count against the cap.
-            _cand = PRE_SCAN_DB_DIR / f"{Path(project_root).name}.db"
+            _cand = _canonical_db_for(project_root)
             effective_other_files = drop_mapped_files(
-                effective_other_files, project_root,
-                str(_cand) if _cand.exists() else None)
+                effective_other_files, project_root, _cand)
             if len(effective_other_files) > max_files:
                 log.warning(f"Auto-scanned {len(effective_other_files)} files, capping to {max_files}")
                 effective_other_files = effective_other_files[:max_files]
