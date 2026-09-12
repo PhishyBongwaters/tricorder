@@ -49,5 +49,30 @@ properties/udev (config formats), ql/wast/wat (no ext mapping),
 gn/svelte/vue (nothing taggable). Config/data formats stay `no-query`
 by design.
 
+## Backlog — next languages (probed Sep 2026)
+
+Tier A — query only (ext + grammar both live): actionscript, ada,
+fish, hare, haxe, janet, nix, odin, qmljs, scheme, starlark, tcl,
+thrift, vhdl, vim, wgsl. Same 5-step path as batches 1–6.
+
+Tier B — needs ext mapping first (grammar live, no extension maps):
+nim (.nim), fsharp (.fs — collides with forth, needs care), vb
+(.vb), mojo (.mojo), crystal (.cr), awk (.awk), cython (.pyx),
+smalltalk (.st), sml (.sml), vala (.vala), v (.v — collides with
+verilog, needs care), graphql (.graphql), lean (.lean), ql (.ql),
+wast (.wast), wat (.wat). Fix lives in OUR `detect_lang`
+(`utils.py` wraps grep-ast): a local ext→lang table checked before
+`filename_to_lang`. Then Tier A path.
+
+Already covered by alias (no work): zsh → bash query, systemverilog
+→ verilog query, wgsl_bevy → wgsl (once written), terraform → hcl
+(weak, see hcl note).
+
+Upstream-only (no grammar in pack): futhark, xq, embeddedtemplate.
+
+Known mis-mapping (do not touch without a plan): `.m` → matlab,
+so Objective-C files parse as Matlab. Disambiguation needs content
+sniffing; both languages claim the extension.
+
 Batches ordered by likely value (scripting + systems languages first,
 niche DSLs last). Update this table as batches land.
