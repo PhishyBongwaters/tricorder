@@ -6,13 +6,20 @@ Runs Variant A (Tricorder MCP enabled, escalating rung-by-rung) vs
 Variant B (baseline tools only — no tricorder MCP) on the SAME relationship
 tasks, and captures real session telemetry via track_session.py.
 
+Normal legs are TELEMETRY ONLY — no judge subprocess. The overseeing agent
+grades the A/B comparison itself from the saved reports + state.db.
+
 Usage:
   python bench_agent_eval.py                 # all repos/tasks
   python bench_agent_eval.py projectm        # one repo
   python bench_agent_eval.py --variant only  # A or B (debug)
+  python bench_agent_eval.py projectm --judge-only report_<sid>-A.md [...]  # re-grade explicit reports
 
 Honest A/B rules (per issue #44 plan v4):
 - Same task, same model, same prompt to both variants.
+- A leg that fails to PASS within --max-turns is a valid result (budget
+  loss counts). Only infra failures — no session row, or zero API calls
+  from provider errors — are discarded, never graded.
 - Variant A: tricorder MCP enabled; agent must escalate T0 -> detect ->
   symbols -> detail -> full-file (no pre-injected T1 map).
 - Variant B: baseline tools only (file_search, read_file, grep, terminal).
@@ -143,8 +150,19 @@ TASKS = [
             "When you declare a belongs_to association, trace the reflection "
             "chain from the DSL down to foreign_key validation."
         ),
-        "ground_truth": ["belongs_to"],
-        "rubric": "Must name BelongsToAssociation / BelongsToReflection and foreign_key inference.",
+        "ground_truth": [
+            "activerecord/lib/active_record/associations/builder/belongs_to.rb",
+            "activerecord/lib/active_record/associations/belongs_to_association.rb",
+            "activerecord/lib/active_record/reflection.rb",
+        ],
+        "rubric": (
+            "Must name the Builder::BelongsTo definition entry, "
+            "BelongsToAssociation vs BelongsToPolymorphicAssociation "
+            "selection in BelongsToReflection#association_class, and "
+            "AssociationReflection#foreign_key with its "
+            "infer_from_inverse_of path. Naming only the DSL keyword "
+            "without the three files fails."
+        ),
     },
     {
         "repo": "vue",
@@ -167,6 +185,30 @@ TASKS = [
         ),
         "ground_truth": ["src/Alias.ts"],
         "rubric": "Must name loadAliases, addAlias, and the Terminal UI integration.",
+    },
+    # Tiny end of the crossover scale (3 files): duplicate symbol names
+    # across files. Grep finds both definitions; only call-path
+    # resolution answers which one runs.
+    {
+        "repo": "tiny-auth",
+        "path": str(ROOT / "tricorder" / "tests" / "fixtures" / "graph_query_test"),
+        "scan_path": ".",
+        "question": (
+            "login() in auth.py calls authenticate() — but two files define "
+            "authenticate. Which definition actually executes at runtime, "
+            "what does its validate_credentials return for non-admin users, "
+            "and which file's pair is dead code from login's path?"
+        ),
+        "ground_truth": [
+            "auth.py",
+            "main.py",
+        ],
+        "rubric": (
+            "Must resolve login -> auth.py's authenticate -> auth.py's "
+            "validate_credentials (username == \"admin\"), and name main.py's "
+            "authenticate/validate_credentials as unreachable from login. "
+            "Listing both definitions without the call-path resolution fails."
+        ),
     },
     # linux kernel: relationship task, but kept narrow (sched). Tricorder's
     # --pre-index pick_next_task scopes to kernel/sched/* so the 70k-file tree
@@ -204,12 +246,14 @@ def get_session_id_from_log(marker: str):
 
 
 def run_variant(repo_task, variant: str, model: str, provider: str,
-                max_turns: int = 10):
+                max_turns: int = 10, watch_poll: int = 60,
+                stall_timeout: int = 1200):
     """Run one live hermes chat with the given variant, return session id.
 
     variant='A' -> tricorder MCP enabled (bench-tricorder profile).
     variant='B' -> baseline tools only (bench-baseline profile).
     model/provider -> pinned on both legs so A/B is a clean comparison.
+    Watchdog (spike 001): Popen + read-only heartbeat, no model calls.
     """
     workdir = repo_task["path"]
     # MCP project_root: override with scan subdir when provided (kotlin's 50k-file
@@ -223,7 +267,7 @@ def run_variant(repo_task, variant: str, model: str, provider: str,
     # honesty gate (count_tricorder_calls) actually measures a tricorder leg.
     if variant == "A":
         prompt = (
-            f"CRITICAL DIRECTIVE: You must follow this workflow when investigating code: the tricorder cache already contains a full repo map from pre-scans. Do NOT call tricorder_scan. Use tricorder_detect to locate relevant symbols by name (limit 3-4 detect calls, outputs are tiny), tricorder_query to TRACE REFERENCES/edges between identified symbols (use up to 2 query calls — PREFER query over dumping whole symbol tables; a targeted edge trace is far cheaper), and tricorder_detail for a single symbol's definition (limit 2 detail calls). RESTRICTION: do NOT call tricorder_symbols more than once, and only if a symbols listing is genuinely required — the two-symbols-dump pattern (28K chars) is the single biggest context bloat and must be avoided; a query edge-trace or one read_file covers most cases. Only use read_file on identified specific files/lines. Do not infer implementation details from symbols, summaries, or metadata alone. Any statement about code behavior must be supported by inspected source. BUDGET: You have 60 tool calls total. If a detect call returns 0 matches, immediately move on to a different search term. Do not re-try the same or similar search terms. If search_files returns a 'regex parse error' on some term, that term was mangled (backslash escapes are not supported in this tool) — find it a different way (plain substring, tricorder_detect, or read_file) on the FIRST failure, and NEVER re-issue the same failing pattern. If tricorder_detail returns 'not found' or a symbol lookup returns no result, do NOT retry the same or a similar name — the fuzzy/symbols path already gave you what it has; rely on the symbol table you already have or one read_file on the file you need. Never re-issue a dead-end lookup. If a detect/query returns 0 matches for a symbol you believe must exist (e.g. a type field you were asked to name), do not stow a caveat — do one read_file on the header/file you already located that must define it, then answer from inspected source. TERMINATE: once you have named (a) the dispatch entry, (b) the per-frame pull callback, and (c) where the feature intersects it — all confirmed by inspected source lines — write the final answer immediately and STOP. Do not do additional confirming searches or reads on facts you already verified from source; extra verification past a grounded answer is wasted budget and scores the same. A grounding read_file or two is correct; re-verifying a confirmed callsite is not."
+            f"CRITICAL DIRECTIVE: You must follow this workflow when investigating code: the tricorder cache already contains a full repo map from pre-scans. HARD GATE: your final answer scores ZERO and FAILS unless you make at least 2 mcp__tricorder__ tool calls (detect/query/detail) plus at least 1 read_file on source you located — answering from the injected map alone with zero tool calls is an automatic FAIL, no exceptions. FORMAT: route each tool call through its own `tool_call` — one entry per call; batched multi-tool calls are rejected. Do NOT call tricorder_scan. Use tricorder_detect to locate relevant symbols by name (limit 3-4 detect calls, outputs are tiny), tricorder_query to TRACE REFERENCES/edges between identified symbols (use up to 2 query calls — PREFER query over dumping whole symbol tables; a targeted edge trace is far cheaper), and tricorder_detail for a single symbol's definition (limit 2 detail calls). RESTRICTION: do NOT call tricorder_symbols more than once, and only if a symbols listing is genuinely required — the two-symbols-dump pattern (28K chars) is the single biggest context bloat and must be avoided; a query edge-trace or one read_file covers most cases. Only use read_file on identified specific files/lines. Do not infer implementation details from symbols, summaries, or metadata alone. Any statement about code behavior must be supported by inspected source. BUDGET: You have 60 tool calls total. If a detect call returns 0 matches, immediately move on to a different search term. Do not re-try the same or similar search terms. If search_files returns a 'regex parse error' on some term, that term was mangled (backslash escapes are not supported in this tool) — find it a different way (plain substring, tricorder_detect, or read_file) on the FIRST failure, and NEVER re-issue the same failing pattern. If tricorder_detail returns 'not found' or a symbol lookup returns no result, do NOT retry the same or a similar name — the fuzzy/symbols path already gave you what it has; rely on the symbol table you already have or one read_file on the file you need. Never re-issue a dead-end lookup. If a detect/query returns 0 matches for a symbol you believe must exist (e.g. a type field you were asked to name), do not stow a caveat — do one read_file on the header/file you already located that must define it, then answer from inspected source. TERMINATE: once you have named (a) the dispatch entry, (b) the per-frame pull callback, and (c) where the feature intersects it — all confirmed by inspected source lines — write the final answer immediately and STOP. Do not do additional confirming searches or reads on facts you already verified from source; extra verification past a grounded answer is wasted budget and scores the same. A grounding read_file or two is correct; re-verifying a confirmed callsite is not."
             f"Pass project_root=\"{mcp_root}\" to any mcp__tricorder__* tool calls. "
             f"Question: " + prompt
         )
@@ -251,9 +295,84 @@ def run_variant(repo_task, variant: str, model: str, provider: str,
         cmd += ["--profile", "bench-tricorder"]
     elif variant == "B":
         cmd += ["--profile", "bench-baseline"]
-    print(f"[{variant}] running: {' '.join(cmd)}")
+    print(f"[{variant}] running: {' '.join(cmd)}", flush=True)
+    # Watchdog (spike 001 VALIDATED): Popen + read-only heartbeat on the
+    # variant's own profile state.db. Assistant/tool row growth = alive;
+    # log movement alone (retry warnings) is NOT progress and must not
+    # reset the stall timer. stdout/stderr go to temp files (never pipes —
+    # a full pipe would block the child). ponytail: one COUNT query.
+    PROFILE_LOG = {"A": BENCH_TRICORDER_LOG, "B": BENCH_BASELINE_LOG}
+    PROFILE_DB = {"A": BENCH_TRICORDER_DB, "B": BENCH_BASELINE_DB}
+    log_path = PROFILE_LOG.get(variant, LOG_PATH)
+    db_path = PROFILE_DB.get(variant, STATE_DB)
     env = os.environ.copy()
-    r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    out_f = tempfile.NamedTemporaryFile("w", suffix=".log", delete=False,
+                                        encoding="utf-8")
+    err_f = tempfile.NamedTemporaryFile("w", suffix=".log", delete=False,
+                                        encoding="utf-8")
+    proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f, env=env)
+    last_log = log_path.stat().st_size if log_path.exists() else 0
+    last_db = db_path.stat().st_mtime if db_path.exists() else 0
+    last_beat = start = time.time()
+
+    def _progress_rows():
+        """Assistant/tool rows in the variant DB — the only progress signal."""
+        try:
+            con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            n = con.execute("SELECT COUNT(*) FROM messages "
+                            "WHERE role IN ('assistant','tool')").fetchone()[0]
+            con.close()
+            return n
+        except Exception:
+            return None
+
+    last_prog = _progress_rows()
+    next_ping = start + watch_poll
+    rc = None
+    stalled = False
+    while rc is None:
+        time.sleep(5)
+        rc = proc.poll()
+        if log_path.exists():
+            last_log = log_path.stat().st_size
+        if db_path.exists():
+            last_db = db_path.stat().st_mtime
+        prog = _progress_rows()
+        if prog is not None and prog != last_prog:
+            last_prog, last_beat = prog, time.time()
+        if rc is not None:
+            break
+        now = time.time()
+        if now >= next_ping:
+            msg = (f"[{variant}] alive t+{now - start:.0f}s "
+                   f"idle={now - last_beat:.0f}s pid={proc.pid}")
+            print(msg, flush=True)
+            # Background output is invisible until exit — mirror heartbeats
+            # to a status file the user can tail live. ponytail: one append.
+            with open(OUTPUT_DIR / f"watch_{variant}.log", "a",
+                       encoding="utf-8") as wf:
+                wf.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
+            next_ping = now + watch_poll
+        if stall_timeout > 0 and now - last_beat > stall_timeout:
+            proc.kill()
+            rc = proc.wait()
+            stalled = True
+            print(f"[{variant}] STALLED ({now - last_beat:.0f}s no log/db "
+                  f"movement) — killed pid={proc.pid}", flush=True)
+    out_f.close()
+    err_f.close()
+    stdout = Path(out_f.name).read_text(encoding="utf-8", errors="ignore")
+    stderr = Path(err_f.name).read_text(encoding="utf-8", errors="ignore")
+    try:
+        os.unlink(out_f.name)
+    except OSError:
+        pass
+    try:
+        os.unlink(err_f.name)
+    except OSError:
+        pass
+    if stalled:
+        rc = rc if rc is not None else -1
     # hermes chat (non-interactive) doesn't print the session id to stdout, so
     # recover the newest CLI session from the right profile's agent.log.
     # CRITICAL: variant subprocesses use their profile's own log, NOT the
@@ -261,7 +380,6 @@ def run_variant(repo_task, variant: str, model: str, provider: str,
     # chat session (sid-collision bug that made A reports point at the wrong
     # session). A -> bench-tricorder, B -> bench-baseline. ponytail: dict
     # over if/elif.
-    PROFILE_LOG = {"A": BENCH_TRICORDER_LOG, "B": BENCH_BASELINE_LOG}
     log_path = PROFILE_LOG.get(variant, LOG_PATH)
     sid = recover_latest_session_id(log_path, marker=repr(prompt)[:80])
     report_a = track_report(sid, variant) if sid else None
@@ -269,9 +387,9 @@ def run_variant(repo_task, variant: str, model: str, provider: str,
         "variant": variant,
         "session_id": sid,
         "session_file": usage_file,
-        "stdout": r.stdout,
-        "stderr": r.stderr,
-        "rc": r.returncode,
+        "stdout": stdout,
+        "stderr": stderr,
+        "rc": rc,
         "report": report_a,
     }
 
@@ -357,7 +475,7 @@ def track_report(sid, variant="A"):
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode == 0 and out.exists():
         ans = fetch_final_answer(sid, variant)
-        tail = "\n\n## Agent final answer (would be graded by --judge)\n\n"
+        tail = "\n\n## Agent final answer (graded by the overseeing agent)\n\n"
         tail += (f"{ans}\n" if ans else "*no final assistant message recorded*\n")
         with out.open("a", encoding="utf-8") as fh:
             fh.write(tail)
@@ -557,7 +675,7 @@ def grade_answer(report_path, ground_truth, rubric, model, provider,
     # (e.g. the PCM Add bodies) and the judge then false-FAILs correct answers
     # as "details not in source." A strong judge (the point of #1) can take the
     # full source; the deterministic gate needs it verbatim anyway. ponytail:
-    # select a judge model with adequate context via --judge-model/--provider.
+    # select a grading model with adequate context via --judge-model/--judge-provider.
     full_source = _collect_retrieved_source(str(db_path), sid, scope=None)
     retrieved_source = full_source
 
@@ -674,19 +792,17 @@ def main():
                    help="Model pinned on BOTH variants (default: Qwen).")
     p.add_argument("--provider", default="llama-cpp",
                    help="Provider pinned on BOTH variants (default: llama-cpp).")
-    p.add_argument("--judge", action="store_true",
-                   help="Run the LLM judge on each leg's final answer. "
-                        "Off by default — telemetry-only runs are fast and "
-                        "free. ponytail: opt-in, no surprises.")
     p.add_argument("--judge-model", default=None,
-                   help="Model for the judge (default: same as --model).")
+                   help="Model for --judge-only grading (default: same as --model).")
     p.add_argument("--judge-provider", default=None,
-                   help="Provider for the judge (default: same as --provider).")
-    p.add_argument("--judge-only", action="store_true",
-                   help="Re-grade EXISTING on-disk reports without re-running "
-                        "the agent. Needs --variant and the report file(s); "
-                        "reads session id from the report filename. ponytail: "
-                        "re-grade, don't re-run (kills LLM variance).")
+                   help="Provider for --judge-only grading (default: same as --provider).")
+    p.add_argument("--judge-only", nargs="+", metavar="REPORT", default=None,
+                   help="Re-grade EXPLICIT on-disk report file(s) without re-running "
+                        "the agent. Takes report paths (no glob, no scan). "
+                        "Requires the repo arg so ground_truth/rubric are exact. "
+                        "The overseeing agent grades A/B comparison itself; "
+                        "normal legs never call a judge. ponytail: "
+                        "explicit paths, don't re-run.")
     p.add_argument("--max-turns", type=int, default=10,
                    help="Hard cap on API turns per leg. Configurable — NOT "
                         "derived from any repo's prior runs and not "
@@ -694,6 +810,13 @@ def main():
                         "it only if a legitimately large task needs more. "
                         "This is the real anti-spam guard: --run-budget is "
                         "only a soft prompt nudge the model may ignore.")
+    p.add_argument("--watch-poll", type=int, default=60,
+                   help="Watchdog heartbeat interval (s). Read-only log/db "
+                        "check, zero model calls. Default 60.")
+    p.add_argument("--stall-timeout", type=int, default=1200,
+                   help="Kill the leg after this many seconds with zero log/db "
+                        "movement (free-tier slowness is normal — 20min "
+                        "default). 0 disables. ponytail: calibration knob.")
     args = p.parse_args()
 
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -702,96 +825,75 @@ def main():
     if not tasks:
         print("no tasks matched"); return 1
 
-    for task in tasks:
-        print(f"\n=== {task['repo']} ===")
+    # --judge-only: grade EXPLICIT report paths only. No glob, no title
+    # matching. Filenames encode report_<sid>-<variant>; the repo arg
+    # selects the exact ground_truth/rubric. No agent subprocess runs.
+    # ponytail: explicit paths, don't re-run.
+    if args.judge_only:
+        if not args.repo:
+            print("--judge-only requires the repo arg (exact rubric): "
+                  "bench_agent_eval.py <repo> --judge-only <report> [...]")
+            return 1
         jm = args.judge_model or args.model
         jp = args.judge_provider or args.provider
-
-        # --judge-only: re-grade existing on-disk reports for this repo+variant.
-        # Report filenames encode {sid}-{variant}; the task's ground_truth/
-        # rubric come from the repo-matched task. No agent subprocess runs, so
-        # no LLM variance and no polluting a fresh session. ponytail: one glob.
-        if args.judge_only:
-            out = []
-            for v in ("A", "B"):
-                if args.variant not in (v, "both"):
+        for task in tasks:
+            print(f"\n=== {task['repo']} (judge-only) ===")
+            n = 0
+            for raw in args.judge_only:
+                rp = Path(raw)
+                if not rp.exists():
+                    rp = OUTPUT_DIR / Path(raw).name
+                if not rp.exists():
+                    print(f"  SKIP missing file: {raw}")
                     continue
-                for rp in sorted(
-                    OUTPUT_DIR.glob(f"report_*-{v}.md"),
-                    key=lambda p: p.stat().st_mtime,
-                    reverse=True,
-                ):
-                    # Report filenames don't embed the repo, so only grade
-                    # reports whose Title references THIS task's question
-                    # (telemetry bodies never contain ground_truth paths).
-                    # Match >=2 overlapping alpha words — robust to how titles
-                    # are auto-summarized. "what handler processes admin" vs
-                    # title "identify admin invites handler claim validation"
-                    # shares {handler, admin} >= 2. A projectm report title
-                    # won't. ponytail: token overlap, no schema.
-                    body = rp.read_text(encoding="utf-8", errors="ignore")
-                    m = re.search(r"\*\*Title:\*\*\s*(.+)", body)
-                    title = m.group(1).lower() if m else ""
-                    q_words = {w for w in task["question"].lower().split()
-                               if w.isalpha()}
-                    title_words = set(title.split())
-                    shared = q_words & title_words
-                    if len(shared) < 2:
-                        continue
-                    sid = rp.stem.replace(f"-{v}", "").replace("report_", "")
-                    passed, rationale = grade_answer(
-                        str(rp), task.get("ground_truth", []),
-                        task.get("rubric", ""), jm, jp,
-                        sid=sid, variant=v,
-                    )
-                    out.append(rp.name)
-                    print(f"  [{v}] {rp.name} GRADE="
-                          f"{'PASS' if passed else 'FAIL'} -- {rationale}")
-            if not out:
-                print(f"  no on-disk reports for repo={task['repo']} "
-                      f"variant={args.variant}")
-            print(f"  VERDICT: JUDGE-ONLY (re-graded {len(out)} report(s))")
-            continue
+                stem = rp.stem  # report_<sid>-<variant>
+                v = ("A" if stem.endswith("-A")
+                     else ("B" if stem.endswith("-B") else None))
+                if v is None or args.variant not in (v, "both"):
+                    print(f"  SKIP {rp.name}: no -A/-B suffix or "
+                          f"filtered by --variant={args.variant}")
+                    continue
+                sid = (stem.replace("-A", "").replace("-B", "")
+                       .replace("report_", ""))
+                passed, rationale = grade_answer(
+                    str(rp), task.get("ground_truth", []),
+                    task.get("rubric", ""), jm, jp,
+                    sid=sid, variant=v,
+                )
+                n += 1
+                print(f"  [{v}] {rp.name} GRADE="
+                      f"{'PASS' if passed else 'FAIL'} -- {rationale}")
+            print(f"  VERDICT: JUDGE-ONLY (re-graded {n} report(s))")
+        print("\nDone.")
+        return 0
+
+    # Normal legs: TELEMETRY ONLY. No judge subprocess here — the overseeing
+    # agent grades the A/B comparison itself from the saved reports +
+    # state.db. ponytail: run legs, don't grade.
+    for task in tasks:
+        print(f"\n=== {task['repo']} ===")
 
         results = []
         if args.variant in ("A", "both"):
             results.append(run_variant(task, "A", args.model, args.provider,
-                                       args.max_turns))
+                                       args.max_turns, args.watch_poll,
+                                       args.stall_timeout))
         if args.variant in ("B", "both"):
             results.append(run_variant(task, "B", args.model, args.provider,
-                                       args.max_turns))
+                                       args.max_turns, args.watch_poll,
+                                       args.stall_timeout))
         # Summarize which session ids + reports landed, with a tricorder-usage
         # honesty gate so a no-tricorder A leg is flagged, not silently scored.
-        grades = {}
+        # TELEMETRY ONLY — no grading here. The overseeing agent grades the
+        # A/B comparison itself from the saved reports + state.db.
         tc_by_variant = {}
-        # Judge model/provider default to the agent's — same reproducibility
-        # by default, opt-in to a stronger model for grading.
-        jm = args.judge_model or args.model
-        jp = args.judge_provider or args.provider
         for r in results:
             tc = count_tricorder_calls(r.get("report"))
             tc_by_variant[r["variant"]] = tc
-            if args.judge:
-                # Root-cause guard: a missing sid means the agent subprocess
-                # never wrote a session row. Don't pretend it's a FAIL —
-                # surface it as a WARN and skip grading.
-                if not r.get("session_id"):
-                    print(f"  [{r['variant']}] WARN: no session_id recovered "
-                          f"(rc={r['rc']}); skipping grade. "
-                          f"stderr: {(r.get('stderr') or '')[:200]}")
-                else:
-                    # Source of truth is state.db, not the report.
-                    # Pass sid+variant straight in (no filename re-parsing).
-                    passed, rationale = grade_answer(
-                        r.get("report"),
-                        task.get("ground_truth", []),
-                        task.get("rubric", ""),
-                        jm, jp,
-                        sid=r["session_id"], variant=r["variant"],
-                    )
-                    grades[r["variant"]] = (passed, rationale)
-                    print(f"  [{r['variant']}] GRADE="
-                          f"{'PASS' if passed else 'FAIL'} -- {rationale}")
+            if not r.get("session_id"):
+                print(f"  [{r['variant']}] WARN: no session_id recovered "
+                      f"(rc={r['rc']}); "
+                      f"stderr: {(r.get('stderr') or '')[:200]}")
             if r["variant"] == "A":
                 flag = (f"tricorder_calls={tc}"
                         if tc is not None else "report=MISSING")
@@ -803,8 +905,6 @@ def main():
                         if tc is not None else "report=MISSING")
             print(f"  [{r['variant']}] sid={r.get('session_id')} "
                   f"rc={r['rc']} {flag}")
-        # VERDICT: only a real A/B if A used tricorder AND both legs graded.
-        # With --judge off, grades is empty → telemetry-only verdict.
         a_tc = tc_by_variant.get("A")
         
         # Read billed input tokens from saved reports for direct comparison
@@ -826,17 +926,8 @@ def main():
             pct = (diff / tok_b) * 100 if tok_b else 0
             print(f"  [TOKENS] A={tok_a:,} | B={tok_b:,} | Δ={diff:+,} ({pct:+.1f}%)")
 
-        if not args.judge:
-            print(f"  VERDICT: TELEMETRY ONLY (--judge off; "
-                  f"a_tc={a_tc})")
-        elif a_tc and a_tc > 0 and "A" in grades and "B" in grades:
-            a_pass, _ = grades["A"]
-            b_pass, _ = grades["B"]
-            print(f"  VERDICT: VALID A/B | A={'PASS' if a_pass else 'FAIL'} "
-                  f"B={'PASS' if b_pass else 'FAIL'}")
-        else:
-            print(f"  VERDICT: NOT a valid A/B "
-                  f"(a_tc={a_tc}, grades={list(grades.keys())})")
+        print(f"  VERDICT: TELEMETRY ONLY (a_tc={a_tc}; "
+              f"overseeing agent grades A/B from reports)")
 
     print("\nDone. Reports saved under", OUTPUT_DIR)
 

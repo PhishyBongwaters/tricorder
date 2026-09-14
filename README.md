@@ -350,12 +350,11 @@ Note: `rg` must be on `PATH` for `--pre-index` fast path (linux slot). Task defi
 
 ## A/B agent harness (`bench_agent_eval.py`)
 
-End-to-end agent benchmark: Variant A (Tricorder MCP) vs Variant B (baseline tools) on the same relationship task, with real session telemetry from each variant's profile `state.db`. Grades the agent's **final answer** against the rubric in `bench_agent_eval.py`.
+End-to-end agent benchmark: Variant A (Tricorder MCP) vs Variant B (baseline tools) on the same relationship task, with real session telemetry from each variant's profile `state.db`. Normal legs are telemetry-only — the overseeing agent grades the A/B comparison itself from the saved reports + `state.db`.
 
 ```bash
 python bench/bench_agent_eval.py projectm --variant both                # A + B, telemetry-only
-python bench/bench_agent_eval.py projectm --judge --variant A            # also judge the answer
-python bench/bench_agent_eval.py projectm --judge-only --variant A       # re-grade on-disk reports, no agent re-run
+python bench/bench_agent_eval.py projectm --judge-only report_<sid>-A.md report_<sid>-B.md  # re-grade explicit reports, no agent re-run
 python bench/bench_agent_eval.py vaultwarden --variant both --max-turns 20   # set the API-turn cap per leg
 ```
 
@@ -363,7 +362,7 @@ python bench/bench_agent_eval.py vaultwarden --variant both --max-turns 20   # s
 
 **Judge semantics (changed):** the fast path is **fail-fast only** — it returns a cheap FAIL when the final answer names none of the expected ground-truth identifiers. It never emits a PASS on filename presence, because an agent can name `PCM.cpp` and still hallucinate its contents. Every non-trivial answer then hits a **deterministic grounding gate** (no model call): template-arg literals the answer asserts (e.g. `AddToBuffer<2, 0>`) must appear verbatim in the session's retrieved source — absent → immediate `FAIL(deterministic-grounding)`. Only if that passes does the semantic LLM judge run, given the session's **full retrieved source** (actual tool output) as the authority: any specific value the answer asserts (template args, line numbers, step ordering) must appear there or it fails as a hallucinated detail (`GROUND SPECIFICS` rule). Rationale prefixes: `PASS:` (fast), `FAIL(fast):`, `FAIL(deterministic-grounding):`, `SEMANTIC PASS/FAIL:`, `no final answer:`, `Judge Error:`.
 
-Notes: judge model/provider default to the agent's — pass `--judge-model`/`--judge-provider` for a stronger grader. The judge gets the **full** retrieved source (54-97KB on projectm); pick a judge model with adequate context — the old 20KB window silently truncated real code bodies and caused false FAILs on correct answers. Cache isolation between legs requires restarting the inference server between legs; warm-cache legs invalidate a comparison. Judge is opt-in (`--judge`); telemetry-only runs skip it.
+Notes: `--judge-only` grading model/provider default to the agent's — pass `--judge-model`/`--judge-provider` for a stronger grader. The grader gets the **full** retrieved source (54-97KB on projectm); pick a model with adequate context — the old 20KB window silently truncated real code bodies and caused false FAILs on correct answers. Cache isolation between legs requires restarting the inference server between legs; warm-cache legs invalidate a comparison. Grading lives only in `--judge-only` on explicit report paths; normal legs never call it. A leg that fails to PASS within `--max-turns` is a valid result (budget loss counts); only infra failures (no session row, zero API calls from provider errors) are discarded.
 
 ## Security Model
 
