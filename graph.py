@@ -6,7 +6,7 @@ import networkx as nx
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Tuple, Optional, Any
-from utils import SymbolRecord, Tag, discover_src_files, repo_budget, count_tokens, detect_lang, read_text
+from utils import SymbolRecord, Tag, discover_src_files, repo_budget, count_tokens, detect_lang, read_text, _base
 import json as _json
 from scm import get_scm_fname
 from collections import defaultdict
@@ -334,15 +334,6 @@ class GraphMixin:
                 # First step: find all definitions matching target_name
                 # Normalize: strip :: prefix and () suffix for fuzzy matching
                 # (e.g. 'PCM::GetFrameAudioData' matches 'PCM::GetFrameAudioData() const -> FrameAudioData')
-                def _base(name: str) -> str:
-                    if '::' in name:
-                        name = name.split('::', 1)[-1]
-                    if '(' in name:
-                        name = name.split('(', 1)[0]
-                    elif name.endswith('()'):
-                        name = name[:-2]
-                    return name
-
                 base_target = _base(target_name)
                 # 1) Exact key match
                 for def_file, def_line in defs.get(target_name, []):
@@ -560,14 +551,6 @@ class GraphMixin:
         # isn't "not found" to detail over a case/scope/paren/template mismatch.
         # TC-011: this is the root of the "not found" retry loop — detail was
         # brittle where the explore tools are fuzzy.
-        def _base(name: str) -> str:
-            if '::' in name:
-                name = name.split('::', 1)[-1]
-            if '(' in name:
-                name = name.split('(', 1)[0]
-            elif name.endswith('()'):
-                name = name[:-2]
-            return name
         symbol_l = symbol_name.lower()
         for sym in symbols:
             sym_name = _base(sym.name)

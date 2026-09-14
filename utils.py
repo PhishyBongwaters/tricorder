@@ -945,3 +945,19 @@ def parse_query_dsl(dsl: str) -> ParsedQuery:
 
 
 import re
+
+
+def _base(name: str) -> str:
+    """Strip namespace prefix and signature suffix from a symbol name.
+
+    Used for fuzzy matching between qualified query strings (e.g.
+    'PCM::GetFrameAudioData') and stored symbol keys (e.g.
+    'PCM::GetFrameAudioData() const -> FrameAudioData').
+    """
+    if '::' in name:
+        name = name.split('::', 1)[-1]
+    if '(' in name:
+        name = name.split('(', 1)[0]
+    elif name.endswith('()'):
+        name = name[:-2]
+    return name
