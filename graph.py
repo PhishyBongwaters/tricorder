@@ -332,6 +332,19 @@ class GraphMixin:
 
             if step_idx == 0:
                 # First step: find all definitions matching target_name
+                # Normalize: strip :: prefix and () suffix for fuzzy matching
+                # (e.g. 'PCM::GetFrameAudioData' matches 'PCM::GetFrameAudioData() const -> FrameAudioData')
+                def _base(name: str) -> str:
+                    if '::' in name:
+                        name = name.split('::', 1)[-1]
+                    if '(' in name:
+                        name = name.split('(', 1)[0]
+                    elif name.endswith('()'):
+                        name = name[:-2]
+                    return name
+
+                base_target = _base(target_name)
+                # 1) Exact key match
                 for def_file, def_line in defs.get(target_name, []):
                     if not file_allowed(def_file, mods):
                         continue
@@ -340,6 +353,21 @@ class GraphMixin:
                         if sym_type != mods.symbol_type:
                             continue
                     current_targets.append((target_name, def_file, def_line))
+                # 2) Base-name match: scan all defs for _base(def_key) == _base(target)
+                #    (handles qualified queries where stored key has ()/const/etc.)
+                #    Use base_target as the BFS lookup key so callers/refs/defs
+                #    find the right refs entries (refs stores base names).
+                if not current_targets:
+                    for def_key, def_list in defs.items():
+                        if _base(def_key) == base_target:
+                            for def_file, def_line in def_list:
+                                if not file_allowed(def_file, mods):
+                                    continue
+                                if mods.symbol_type:
+                                    sym_type = get_symbol_type(def_file, def_key)
+                                    if sym_type != mods.symbol_type:
+                                        continue
+                                current_targets.append((base_target, def_file, def_line))
             else:
                 # Subsequent steps: current_targets already populated from previous step
                 pass
