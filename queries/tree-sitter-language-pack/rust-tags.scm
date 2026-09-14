@@ -47,6 +47,12 @@
     function: (field_expression
         field: (field_identifier) @name.reference.call)) @reference.call
 
+; Path-qualified calls: crypto::verify_password_hash(...)
+; tree-sitter-rust parses these as scoped_identifier, not qualified_identifier
+(call_expression
+    function: (scoped_identifier
+        name: (identifier) @name.reference.call)) @reference.call
+
 (macro_invocation
     macro: (identifier) @name.reference.call) @reference.call
 
