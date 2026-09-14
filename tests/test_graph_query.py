@@ -182,7 +182,7 @@ class TestGraphQueryIntegration(unittest.TestCase):
             self.assertIsNotNone(result.get("tier_hint"))
 
     def test_not_found(self):
-        """Test unknown symbol returns empty result."""
+        """Test unknown symbol returns empty result with symbol_not_found flag."""
         tricorder = Tricorder(root=str(self.project_root), verbose=False)
         from utils import parse_query_dsl
         parsed = parse_query_dsl("callers('nonexistent_function_xyz')")
@@ -191,6 +191,17 @@ class TestGraphQueryIntegration(unittest.TestCase):
         # Should return empty nodes/edges without error
         self.assertEqual(result["nodes"], [])
         self.assertEqual(result["edges"], [])
+        # And explicitly flag that the symbol was not found (not "no callers")
+        self.assertTrue(result["symbol_not_found"])
+
+    def test_found_clears_flag(self):
+        """Test symbol_not_found is False when symbol exists."""
+        tricorder = Tricorder(root=str(self.project_root), verbose=False)
+        from utils import parse_query_dsl
+        parsed = parse_query_dsl("callers('authenticate')")
+        result = tricorder.query_graph(parsed)
+
+        self.assertFalse(result["symbol_not_found"])
 
     def test_cross_file_edges(self):
         """Test cross-file edges are marked correctly."""

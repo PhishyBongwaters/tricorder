@@ -265,8 +265,8 @@ Examples:
     parser.add_argument(
         "--max-files",
         type=int,
-        default=1000,
-        help="Cap on files during auto-discovery when no paths given (default: 1000, 0 = no cap)"
+        default=0,
+        help="Cap on files during auto-discovery when no paths given (default: 0 = no cap)"
     )
 
     parser.add_argument(

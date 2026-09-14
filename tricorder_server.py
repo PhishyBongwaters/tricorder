@@ -292,7 +292,7 @@ async def tricorder_scan(
     tier: int = 0,
     context_lines: int = 3,
     output_format: str = "text",
-    max_files: int = 1000,
+    max_files: int = 0,
     output_file: Optional[str] = None,
     dry_run: bool = False,
     exclude_globs: Optional[List[str]] = None,
@@ -315,7 +315,7 @@ async def tricorder_scan(
     :param mentioned_idents: Optional list of identifiers explicitly mentioned in the conversation, to boost their ranking.
     :param verbose: If True, enables verbose logging for the Tricorder generation process. Defaults to False.
     :param max_context_window: Optional maximum context window size for token calculation, used to adjust map token limit when no chat files are provided.
-    :param max_files: Maximum number of files to auto-scan when other_files is not provided. Prevents full-scan bloat on large repos. Defaults to 1000.
+    :param max_files: Maximum number of files to auto-scan when other_files is not provided. Defaults to 0 (unlimited). Set to a positive number to cap the scan.
     :param output_file: If provided, write the map to this file path instead of returning it in the response. The response will contain only the file path and a token estimate — use this to avoid flooding the agent's context with large maps. Recommended for repos > 50 files.
     :param output_format: Output format — "text" (default) for prioritized definitions, "mermaid" for dependency graph as Mermaid flowchart.
     :param tier: 0 for definitions only (T0, cheapest), 1 for definitions + context lines (T1, expensive). Stop at the lowest tier that answers the question.
@@ -385,7 +385,7 @@ async def tricorder_scan(
             _cand = _canonical_db_for(project_root)
             effective_other_files = drop_mapped_files(
                 effective_other_files, project_root, _cand)
-            if len(effective_other_files) > max_files:
+            if max_files > 0 and len(effective_other_files) > max_files:
                 log.warning(f"Auto-scanned {len(effective_other_files)} files, capping to {max_files}")
                 effective_other_files = effective_other_files[:max_files]
 

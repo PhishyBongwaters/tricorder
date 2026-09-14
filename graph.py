@@ -324,6 +324,7 @@ class GraphMixin:
 
         # Start with the first step's target
         current_targets = []  # List of (name, file, line)
+        symbol_not_found = False  # True when first step's target has no defs
 
         for step_idx, step in enumerate(parsed_query.steps):
             kind = step.kind
@@ -359,6 +360,8 @@ class GraphMixin:
                                     if sym_type != mods.symbol_type:
                                         continue
                                 current_targets.append((base_target, def_file, def_line))
+                    if not current_targets:
+                        symbol_not_found = True
             else:
                 # Subsequent steps: current_targets already populated from previous step
                 pass
@@ -524,7 +527,8 @@ class GraphMixin:
             "full_repo_estimate": full_repo,
             "savings_pct": savings,
             "tier_hint": tier_hint,
-            "stats": {"nodes_visited": total_nodes_found, "edges_traversed": len(edges)}
+            "stats": {"nodes_visited": total_nodes_found, "edges_traversed": len(edges)},
+            "symbol_not_found": symbol_not_found,
         }
 
 
