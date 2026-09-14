@@ -97,6 +97,20 @@ tricorder . --tier 1 --context-lines 3
 tricorder . --tier 1 --context-lines 5 --map-tokens 4096
 ```
 
+### Query Coverage — What's Captured per Language
+
+The tree-sitter queries (`queries/tree-sitter-language-pack/`, `tree-sitter-languages/` fallback) decide what becomes tags. Verified live per language:
+
+| Language | Definitions | References | Notes |
+|----------|-------------|------------|-------|
+| C/C++ | class, function, method, struct, enum, `using`-alias, const/constexpr, namespace | free, method, qualified `ns::` calls | Aliases/constexpr/namespaces added after coverage audit found them blind |
+| Rust | fn, struct, enum, trait, impl | free, method, `path::` calls | `path::` calls were invisible (grammar uses `scoped_identifier`) — fixed |
+| Python | def, class, module assignments | calls | Module assignments parse as direct `module` children (no wrapper) — fixed |
+| TypeScript | function, method, class, interface, alias, enum | free + method calls | Fallback pack had zero call rules — fixed |
+| Go / Ruby / Swift / Kotlin | per-pack rules | calls via selector/member/navigation forms | Audited present; Kotlin resolves via fallback pack |
+
+Blind by design: include-only umbrella headers (no symbols to capture) correctly yield zero tags. State lives in `<workspace>/.tricorder/`, never in the scanned repo — see the tricorder skill.
+
 ### Optimal Agent Workflow (Lowest Token Cost)
 
 1. **Direct access (0 tokens):** path known → read directly; symbol known → `tricorder_detect`/grep

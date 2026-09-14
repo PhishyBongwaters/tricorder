@@ -27,6 +27,9 @@
   declarator: (init_declarator
     declarator: (identifier) @name.definition.constant)) @definition.constant
 
+; Namespaces: namespace Audio { ... } (mapped to type; see kind_map)
+(namespace_definition name: (namespace_identifier) @name.definition.namespace) @definition.namespace
+
 (class_specifier name: (type_identifier) @name.definition.class) @definition.class
 
 ; --- References ---

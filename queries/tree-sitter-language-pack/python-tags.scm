@@ -1,4 +1,6 @@
 (module (expression_statement (assignment left: (identifier) @name.definition.constant) @definition.constant))
+; Module-level assignments parse as direct children (no expression_statement wrapper)
+(module (assignment left: (identifier) @name.definition.constant) @definition.constant)
 
 (class_definition
   name: (identifier) @name.definition.class) @definition.class

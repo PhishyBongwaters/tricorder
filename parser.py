@@ -283,6 +283,7 @@ class ParserMixin:
                 "definition.interface": "type",
                 "definition.type": "type",
                 "definition.enum": "type",
+                "definition.namespace": "type",
             }
 
             records = []

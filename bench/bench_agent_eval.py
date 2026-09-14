@@ -105,7 +105,7 @@ TASKS = [
         ],
         "rubric": (
             "Must name hash_password and verify_password_hash in crypto.rs, the "
-            "user.rs methods that call them (validate_password / set_password), "
+            "user.rs methods that call them (check_valid_password / set_password), "
             "and the CONFIG.password_iterations() source of the iteration count "
             "plus per-user salt. A bare grep of crypto.rs without the cross-file "
             "callers fails."
@@ -172,8 +172,11 @@ TASKS = [
             "Implement ref() is defined across overloads — which file holds the "
             "core reactive getter and how does UnwrapRef resolve nested refs?"
         ),
-        "ground_truth": ["src/v3/reactivity/ref.ts"],
-        "rubric": "Must name effect / trackRefValue and UnwrapRef lazy unwrapping.",
+        "ground_truth": ["src/v3/reactivity/ref.ts",
+                       "src/v3/reactivity/effect.ts"],
+        "rubric": "Must name ref() overloads, the RefImpl getter on Dep "
+                  "(core/observer/dep), triggerRef, and UnwrapRef mapped-type "
+                  "unwrapping.",
     },
     {
         "repo": "bitburner",
