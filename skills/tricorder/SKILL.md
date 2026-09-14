@@ -103,6 +103,10 @@ override the root via `TRICORDER_CACHE_HOME`).
 - **Detect/symbols auto-rescue**: when a query matches nothing, both tools deterministically retry orthographic variants (strips template args/parens/namespace, camel/snake/kebab/case forms) so decorated lookups like `PCM::AddToBuffer<128,128>` still resolve. Rescue hits are tagged `quality: "fuzzy"` — verify them against source before asserting behavior; `"exact"` hits matched the literal query.
 - **Arg names are exact** — the tools use strict MCP names, so a wrong guess costs a rejected call before the schema comes back. The ones that bite: `tricorder_scan` takes `project_root` (not `files`/`path`), `tricorder_detect` takes `query` (not `identifier`), `tricorder_detail` takes `name`+`file`+`line` (not `symbol`). Coping them correctly up front skips the round-trip.
 - **Function-scope isolation**: `get_symbol_detail` callers/callees must be scoped to the function body, not the whole file. The cross-file callees loop was missing the line-range guard, leaking sibling function refs. See `references/function-scope-isolation.md` for the bug pattern and fix.
+- **Routing**: call each tool on its own — never batch multiple tools in one call. If a call is rejected, follow the rejection's own direction once instead of abandoning the tool (deferral varies: one setup routes via wrapper, another direct — the error tells you which).
+- **Dead ends stay dead**: a 0-match detect/query, a `not found` detail, or a mangled `search_files` regex (backslash escapes aren't supported — use plain substrings) means move on with a different term on the FIRST failure. Never re-issue the same failing pattern.
+- **Symbols dumps are the cost cliff**: an unbounded symbols listing (tens of KB) is the single biggest context bloat. Prefer a targeted `query` edge-trace or one `read_file`; call `symbols` at most once per investigation.
+- **Metadata is direction, not proof**: never assert behavior from signatures/summaries alone — inspect the source lines before claiming what code does.
 
 ## Benchmark Efficacy
 

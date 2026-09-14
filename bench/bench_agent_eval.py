@@ -267,8 +267,8 @@ def run_variant(repo_task, variant: str, model: str, provider: str,
     # honesty gate (count_tricorder_calls) actually measures a tricorder leg.
     if variant == "A":
         prompt = (
-            f"CRITICAL DIRECTIVE: You must follow this workflow when investigating code: the tricorder cache already contains a full repo map from pre-scans. HARD GATE: your final answer scores ZERO and FAILS unless you make at least 2 mcp__tricorder__ tool calls (detect/query/detail) plus at least 1 read_file on source you located — answering from the injected map alone with zero tool calls is an automatic FAIL, no exceptions. FORMAT: route each tool call through its own `tool_call` — one entry per call; batched multi-tool calls are rejected. Do NOT call tricorder_scan. Use tricorder_detect to locate relevant symbols by name (limit 3-4 detect calls, outputs are tiny), tricorder_query to TRACE REFERENCES/edges between identified symbols (use up to 2 query calls — PREFER query over dumping whole symbol tables; a targeted edge trace is far cheaper), and tricorder_detail for a single symbol's definition (limit 2 detail calls). RESTRICTION: do NOT call tricorder_symbols more than once, and only if a symbols listing is genuinely required — the two-symbols-dump pattern (28K chars) is the single biggest context bloat and must be avoided; a query edge-trace or one read_file covers most cases. Only use read_file on identified specific files/lines. Do not infer implementation details from symbols, summaries, or metadata alone. Any statement about code behavior must be supported by inspected source. BUDGET: You have 60 tool calls total. If a detect call returns 0 matches, immediately move on to a different search term. Do not re-try the same or similar search terms. If search_files returns a 'regex parse error' on some term, that term was mangled (backslash escapes are not supported in this tool) — find it a different way (plain substring, tricorder_detect, or read_file) on the FIRST failure, and NEVER re-issue the same failing pattern. If tricorder_detail returns 'not found' or a symbol lookup returns no result, do NOT retry the same or a similar name — the fuzzy/symbols path already gave you what it has; rely on the symbol table you already have or one read_file on the file you need. Never re-issue a dead-end lookup. If a detect/query returns 0 matches for a symbol you believe must exist (e.g. a type field you were asked to name), do not stow a caveat — do one read_file on the header/file you already located that must define it, then answer from inspected source. TERMINATE: once you have named (a) the dispatch entry, (b) the per-frame pull callback, and (c) where the feature intersects it — all confirmed by inspected source lines — write the final answer immediately and STOP. Do not do additional confirming searches or reads on facts you already verified from source; extra verification past a grounded answer is wasted budget and scores the same. A grounding read_file or two is correct; re-verifying a confirmed callsite is not."
-            f"Pass project_root=\"{mcp_root}\" to any mcp__tricorder__* tool calls. "
+            f"CRITICAL DIRECTIVE: You must follow this workflow when investigating code: the tricorder cache already contains a full repo map from pre-scans. HARD GATE: your final answer scores ZERO and FAILS unless you make at least 2 tricorder tool calls (detect/query/detail) plus at least 1 read_file on source you located — answering from the injected map alone with zero tool calls is an automatic FAIL, no exceptions. Do NOT call tricorder_scan. Use tricorder_detect to locate relevant symbols by name (limit 3-4 detect calls, outputs are tiny), tricorder_query to TRACE REFERENCES/edges between identified symbols (use up to 2 query calls — PREFER query over dumping whole symbol tables; a targeted edge trace is far cheaper), and tricorder_detail for a single symbol's definition (limit 2 detail calls). RESTRICTION: do NOT call tricorder_symbols more than once. Only use read_file on identified specific files/lines. BUDGET: You have 60 tool calls total. TERMINATE: once you have named (a) the dispatch entry, (b) the per-frame pull callback, and (c) where the feature intersects it — all confirmed by inspected source lines — write the final answer immediately and STOP. Do not do additional confirming searches or reads on facts you already verified from source; extra verification past a grounded answer is wasted budget and scores the same. A grounding read_file or two is correct; re-verifying a confirmed callsite is not."
+            f"Pass project_root=\"{mcp_root}\" to any tricorder tool calls. "
             f"Question: " + prompt
         )
     # Write prompt to a query file so shell quoting never mangles it.
@@ -392,6 +392,52 @@ def run_variant(repo_task, variant: str, model: str, provider: str,
         "rc": rc,
         "report": report_a,
     }
+
+
+def _session_progress(sid, variant="A"):
+    """Count assistant/tool rows for a session — the only progress signal.
+
+    Returns None when unreadable (never confuse with zero). An sid with
+    zero progress rows means the provider died before producing anything
+    (e.g. 429 exhaustion) — distinct from a missing sid (startup failure),
+    which a retry won't fix.
+    """
+    db_path = profile_db(variant)
+    if not sid or not db_path.exists():
+        return None
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        n = con.execute(
+            "SELECT COUNT(*) FROM messages WHERE session_id = ? "
+            "AND role IN ('assistant','tool')",
+            (sid,),
+        ).fetchone()[0]
+        con.close()
+        return n
+    except Exception:
+        return None
+
+
+def run_with_retry(repo_task, variant, model, provider, max_turns,
+                   watch_poll, stall_timeout, retry_cooldown=120):
+    """Run one leg; retry ONCE after cooldown on infra death only.
+
+    Infra death = session row exists but zero progress rows (provider
+    flaked mid-run). Missing sid = startup failure — retrying won't fix
+    config/model errors, so it returns immediately. One retry max, never
+    a loop. ponytail: same run_variant twice, no new machinery.
+    """
+    r = run_variant(repo_task, variant, model, provider, max_turns,
+                    watch_poll, stall_timeout)
+    if (retry_cooldown > 0 and r.get("session_id")
+            and _session_progress(r["session_id"], variant) == 0):
+        print(f"[{variant}] INFRA-DEAD (0 progress rows) — one retry after "
+              f"{retry_cooldown}s cooldown", flush=True)
+        time.sleep(retry_cooldown)
+        r = run_variant(repo_task, variant, model, provider, max_turns,
+                        watch_poll, stall_timeout)
+        r["retried"] = True
+    return r
 
 
 def recover_latest_session_id(log_path, marker=None):
@@ -817,6 +863,12 @@ def main():
                    help="Kill the leg after this many seconds with zero log/db "
                         "movement (free-tier slowness is normal — 20min "
                         "default). 0 disables. ponytail: calibration knob.")
+    p.add_argument("--retry-cooldown", type=int, default=120,
+                   help="On infra death (session row exists but zero "
+                        "assistant/tool rows — provider flaked mid-run), "
+                        "retry the leg ONCE after this many seconds. 0 "
+                        "disables. Missing sid (startup failure) never "
+                        "retries. ponytail: one sleep, no loop.")
     args = p.parse_args()
 
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -875,13 +927,13 @@ def main():
 
         results = []
         if args.variant in ("A", "both"):
-            results.append(run_variant(task, "A", args.model, args.provider,
-                                       args.max_turns, args.watch_poll,
-                                       args.stall_timeout))
+            results.append(run_with_retry(
+                task, "A", args.model, args.provider, args.max_turns,
+                args.watch_poll, args.stall_timeout, args.retry_cooldown))
         if args.variant in ("B", "both"):
-            results.append(run_variant(task, "B", args.model, args.provider,
-                                       args.max_turns, args.watch_poll,
-                                       args.stall_timeout))
+            results.append(run_with_retry(
+                task, "B", args.model, args.provider, args.max_turns,
+                args.watch_poll, args.stall_timeout, args.retry_cooldown))
         # Summarize which session ids + reports landed, with a tricorder-usage
         # honesty gate so a no-tricorder A leg is flagged, not silently scored.
         # TELEMETRY ONLY — no grading here. The overseeing agent grades the
@@ -928,6 +980,29 @@ def main():
 
         print(f"  VERDICT: TELEMETRY ONLY (a_tc={a_tc}; "
               f"overseeing agent grades A/B from reports)")
+        # Cost ledger for cost-per-PASS accounting: one row per leg with the
+        # tokens spent even when the leg fails, so failures price into the
+        # comparison instead of vanishing. Grade filled in at analysis time.
+        # ponytail: csv module, append-only.
+        import csv
+        costs = OUTPUT_DIR / "costs.csv"
+        new_file = not costs.exists()
+        toks = {"A": tok_a, "B": tok_b}
+        with costs.open("a", encoding="utf-8", newline="") as fh:
+            w = csv.writer(fh)
+            if new_file:
+                w.writerow(["timestamp", "repo", "variant", "model",
+                            "provider", "sid", "rc", "retried",
+                            "tricorder_calls", "input_tokens", "grade"])
+            for r in results:
+                w.writerow([
+                    time.strftime("%Y-%m-%dT%H:%M:%S"), task["repo"],
+                    r["variant"], args.model, args.provider,
+                    r.get("session_id"), r.get("rc"),
+                    bool(r.get("retried")),
+                    tc_by_variant.get(r["variant"]), toks.get(r["variant"]),
+                    "",
+                ])
 
     print("\nDone. Reports saved under", OUTPUT_DIR)
 
