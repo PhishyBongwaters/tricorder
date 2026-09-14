@@ -9,7 +9,8 @@ description = "Tricorder — Star Trek-inspired code intelligence. Scans codebas
 requires-python = ">=3.11"
 dependencies = [
     "diskcache>=5.6.0",
-    "fastmcp>=2.11.3",
+    "fastmcp>=4.0.0",
+    "mcp>=2.0.0",
     "grep-ast>=0.3.0",
     "networkx>=3.0",
     "pygments>=2.14.0",
