@@ -27,7 +27,7 @@ import diskcache
 
 from utils import get_cache_root, Tag
 
-CACHE_VERSION = 2  # bumped: stop-name guard changed index contents
+CACHE_VERSION = 3  # bumped: #46 qualified names + Sep-14 query captures changed index contents
 
 SQLITE_ERRORS = (sqlite3.OperationalError, sqlite3.DatabaseError)
 
