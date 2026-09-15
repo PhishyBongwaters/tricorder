@@ -9,7 +9,7 @@ the persisted defs back out of the DB (Goal 4 will move the PageRank itself on-d
 Schema v1:
     tags(file, rel_file, line, name, kind)   -- one row per tag (kind in def/ref)
     refs(from_file, to_file, name)           -- one row per cross-file reference edge
-    meta(schema_version, root, signature)    -- identity used by incremental recompute
+    meta(schema_version, root, signature, extractor_version) -- identity + extractor stamp
     file_state(rel_file, size, mtime)        -- per-file stat fingerprint
     stop_names(name)                         -- def-names skipped by populate_refs (>50 files)
     file_flags(rel_file, reason)             -- why a scanned file owns zero tags
@@ -27,6 +27,13 @@ from typing import Iterable, Iterator, List, Optional, Sequence, Tuple
 
 SCHEMA_VERSION = 1
 
+# Version of the tag-extraction logic (tree-sitter queries/captures in
+# queries/, parser.py, import_parser.py). Stamped into meta on full scans;
+# the audit flags DBs stamped older. Bump on ANY capture change.
+# Separate lineage from cache.CACHE_VERSION (query-time bundles) — a
+# query-time fix must NOT force tag reparse, and vice versa.
+EXTRACTOR_VERSION = 1
+
 _DDL = [
     "CREATE TABLE IF NOT EXISTS tags("
     " file TEXT NOT NULL, rel_file TEXT NOT NULL, line INTEGER NOT NULL,"
@@ -34,7 +41,8 @@ _DDL = [
     "CREATE TABLE IF NOT EXISTS refs("
     " from_file TEXT NOT NULL, to_file TEXT NOT NULL, name TEXT NOT NULL)",
     "CREATE TABLE IF NOT EXISTS meta("
-    " schema_version INTEGER NOT NULL, root TEXT, signature TEXT)",
+    " schema_version INTEGER NOT NULL, root TEXT, signature TEXT,"
+    " extractor_version INTEGER NOT NULL DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS file_state("
     " rel_file TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime INTEGER NOT NULL)",
     "CREATE TABLE IF NOT EXISTS stop_names("
@@ -77,6 +85,12 @@ class DBStore:
 
         for stmt in _DDL:
             self.conn.execute(stmt)
+        # Migrate pre-version DBs: meta without extractor_version reads as
+        # UNSTAMPED (0) downstream — never silently certify old tags.
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(meta)")}
+        if "extractor_version" not in cols:
+            self.conn.execute(
+                "ALTER TABLE meta ADD COLUMN extractor_version INTEGER NOT NULL DEFAULT 0")
         self.conn.commit()
 
     # -- writes -------------------------------------------------------------
@@ -121,14 +135,29 @@ class DBStore:
                 (rel_file, size, mtime),
             )
 
-    def set_meta(self, root: str, signature: str):
-        """Replace (not append): meta holds exactly one row per DB."""
+    def set_meta(self, root: str, signature: str, extractor_version: Optional[int] = None):
+        """Replace (not append): meta holds exactly one row per DB.
+
+        extractor_version=None preserves the stored stamp (incremental path:
+        most tags were NOT re-extracted, so re-stamping would certify stale
+        rows). Full scans pass EXTRACTOR_VERSION explicitly. Safe by default.
+        """
         with self._lock:
+            stored = self.conn.execute(
+                "SELECT extractor_version FROM meta ORDER BY rowid DESC LIMIT 1"
+            ).fetchone() if self._has_extractor_col() else None
+            version = (extractor_version if extractor_version is not None
+                       else (stored[0] if stored else 0))
             self.conn.execute("DELETE FROM meta")
             self.conn.execute(
-                "INSERT INTO meta(schema_version, root, signature) VALUES (?,?,?)",
-                (SCHEMA_VERSION, root, signature),
+                "INSERT INTO meta(schema_version, root, signature, extractor_version)"
+                " VALUES (?,?,?,?)",
+                (SCHEMA_VERSION, root, signature, version),
             )
+
+    def _has_extractor_col(self) -> bool:
+        return any(r[1] == "extractor_version"
+                   for r in self.conn.execute("PRAGMA table_info(meta)"))
 
     def populate_refs(self):
         """Materialize refs edge table from def/ref tags (cross join on name).
@@ -171,11 +200,21 @@ class DBStore:
         return self.conn.execute("SELECT COUNT(*) FROM refs").fetchone()[0]
 
     def get_meta(self):
-        """Latest (schema_version, root, signature) or None if never scanned."""
-        return self.conn.execute(
-            "SELECT schema_version, root, signature FROM meta "
-            "ORDER BY rowid DESC LIMIT 1"
-        ).fetchone()
+        """Latest (schema_version, root, signature, extractor_version).
+
+        extractor_version 0 = pre-feature DB, staleness unknown. None if
+        never scanned."""
+        try:
+            return self.conn.execute(
+                "SELECT schema_version, root, signature, extractor_version FROM meta "
+                "ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            row = self.conn.execute(
+                "SELECT schema_version, root, signature FROM meta "
+                "ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            return (*row, 0) if row else None
 
     def stored_files(self):
         """Distinct rel_files with rows (cheap set for hit/subset checks)."""

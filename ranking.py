@@ -9,7 +9,7 @@ from typing import List, Dict, Set, Tuple, Optional, Any
 from utils import Tag, SymbolRecord
 from report import FileReport
 _COVERAGE_WARN_THRESHOLD = 60.0
-from database import DBStore
+from database import DBStore, EXTRACTOR_VERSION
 from importance import filter_important_files
 from render import render_tree, to_tree
 from collections import defaultdict
@@ -194,7 +194,9 @@ class RankingMixin:
                                 except OSError:
                                     pass
                             db.commit()
-                            db.set_meta(str(self.root), self._db_signature(included))
+                            # Full reparse after reset: stamp the extractor.
+                            db.set_meta(str(self.root), self._db_signature(included),
+                                        EXTRACTOR_VERSION)
                     else:  # superset + empty file_state (old partial DB) -> full rescan
                         db.reset()
                         for fname in all_fnames:
@@ -215,7 +217,9 @@ class RankingMixin:
                             except OSError:
                                 pass
                         db.commit()
-                        db.set_meta(str(self.root), self._db_signature(included))
+                        # Full reparse after reset: stamp the extractor.
+                        db.set_meta(str(self.root), self._db_signature(included),
+                                    EXTRACTOR_VERSION)
                 else:  # file_state present -> dirty/missing diff covers resume
                     dirty_rels = set()
                     rel_to_fname = {self.get_rel_fname(f): f for f in all_fnames}
@@ -317,6 +321,8 @@ class RankingMixin:
                                     # Cache hit — keep existing tags
                                     included.append(fname)
                         db.commit()
+                        # Incremental: re-parsed dirty files only — preserve
+                        # the stored stamp, don't certify untouched tags.
                         db.set_meta(str(self.root), self._db_signature(included))
                         self.output_handlers['info'](
                             f"Incremental: {len(dirty_rels)} dirty, {len(needed_rels)-len(dirty_rels)} cache hits{' [parallel]' if use_parallel else ''}")
@@ -378,7 +384,9 @@ class RankingMixin:
                             db.commit()
                 db.commit()
                 db.checkpoint()
-                db.set_meta(str(self.root), self._db_signature(included))
+                # Fresh scan after reset: stamp the extractor.
+                db.set_meta(str(self.root), self._db_signature(included),
+                            EXTRACTOR_VERSION)
         else:
             # No meta or wrong schema — fresh scan (Tier 2: parallel when large)
             db.reset()
@@ -437,7 +445,9 @@ class RankingMixin:
                     if batch % 50 == 0:
                         db.commit()
             db.commit()
-            db.set_meta(str(self.root), self._db_signature(included))
+            # Fresh scan after reset: stamp the extractor.
+            db.set_meta(str(self.root), self._db_signature(included),
+                        EXTRACTOR_VERSION)
 
         # Cross defs x refs into the refs edge table (on disk, not RAM).
         db.populate_refs()

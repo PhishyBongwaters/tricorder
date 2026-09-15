@@ -72,6 +72,13 @@ def audit(repo, root):
         except sqlite3.OperationalError:
             scanned = set()  # pre-file_state DB: scan coverage unverifiable
             no_fstate = True
+        try:
+            xrow = con.execute(
+                "SELECT extractor_version FROM meta ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            xver = xrow[0] if xrow else 0
+        except sqlite3.OperationalError:
+            xver = 0  # pre-feature DB: staleness unknown, human decides
     finally:
         con.close()
     disk, capped = disk_files(root) if root.exists() else (set(), False)
@@ -88,13 +95,44 @@ def audit(repo, root):
             "scanned_files": len(scanned_norm),
             "tagged_files": len(tagged_norm), "disk_files": len(norm),
             "walk_capped": capped, "no_fstate": no_fstate,
-            "tagless": tagless,
+            "tagless": tagless, "xver": xver,
             "unscanned_sample": unscanned[:10], "unscanned_total": len(unscanned),
             "secs": round(time.time() - t0, 1)}
 
 
 def main():
-    only = sys.argv[1] if len(sys.argv) > 1 else None
+    args = sys.argv[1:]
+    # --stamp is a HUMAN assertion ("I verified these tags are current"),
+    # used once to baseline DBs the archaeology already cleared. It never
+    # runs automatically: nothing may certify tags except a full reparse.
+    if args and args[0] == "--stamp":
+        from database import EXTRACTOR_VERSION
+        if len(args) < 2:
+            print("usage: coverage_audit.py --stamp <repo> [<repo>...]")
+            sys.exit(2)
+        for repo in args[1:]:
+            if repo not in MAP:
+                print(f"{repo:12} unknown repo (not in MAP)")
+                continue
+            db = DBDIR / f"{repo}.db"
+            if not db.exists():
+                print(f"{repo:12} no DB")
+                continue
+            con = sqlite3.connect(str(db))
+            try:
+                cols = {r[1] for r in con.execute("PRAGMA table_info(meta)")}
+                if "extractor_version" not in cols:
+                    con.execute("ALTER TABLE meta ADD COLUMN extractor_version"
+                                " INTEGER NOT NULL DEFAULT 0")
+                con.execute("UPDATE meta SET extractor_version=?",
+                            (EXTRACTOR_VERSION,))
+                con.commit()
+                print(f"{repo:12} stamped v{EXTRACTOR_VERSION} (human-verified)")
+            finally:
+                con.close()
+        return
+    only = args[0] if args else None
+    from database import EXTRACTOR_VERSION
     print(f"{'repo':12} {'meta':>4} {'tags':>9} {'refs':>10} "
           f"{'scanned':>7} {'disk':>7} {'scan%':>6} {'tagless':>7}  flags")
     for repo, root in MAP.items():
@@ -113,6 +151,10 @@ def main():
             flags.append("WALK-CAPPED")
         if r["no_fstate"]:
             flags.append("NO-FSTATE")
+        if r["xver"] == 0:
+            flags.append("UNSTAMPED")
+        elif r["xver"] != EXTRACTOR_VERSION:
+            flags.append(f"STALE-v{r['xver']}")
         if r["unscanned_total"]:
             flags.append(f"UNSCANNED{r['unscanned_total']}")
         if r["refs"] == 0:
@@ -127,7 +169,9 @@ def main():
                 print(f"               e.g. unscanned: {m}")
     print("\nDone. STACKED = meta rows >1 (appended scans). "
           "UNSCANNED = on disk, never reached file_state (cap/regression). "
-          "tagless = scanned but zero symbols (scripts, data — normal).")
+          "tagless = scanned but zero symbols (scripts, data — normal). "
+          "UNSTAMPED = pre-feature DB (human decides); STALE-vN = extractor "
+          "moved on, rescan via chunk protocol.")
 
 
 if __name__ == "__main__":
