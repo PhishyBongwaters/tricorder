@@ -53,8 +53,18 @@ def disk_files(root):
     return out, "warning" in report
 
 
+def serving_db(repo, root):
+    # Same precedence as the server (_canonical_db_for): testbed-local
+    # <root>/.tricorder/db/<name>.db first, central cache fallback.
+    # The audit must check the DB that actually serves queries.
+    local = Path(root) / ".tricorder" / "db" / f"{repo}.db"
+    if local.exists():
+        return local, "local"
+    return DBDIR / f"{repo}.db", "central"
+
+
 def audit(repo, root):
-    db = DBDIR / f"{repo}.db"
+    db, which = serving_db(repo, root)
     if not db.exists():
         return {"repo": repo, "error": "no DB (never scanned?)"}
     t0 = time.time()
@@ -94,7 +104,7 @@ def audit(repo, root):
     return {"repo": repo, "meta_rows": meta, "tags": tags, "refs": refs,
             "scanned_files": len(scanned_norm),
             "tagged_files": len(tagged_norm), "disk_files": len(norm),
-            "walk_capped": capped, "no_fstate": no_fstate,
+            "walk_capped": capped, "no_fstate": no_fstate, "which": which,
             "tagless": tagless, "xver": xver,
             "unscanned_sample": unscanned[:10], "unscanned_total": len(unscanned),
             "secs": round(time.time() - t0, 1)}
@@ -159,6 +169,8 @@ def main():
             flags.append(f"UNSCANNED{r['unscanned_total']}")
         if r["refs"] == 0:
             flags.append("NO-REFS")
+        if r["which"] == "local":
+            flags.append("LOCAL")
         cov_s = f"{cov:>5.1f}%" if cov is not None else "   n/a"
         print(f"{repo:12} {r['meta_rows']:>4} {r['tags']:>9,} "
               f"{r['refs']:>10,} {r['scanned_files']:>7,} "
