@@ -19,12 +19,19 @@ TESTBED = Path(r"D:\Projects\Tricorder-Testing-Repos")
 DBDIR = Path(r"D:\Projects\tricorder\.tricorder\db")
 MAP = {
     "projectm": Path(r"D:\Projects\projectm"),
+    "vaultwarden": TESTBED / "vaultwarden",
     "go": TESTBED / "go",
     "kotlin": TESTBED / "kotlin",
     "linux": TESTBED / "linux",
     "rails": TESTBED / "rails",
     "swift": TESTBED / "swift",
-    "vaultwarden": TESTBED / "vaultwarden",
+    "spring-boot": TESTBED / "spring-boot",
+    "repo-map": TESTBED / "repo-map",
+    "vue": TESTBED / "vue",
+    "SwiftTest": TESTBED / "SwiftTest",
+    "SwiftTest2": TESTBED / "SwiftTest2",
+    "uplink": TESTBED / "uplink",
+    "zombie_survival": TESTBED / "zombie_survival",
 }
 EXTS = {".cpp", ".hpp", ".h", ".c", ".cc", ".cxx", ".hxx", ".rs", ".py",
         ".go", ".kt", ".kts", ".java", ".js", ".ts", ".tsx", ".rb", ".swift",
@@ -38,8 +45,12 @@ def disk_files(root):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames
                        if d not in (".git", ".tricorder", "node_modules",
-                                    "target", ".hg", ".svn", "out", "dist")
-                       and not d.startswith("build")]
+                                    "target", ".hg", ".svn", "out", "dist",
+                                    "build")]
+        # NOTE: exact "build" only — tricorder's _BUILTIN_SKIP_DIRS matches
+        # exact names, so build-plugin/, buildSrc/ etc. are scanned and must
+        # be walked here too (a startswith("build") filter caused false
+        # MISSING flags, e.g. spring-boot's 510 build-plugin files).
         for fn in filenames:
             if Path(fn).suffix.lower() in EXTS:
                 out.add(os.path.relpath(os.path.join(dirpath, fn), root))
@@ -88,7 +99,7 @@ def main():
             print(f"{repo:12} {r['error']}")
             continue
         cov = (100.0 * r["tagged_files"] / r["disk_files"]
-               if r["disk_files"] else 0)
+               if r["disk_files"] and not r["walk_capped"] else None)
         flags = []
         if r["meta_rows"] > 1:
             flags.append(f"STACKEDx{r['meta_rows']}")
@@ -98,9 +109,10 @@ def main():
             flags.append(f"MISSING{r['missing_total']}")
         if r["refs"] == 0:
             flags.append("NO-REFS")
+        cov_s = f"{cov:>5.1f}%" if cov is not None else "   n/a"
         print(f"{repo:12} {r['meta_rows']:>4} {r['tags']:>9,} "
               f"{r['refs']:>10,} {r['tagged_files']:>7,} "
-              f"{r['disk_files']:>7,} {cov:>5.1f}%  {' '.join(flags)} "
+              f"{r['disk_files']:>7,} {cov_s}  {' '.join(flags)} "
               f"({r['secs']}s)")
         if r["missing_sample"]:
             for m in r["missing_sample"][:5]:
