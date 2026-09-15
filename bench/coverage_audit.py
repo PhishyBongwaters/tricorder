@@ -15,6 +15,8 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 TESTBED = Path(r"D:\Projects\Tricorder-Testing-Repos")
 DBDIR = Path(r"D:\Projects\tricorder\.tricorder\db")
 MAP = {
@@ -33,33 +35,22 @@ MAP = {
     "uplink": TESTBED / "uplink",
     "zombie_survival": TESTBED / "zombie_survival",
 }
-EXTS = {".cpp", ".hpp", ".h", ".c", ".cc", ".cxx", ".hxx", ".rs", ".py",
-        ".go", ".kt", ".kts", ".java", ".js", ".ts", ".tsx", ".rb", ".swift",
-        ".m", ".mm", ".cs", ".php", ".ex", ".exs", ".erl", ".hrl", ".vue",
-        ".scala", ".pl", ".pm", ".sh", ".lua", ".r", ".jl", ".dart"}
-MAX_WALK = 20000  # same early-stop as tricorder's TRICORDER_MAX_SCAN_FILES
 
 
 def disk_files(root):
-    out, stopped = set(), False
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames
-                       if d not in (".git", ".tricorder", "node_modules",
-                                    "target", ".hg", ".svn", "out", "dist",
-                                    "build")]
-        # NOTE: exact "build" only — tricorder's _BUILTIN_SKIP_DIRS matches
-        # exact names, so build-plugin/, buildSrc/ etc. are scanned and must
-        # be walked here too (a startswith("build") filter caused false
-        # MISSING flags, e.g. spring-boot's 510 build-plugin files).
-        for fn in filenames:
-            if Path(fn).suffix.lower() in EXTS:
-                out.add(os.path.relpath(os.path.join(dirpath, fn), root))
-                if len(out) >= MAX_WALK:
-                    stopped = True
-                    break
-        if stopped:
-            break
-    return out, stopped
+    # Single source of truth: the scanner's own discovery (utils.
+    # discover_src_files) — its docstring says "one implementation, two
+    # callers — no drift", and this is caller #2. The old private os.walk
+    # with an EXTS allowlist disagreed with the scanner everywhere (it
+    # missed .gradle/.cjs/dotfiles the scanner reads) and printed scan%
+    # >100%. ponytail: reuse, don't re-walk.
+    from utils import discover_src_files
+    report = {}
+    files = discover_src_files(str(root), use_gitignore=True, report=report)
+    out = {os.path.relpath(f, str(root)) for f in files}
+    # Only a "warning" key means the walk actually truncated; the stats
+    # keys (files_considered, ...) are always present.
+    return out, "warning" in report
 
 
 def audit(repo, root):
@@ -74,23 +65,38 @@ def audit(repo, root):
         refs = con.execute("SELECT COUNT(*) FROM refs").fetchone()[0]
         tagged = {r[0] for r in
                   con.execute("SELECT DISTINCT rel_file FROM tags")}
+        try:
+            scanned = {r[0] for r in con.execute(
+                "SELECT DISTINCT rel_file FROM file_state")}
+            no_fstate = False
+        except sqlite3.OperationalError:
+            scanned = set()  # pre-file_state DB: scan coverage unverifiable
+            no_fstate = True
     finally:
         con.close()
     disk, capped = disk_files(root) if root.exists() else (set(), False)
     norm = {p.replace("\\", "/") for p in disk}
+    scanned_norm = {t.replace("\\", "/") for t in scanned}
     tagged_norm = {t.replace("\\", "/") for t in tagged}
-    missing = sorted(norm - tagged_norm) if norm else []
+    # Two honest numbers: unscanned = cap never reached the file;
+    # tagless = scanned but tree-sitter yielded no symbols (.sh, .pl...).
+    # The old disk-vs-tags MISSING conflated the two and indicted the cap
+    # for files like compile.sh that were scanned and simply tagless.
+    unscanned = sorted(norm - scanned_norm) if norm else []
+    tagless = len(scanned_norm - tagged_norm)
     return {"repo": repo, "meta_rows": meta, "tags": tags, "refs": refs,
+            "scanned_files": len(scanned_norm),
             "tagged_files": len(tagged_norm), "disk_files": len(norm),
-            "walk_capped": capped,
-            "missing_sample": missing[:10], "missing_total": len(missing),
+            "walk_capped": capped, "no_fstate": no_fstate,
+            "tagless": tagless,
+            "unscanned_sample": unscanned[:10], "unscanned_total": len(unscanned),
             "secs": round(time.time() - t0, 1)}
 
 
 def main():
     only = sys.argv[1] if len(sys.argv) > 1 else None
     print(f"{'repo':12} {'meta':>4} {'tags':>9} {'refs':>10} "
-          f"{'tagged':>7} {'disk':>7} {'cov%':>6}  flags")
+          f"{'scanned':>7} {'disk':>7} {'scan%':>6} {'tagless':>7}  flags")
     for repo, root in MAP.items():
         if only and repo != only:
             continue
@@ -98,27 +104,30 @@ def main():
         if "error" in r:
             print(f"{repo:12} {r['error']}")
             continue
-        cov = (100.0 * r["tagged_files"] / r["disk_files"]
+        cov = (100.0 * r["scanned_files"] / r["disk_files"]
                if r["disk_files"] and not r["walk_capped"] else None)
         flags = []
         if r["meta_rows"] > 1:
             flags.append(f"STACKEDx{r['meta_rows']}")
         if r["walk_capped"]:
             flags.append("WALK-CAPPED")
-        if r["missing_total"]:
-            flags.append(f"MISSING{r['missing_total']}")
+        if r["no_fstate"]:
+            flags.append("NO-FSTATE")
+        if r["unscanned_total"]:
+            flags.append(f"UNSCANNED{r['unscanned_total']}")
         if r["refs"] == 0:
             flags.append("NO-REFS")
         cov_s = f"{cov:>5.1f}%" if cov is not None else "   n/a"
         print(f"{repo:12} {r['meta_rows']:>4} {r['tags']:>9,} "
-              f"{r['refs']:>10,} {r['tagged_files']:>7,} "
-              f"{r['disk_files']:>7,} {cov_s}  {' '.join(flags)} "
-              f"({r['secs']}s)")
-        if r["missing_sample"]:
-            for m in r["missing_sample"][:5]:
-                print(f"               e.g. missing: {m}")
+              f"{r['refs']:>10,} {r['scanned_files']:>7,} "
+              f"{r['disk_files']:>7,} {cov_s} {r['tagless']:>7,}  "
+              f"{' '.join(flags)} ({r['secs']}s)")
+        if r["unscanned_sample"]:
+            for m in r["unscanned_sample"][:5]:
+                print(f"               e.g. unscanned: {m}")
     print("\nDone. STACKED = meta rows >1 (appended scans). "
-          "MISSING = on disk, not in tags.")
+          "UNSCANNED = on disk, never reached file_state (cap/regression). "
+          "tagless = scanned but zero symbols (scripts, data — normal).")
 
 
 if __name__ == "__main__":
