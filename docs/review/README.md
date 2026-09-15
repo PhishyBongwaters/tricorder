@@ -88,6 +88,19 @@ Technical documents, each derived from the code:
   tools, escalation signals, turn-0 injection.
 - [`04-cli-reference.md`](04-cli-reference.md) — flags by task,
   companion scripts, environment knobs.
+- [`05-plugins-and-skills.md`](05-plugins-and-skills.md) — Hermes
+  and DSH plugins (turn-0 injection, slash commands) and skills
+  (agent guidance).
+
+## Lineage
+
+1. **Aider `RepoMap`** — tree-sitter plus PageRank for context
+   compression.
+2. **RepoMapper** — standalone CLI plus MCP server.
+   Upstream: https://github.com/pdavis68/RepoMapper
+3. **Tricorder** — this fork: sqlite-backed flat-memory scanning,
+   cross-file call graph, pre-index probing, extractor versioning,
+   Windows support.
 
 ## Guarantees
 

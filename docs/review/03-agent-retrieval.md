@@ -86,6 +86,7 @@ Three carriers, one payload: `tricorder_client.inject_turn0_map`
 (`plugins/tricorder/__init__.py`), which shells the CLI with
 `--db-path` pointed at the canonical in-repo DB — so slash scans,
 MCP tools, and `chunk_resume.py` read and write the same sqlite.
+Plugin and skill details: `05-plugins-and-skills.md`.
 
 ## 3. Narrowing without walking
 
