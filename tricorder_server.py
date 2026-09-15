@@ -56,6 +56,19 @@ def _query_variants(query: str):
         variants.add(sep.join(words))
         variants.add(sep.join(words).lower())
     variants.add("".join(w.lower() for w in words))
+    # Synonym-swapped forms: single-word substitution from _SYN_MAP, joined
+    # forms only (bounded: one substitution per variant, cap extras).
+    wl = [w.lower() for w in words]
+    extra = 0
+    for i, w in enumerate(wl):
+        for syn in sorted(_SYN_MAP.get(w, ())):
+            if extra >= 20:
+                break
+            swapped = list(wl)
+            swapped[i] = syn
+            variants.add("_".join(swapped))
+            variants.add("".join(swapped))
+            extra += 1
     variants.discard("")
     # Prefer the base-name/joined forms, NEVER bare word fragments (a bare
     # 'get' over-matches every get_* symbol and caps the rescue before the
@@ -71,6 +84,77 @@ def _query_variants(query: str):
             return 3
         return 2
     return sorted(variants, key=lambda s: (_rank(s), len(s), s))
+
+# Small verb synonym groups for deterministic query expansion (no ML).
+# Each group lists interchangeable verbs commonly swapped in identifiers
+# (get/fetch, set/store...). Expansion is single-word substitution only.
+_SYNONYM_GROUPS = (
+    ("get", "fetch", "load", "retrieve", "read"),
+    ("set", "store", "write", "save", "put"),
+    ("create", "make", "build", "new"),
+    ("delete", "remove", "drop", "clear"),
+    ("find", "search", "lookup", "locate"),
+    ("pack", "dump", "serialize"),
+    ("unpack", "parse", "deserialize"),
+)
+_SYN_MAP = {}
+for _g in _SYNONYM_GROUPS:
+    for _w in _g:
+        _SYN_MAP.setdefault(_w, set()).update(x for x in _g if x != _w)
+
+
+def _tokenize(name: str):
+    """Split an identifier into lowercase word tokens (separators + camel)."""
+    return [w.lower() for part in _WORD_SPLIT.split(name)
+            for w in _camel_split(part) if w]
+
+
+def _levenshtein(a: str, b: str, max_dist: int = 2) -> int:
+    """Edit distance with early exit past max_dist (stdlib only)."""
+    if a == b:
+        return 0
+    if abs(len(a) - len(b)) > max_dist:
+        return max_dist + 1
+    if len(a) > len(b):
+        a, b = b, a
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        row_min = i
+        for j, cb in enumerate(b, 1):
+            d = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb))
+            cur.append(d)
+            if d < row_min:
+                row_min = d
+        if row_min > max_dist:
+            return max_dist + 1
+        prev = cur
+    return prev[-1]
+
+
+def _escalation_hint(tool: str, query: str, n_results: int, rescue_used: bool):
+    """Deterministic next-rung signal for empty/fuzzy lookups (no model).
+
+    Decision table over already-computed signals only:
+    - 0 hits (even after rescue) -> point at the next ladder rung.
+    - fuzzy rescue fired -> verify the candidate in source via detail.
+    Returns None when the result needs no escalation.
+    # ponytail: fixed table, no heuristics beyond empty/fuzzy; extend only
+    # with new measurable signals (e.g. budget-truncated), never content.
+    """
+    if n_results == 0 and query:
+        nxt = {"detect": "symbols", "symbols": "query"}.get(tool, "detail")
+        return {"next_rung": nxt, "reason": "empty",
+                "evidence": {"tool": tool, "query": query, "rescue_tried": True},
+                "message": f"No {'symbol' if tool == 'symbols' else 'identifier'} hit for "
+                           f"'{query}' (exact + fuzzy tried). Try {nxt} or widen the query."}
+    if rescue_used and n_results:
+        return {"next_rung": "detail", "reason": "fuzzy_verify",
+                "evidence": {"tool": tool, "query": query},
+                "message": "Orthographic rescue fired — candidates are lookalikes, "
+                           "not exact hits. Verify via detail before asserting/editing."}
+    return None
+
 
 # Thin wrapper kept for backward compat (tests import this name).
 def find_src_files(directory: str, exclude_globs: Optional[List[str]] = None) -> List[str]:
@@ -735,8 +819,35 @@ async def tricorder_detect(
                             seen.add(id(tag))
                 if len(matching_tags) >= max_results * 2:
                     break
+            if not matching_tags:
+                # Edit-distance + token-overlap pass (typos, affixes like
+                # serial->serialize that separators/case can't bridge).
+                # ponytail: linear scan, early-exit distance; fine at rescue
+                # scale (fires only on empty). No index until measured slow.
+                qcore = "".join(_tokenize(query)) or query.lower()
+                qtok = set(_tokenize(query))
+                scored = []
+                for tag in all_tags:
+                    if not ((tag.kind == "def" and include_definitions) or
+                            (tag.kind == "ref" and include_references)):
+                        continue
+                    tn = tag.name.lower()
+                    tt = _tokenize(tag.name)
+                    tj = "".join(tt)
+                    d = min(_levenshtein(qcore, tn), _levenshtein(qcore, tj))
+                    overlap = len(qtok & set(tt)) if qtok else 0
+                    if d <= 2 or (qtok and overlap * 2 >= len(qtok)):
+                        scored.append((d, -overlap, tag.kind != "def", tn, tag))
+                scored.sort(key=lambda s: (s[0], s[1], s[2], s[3]))
+                matching_tags = [s[4] for s in scored[:max_results * 2]]
             if matching_tags:
                 rescue_used = True
+            if rescue_used:
+                qcore = "".join(_tokenize(query)) or query.lower()
+                matching_tags.sort(key=lambda t: (
+                    min(_levenshtein(qcore, t.name.lower()),
+                        _levenshtein(qcore, "".join(_tokenize(t.name)))),
+                    t.kind != "def", t.name.lower()))
 
         # Format results with context
         results = []
@@ -765,6 +876,9 @@ async def tricorder_detect(
                 })
 
         resp = {"results": results}
+        esc = _escalation_hint("detect", query, len(results), rescue_used)
+        if esc:
+            resp["escalation"] = esc
         resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
         return _mark_untrusted(resp)
 
@@ -855,8 +969,31 @@ async def tricorder_symbols(
                         seen.add(id(sym))
                 if len(results) >= limit * 2:
                     break
+            if not results:
+                # Edit-distance + token-overlap pass (mirror detect).
+                qcore = "".join(_tokenize(query)) or query.lower()
+                qtok = set(_tokenize(query))
+                scored = []
+                for sym in all_symbols:
+                    if type and sym.type != type:
+                        continue
+                    sn = sym.name.lower()
+                    st = _tokenize(sym.name)
+                    sj = "".join(st)
+                    d = min(_levenshtein(qcore, sn), _levenshtein(qcore, sj))
+                    overlap = len(qtok & set(st)) if qtok else 0
+                    if d <= 2 or (qtok and overlap * 2 >= len(qtok)):
+                        scored.append((d, -overlap, sym.type, sn, sym))
+                scored.sort(key=lambda s: (s[0], s[1], s[2], s[3]))
+                results = [s[4].to_dict() for s in scored[:limit * 2]]
             if results:
                 rescue = True
+            if rescue:
+                qcore = "".join(_tokenize(query)) or query.lower()
+                def _sdist(r_):
+                    return min(_levenshtein(qcore, r_["name"].lower()),
+                               _levenshtein(qcore, "".join(_tokenize(r_["name"]))))
+                results.sort(key=lambda r_: (_sdist(r_), r_["type"], r_["name"].lower()))
 
         # Apply limit
         results = results[:limit]
@@ -866,6 +1003,9 @@ async def tricorder_symbols(
                 r_["quality"] = "fuzzy"
 
         resp = {"symbols": results, "total": len(results), "limit": limit}
+        esc = _escalation_hint("symbols", query, len(results), rescue)
+        if esc:
+            resp["escalation"] = esc
         resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
         return _mark_untrusted(resp)
 
