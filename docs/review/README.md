@@ -14,9 +14,10 @@ python tricorder.py --root D:/Projects/projectm --tier 0
 
 Point it at any directory. It walks the tree, parses every source file,
 and prints the highest-ranked symbols first — prototypes, signatures,
-and cross-file references — stopping when the budget runs out (verified:
-83,000 files scanned to sqlite on the linux tree; maps render inside a
-fixed token budget, priceable up front with --dry-run).
+and cross-file references — stopping when the budget runs out
+(measured: vaultwarden's 506 files price at ~755k tokens full-read;
+the 8,192-token map keeps 98.9% of that context. `--dry-run` prints
+this pricing before building anything).
 
 ## Why
 
