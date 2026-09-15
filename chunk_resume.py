@@ -4,8 +4,8 @@
 Usage: chunk_resume.py <repo-path> [--start-cap N] [--step N] [--timeout S]
 
 Loops `tricorder.py --db-path <canonical> --max-files <cap>` with a rising
-cap (fixed-cap reruns add zero rows — coverage grows only when the cap
-exceeds the mapped count). After each chunk, reads DISTINCT file/tag/ref
+cap. Each run parses up to <cap> UNMAPPED files (drop_mapped_files slides
+the window, so fixed-cap reruns also advance). After each chunk, reads
 counts from the DB; stops when mapped == discovered total (DONE) or when
 two consecutive chunks add zero files (STALL, exit 1). Serial, one run at
 a time — no worker pool, no DB merge.
