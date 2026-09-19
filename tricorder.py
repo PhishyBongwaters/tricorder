@@ -223,6 +223,28 @@ Examples:
     )
 
     parser.add_argument(
+        "--detect",
+        metavar="QUERY",
+        default=None,
+        help="Search identifier definitions/references for QUERY and exit "
+             "(MCP tricorder_detect equivalent). Honors --format."
+    )
+
+    parser.add_argument(
+        "--symbols",
+        metavar="QUERY",
+        default=None,
+        help="Search code symbols for QUERY and exit "
+             "(MCP tricorder_symbols equivalent). Honors --format."
+    )
+
+    parser.add_argument(
+        "--max-results",
+        type=int,
+        default=50,
+        help="Maximum results for --detect/--symbols (default: 50)"
+    )
+
     parser.add_argument(
         "--top",
         type=int,
@@ -549,7 +571,7 @@ Examples:
 
         # Auto-discover when no explicit/positional paths were provided
         if not other_files:
-            if not args.diff:
+            if not (args.diff or args.detect is not None or args.symbols is not None):
                 output_handlers['info'](f"No explicit files provided, auto-scanning {root_path}...")
             effective_other_files_unresolved = find_src_files(
                 str(root_path), exclude_globs=args.exclude_globs)
@@ -600,6 +622,35 @@ Examples:
                     ntags = len(diff["tags"].get(f, []))
                     extra = f" [{ntags} tags]" if f in diff["tags"] else ""
                     print(f"  {f}{extra}")
+        return
+
+    if args.detect is not None or args.symbols is not None:
+        # Search modes: identifier/symbol lookup without a map build.
+        import json as _json
+        if args.detect is not None:
+            results, _rescue = repo_map.search_identifiers(
+                args.detect, max_results=args.max_results)
+            if args.format == "json":
+                print(_json.dumps({"results": results}, indent=2))
+            else:
+                if not results:
+                    print(f"No matches for '{args.detect}'.")
+                for r in results:
+                    q = f" ({r['quality']})" if r.get("quality") == "fuzzy" else ""
+                    print(f"{r['file']}:{r['line']}  {r['name']}  [{r['kind']}]{q}")
+                    for cl in r["context"].splitlines():
+                        print(f"    {cl}")
+        else:
+            results, _rescue = repo_map.search_symbols(
+                args.symbols, limit=args.max_results)
+            if args.format == "json":
+                print(_json.dumps({"symbols": results}, indent=2))
+            else:
+                if not results:
+                    print(f"No matches for '{args.symbols}'.")
+                for s in results:
+                    q = f" ({s['quality']})" if s.get("quality") == "fuzzy" else ""
+                    print(f"{s['type']:10} {s['name']}  {s['file']}:{s['line']}{q}")
         return
 
     try:

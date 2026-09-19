@@ -18,119 +18,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fastmcp import FastMCP, settings
 from core import Tricorder
 from database import drop_mapped_files
-from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write
+from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write, query_variants, tokenize_identifier, levenshtein
 from scm import get_scm_fname
 from importance import filter_important_files
 from ctags_probe import probe_and_narrow
 
 # Pre-scan DB lives in canonical cache root (get_cache_root() -> .tricorder/db)
 PRE_SCAN_DB_DIR = get_cache_root() / "db"
-
-_WORD_SPLIT = re.compile(r"[_\-\s\./]+")
-
-def _camel_split(word: str):
-    """Split a camelCase/CamelCase/screaming token into words. Deterministic."""
-    return [w for w in re.split(
-        r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", word) if w]
-
-def _query_variants(query: str):
-    """Deterministic orthographic variants for a retrieve-0 rescue (no LLM).
-
-    Strips C++-style decorations off a query (template args, parens, namespace
-    qualifier) and re-joins the word parts under every separator/case form so a
-    dead-end exact lookup like `PCM::AddToBuffer<128,128>` or `Add_To_buffer`
-    still resolves to the base symbol name. Results of a rescue are flagged
-    'fuzzy' downstream so the agent/judge know they are not exact-name hits.
-    ponytail: case fold + separator + camel split only; no stemmer, add one if
-    plural/tense variants measurably miss.
-    """
-    q = query.strip()
-    core = re.sub(r"<[^<>]*>", "", q)      # strip template args <128,128>
-    core = re.sub(r"[()]", "", core)       # strip parens (incl. std::map<int>)
-    core = core.split("::")[-1]            # namespace -> basename
-    words = [w for part in _WORD_SPLIT.split(core) for w in _camel_split(part) if w]
-    if not words:
-        words = [core]
-    variants = {q, q.lower()}
-    for sep in ("_", "-", "", " "):
-        variants.add(sep.join(words))
-        variants.add(sep.join(words).lower())
-    variants.add("".join(w.lower() for w in words))
-    # Synonym-swapped forms: single-word substitution from _SYN_MAP, joined
-    # forms only (bounded: one substitution per variant, cap extras).
-    wl = [w.lower() for w in words]
-    extra = 0
-    for i, w in enumerate(wl):
-        for syn in sorted(_SYN_MAP.get(w, ())):
-            if extra >= 20:
-                break
-            swapped = list(wl)
-            swapped[i] = syn
-            variants.add("_".join(swapped))
-            variants.add("".join(swapped))
-            extra += 1
-    variants.discard("")
-    # Prefer the base-name/joined forms, NEVER bare word fragments (a bare
-    # 'get' over-matches every get_* symbol and caps the rescue before the
-    # specific base arrives). Keep the raw-decorated forms last — they should
-    # only win when nothing else did. ponytail: no stemming.
-    def _rank(v):
-        base_l = "".join(w.lower() for w in words)
-        if v.lower() == base_l:
-            return 0
-        if v.lower() == "".join(words).lower():
-            return 1
-        if v == q:
-            return 3
-        return 2
-    return sorted(variants, key=lambda s: (_rank(s), len(s), s))
-
-# Small verb synonym groups for deterministic query expansion (no ML).
-# Each group lists interchangeable verbs commonly swapped in identifiers
-# (get/fetch, set/store...). Expansion is single-word substitution only.
-_SYNONYM_GROUPS = (
-    ("get", "fetch", "load", "retrieve", "read"),
-    ("set", "store", "write", "save", "put"),
-    ("create", "make", "build", "new"),
-    ("delete", "remove", "drop", "clear"),
-    ("find", "search", "lookup", "locate"),
-    ("pack", "dump", "serialize"),
-    ("unpack", "parse", "deserialize"),
-)
-_SYN_MAP = {}
-for _g in _SYNONYM_GROUPS:
-    for _w in _g:
-        _SYN_MAP.setdefault(_w, set()).update(x for x in _g if x != _w)
-
-
-def _tokenize(name: str):
-    """Split an identifier into lowercase word tokens (separators + camel)."""
-    return [w.lower() for part in _WORD_SPLIT.split(name)
-            for w in _camel_split(part) if w]
-
-
-def _levenshtein(a: str, b: str, max_dist: int = 2) -> int:
-    """Edit distance with early exit past max_dist (stdlib only)."""
-    if a == b:
-        return 0
-    if abs(len(a) - len(b)) > max_dist:
-        return max_dist + 1
-    if len(a) > len(b):
-        a, b = b, a
-    prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        cur = [i]
-        row_min = i
-        for j, cb in enumerate(b, 1):
-            d = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb))
-            cur.append(d)
-            if d < row_min:
-                row_min = d
-        if row_min > max_dist:
-            return max_dist + 1
-        prev = cur
-    return prev[-1]
-
 
 def _escalation_hint(tool: str, query: str, n_results: int, rescue_used: bool):
     """Deterministic next-rung signal for empty/fuzzy lookups (no model).
@@ -819,12 +713,11 @@ async def tricorder_detect(
         # Initialize Tricorder with search-specific settings
         repo_map = _get_tricorder(project_root)
 
-        # Find all source files in the project
-        all_files = find_src_files(project_root)
         # Pre-index probe: narrow the file set to files containing the probe
         # symbol (same fast path tricorder_scan uses). Prevents full-tree walks
         # on huge repos (e.g. the Linux kernel) where a blind search across
         # every file is slow and cold-cache-flaky. Mirrors --pre-index on the CLI.
+        files = None
         if pre_index:
             probed = probe_and_narrow(
                 project_root, pre_index,
@@ -833,130 +726,21 @@ async def tricorder_detect(
             )
             if probed:
                 # probe_and_narrow returns paths relative to project_root; normalize
-                # to absolute to match find_src_files() contract (the tag loop does
-                # Path(file_path).relative_to(project_root), which raises on rel input).
-                all_files = [str(Path(project_root) / f) for f in probed]
-                
-        # Get all tags (definitions and references) for all files
-        all_tags = []
-        for file_path in all_files:
-            rel_path = str(Path(file_path).relative_to(project_root))
-            tags = repo_map.get_tags(file_path, rel_path)
-            all_tags.extend(tags)
+                # to absolute to match the tag loop's contract.
+                files = [str(Path(project_root) / f) for f in probed]
 
-        # Filter tags based on search query and options
-        matching_tags = []
-        query_lower = query.lower()
-        
-        # Compile regex if needed
-        regex_pattern = None
-        if search_mode == "regex":
-            try:
-                regex_pattern = re.compile(query, re.IGNORECASE)
-            except re.error as e:
-                return {"error": f"Invalid regex pattern: {e}"}
-
-        for tag in all_tags:
-            name = tag.name
-            name_lower = name.lower()
-            
-            match = False
-            if search_mode == "exact":
-                match = name_lower == query_lower
-            elif search_mode == "substring":
-                match = query_lower in name_lower
-            elif search_mode == "regex":
-                match = bool(regex_pattern.search(name))
-            
-            if match:
-                if (tag.kind == "def" and include_definitions) or \
-                   (tag.kind == "ref" and include_references):
-                    matching_tags.append(tag)
-
-        # Sort by relevance (definitions first, then references)
-        matching_tags.sort(key=lambda x: (x.kind != "def", x.name.lower().find(query_lower)))
-
-        # Limit results
-        matching_tags = matching_tags[:max_results]
-
-        # Retrieve-0 rescue: the substring query matched nothing (e.g. because
-        # the agent typed a decorated/qualified/differently-cased name). Retry
-        # over deterministic orthographic variants so a dead-end lookup becomes
-        # a set of near-lookalike candidates instead of an empty result. Flag
-        # them 'fuzzy' so the consumer knows they are not exact-name hits and
-        # must be verified against source. No LLM, reproducible.
-        rescue_used = False
-        if not matching_tags and query:
-            seen = set()
-            for cand in _query_variants(query):
-                if len(cand) < 2:
-                    continue
-                cand_l = cand.lower()
-                for tag in all_tags:
-                    if id(tag) in seen:
-                        continue
-                    if cand_l in tag.name.lower():
-                        if (tag.kind == "def" and include_definitions) or \
-                           (tag.kind == "ref" and include_references):
-                            matching_tags.append(tag)
-                            seen.add(id(tag))
-                if len(matching_tags) >= max_results * 2:
-                    break
-            if not matching_tags:
-                # Edit-distance + token-overlap pass (typos, affixes like
-                # serial->serialize that separators/case can't bridge).
-                # ponytail: linear scan, early-exit distance; fine at rescue
-                # scale (fires only on empty). No index until measured slow.
-                qcore = "".join(_tokenize(query)) or query.lower()
-                qtok = set(_tokenize(query))
-                scored = []
-                for tag in all_tags:
-                    if not ((tag.kind == "def" and include_definitions) or
-                            (tag.kind == "ref" and include_references)):
-                        continue
-                    tn = tag.name.lower()
-                    tt = _tokenize(tag.name)
-                    tj = "".join(tt)
-                    d = min(_levenshtein(qcore, tn), _levenshtein(qcore, tj))
-                    overlap = len(qtok & set(tt)) if qtok else 0
-                    if d <= 2 or (qtok and overlap * 2 >= len(qtok)):
-                        scored.append((d, -overlap, tag.kind != "def", tn, tag))
-                scored.sort(key=lambda s: (s[0], s[1], s[2], s[3]))
-                matching_tags = [s[4] for s in scored[:max_results * 2]]
-            if matching_tags:
-                rescue_used = True
-            if rescue_used:
-                qcore = "".join(_tokenize(query)) or query.lower()
-                matching_tags.sort(key=lambda t: (
-                    min(_levenshtein(qcore, t.name.lower()),
-                        _levenshtein(qcore, "".join(_tokenize(t.name)))),
-                    t.kind != "def", t.name.lower()))
-
-        # Format results with context
-        results = []
-        for tag in matching_tags:
-            file_path = str(Path(project_root) / tag.rel_fname)
-            
-            # Calculate context range based on context_lines parameter
-            start_line = max(1, tag.line - context_lines)
-            end_line = tag.line + context_lines
-            context_range = list(range(start_line, end_line + 1))
-            
-            context = repo_map.render_tree(
-                file_path,
-                tag.rel_fname,
-                context_range
+        try:
+            results, rescue_used = repo_map.search_identifiers(
+                query,
+                max_results=max_results,
+                context_lines=context_lines,
+                include_definitions=include_definitions,
+                include_references=include_references,
+                search_mode=search_mode,
+                files=files,
             )
-            
-            if context:
-                results.append({
-                    "file": tag.rel_fname,
-                    "line": tag.line,
-                    "name": tag.name,
-                    "kind": tag.kind,
-                    "context": context,
-                    "quality": "fuzzy" if rescue_used else "exact"
-                })
+        except ValueError as e:
+            return {"error": str(e)}
 
         resp = {"results": results}
         esc = _escalation_hint("detect", query, len(results), rescue_used)
@@ -995,97 +779,14 @@ async def tricorder_symbols(
 
     project_root = str(root_path)
 
-    # Enforce limit cap
-    limit = min(max(limit, 1), 200)
-
     try:
         repo_map = _get_tricorder(project_root)
 
-        all_files = find_src_files(project_root)
-        all_symbols = []
+        results, rescue = repo_map.search_symbols(
+            query, type=type, file=file, limit=limit)
 
-        for file_path in all_files:
-            rel_path = str(Path(file_path).relative_to(project_root))
-
-            # File filter - match against relative path (POSIX normalized)
-            if file and file.lower() not in rel_path.replace('\\', '/').lower():
-                continue
-
-            symbols = repo_map.get_symbols(file_path, rel_path)
-            all_symbols.extend(symbols)
-
-        # Apply filters
-        results = []
-        query_lower = query.lower()
-
-        for sym in all_symbols:
-            # Name filter (substring, case-insensitive)
-            if query and query_lower not in sym.name.lower():
-                continue
-
-            # Type filter (exact match)
-            if type and sym.type != type:
-                continue
-
-            results.append(sym.to_dict())
-
-        # Sort: definitions first, then by name
-        results.sort(key=lambda x: (x["type"], x["name"].lower()))
-
-        # Retrieve-0 rescue (mirror detect): retry over orthographic variants
-        # when the plain substring query matched nothing, so decorated/cased
-        # lookups still surface near-lookalike symbols. Flagged 'fuzzy'.
-        rescue = False
-        if query and not results:
-            seen = set()
-            for cand in _query_variants(query):
-                if len(cand) < 2:
-                    continue
-                cand_l = cand.lower()
-                for sym in all_symbols:
-                    if id(sym) in seen:
-                        continue
-                    if type and sym.type != type:
-                        continue
-                    if cand_l in sym.name.lower():
-                        results.append(sym.to_dict())
-                        seen.add(id(sym))
-                if len(results) >= limit * 2:
-                    break
-            if not results:
-                # Edit-distance + token-overlap pass (mirror detect).
-                qcore = "".join(_tokenize(query)) or query.lower()
-                qtok = set(_tokenize(query))
-                scored = []
-                for sym in all_symbols:
-                    if type and sym.type != type:
-                        continue
-                    sn = sym.name.lower()
-                    st = _tokenize(sym.name)
-                    sj = "".join(st)
-                    d = min(_levenshtein(qcore, sn), _levenshtein(qcore, sj))
-                    overlap = len(qtok & set(st)) if qtok else 0
-                    if d <= 2 or (qtok and overlap * 2 >= len(qtok)):
-                        scored.append((d, -overlap, sym.type, sn, sym))
-                scored.sort(key=lambda s: (s[0], s[1], s[2], s[3]))
-                results = [s[4].to_dict() for s in scored[:limit * 2]]
-            if results:
-                rescue = True
-            if rescue:
-                qcore = "".join(_tokenize(query)) or query.lower()
-                def _sdist(r_):
-                    return min(_levenshtein(qcore, r_["name"].lower()),
-                               _levenshtein(qcore, "".join(_tokenize(r_["name"]))))
-                results.sort(key=lambda r_: (_sdist(r_), r_["type"], r_["name"].lower()))
-
-        # Apply limit
-        results = results[:limit]
-
-        if rescue:
-            for r_ in results:
-                r_["quality"] = "fuzzy"
-
-        resp = {"symbols": results, "total": len(results), "limit": limit}
+        resp = {"symbols": results, "total": len(results),
+                "limit": min(max(limit, 1), 200)}
         esc = _escalation_hint("symbols", query, len(results), rescue)
         if esc:
             resp["escalation"] = esc

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import fnmatch
+import re
 import time
 import sys
 from pathlib import Path
@@ -1089,9 +1090,6 @@ def parse_query_dsl(dsl: str) -> ParsedQuery:
         steps.append(TraversalStep(kind=kind, target=target, modifiers=mods))
 
     return ParsedQuery(steps=steps)
-
-
-import re
 
 
 def _base(name: str) -> str:

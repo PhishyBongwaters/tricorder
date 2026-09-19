@@ -3,13 +3,14 @@ Tricorder class for generating repository maps.
 """
 
 import os
+import re
 import sys
 import threading
 from pathlib import Path
 # Pin project dir ahead of sys.path (mirror tricorder.py) so utils/scm resolve to THIS repo.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from typing import List, Dict, Optional, Tuple, Callable
-from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget
+from typing import List, Dict, Optional, Tuple, Callable, Any
+from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, query_variants, tokenize_identifier, levenshtein
 from cache import TagsCacheMixin, CACHE_VERSION
 from parser import ParserMixin
 from graph import GraphMixin
@@ -224,4 +225,256 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
             "indexed": bool(stored),
         }
 
+    def search_identifiers(
+        self,
+        query: str,
+        max_results: int = 50,
+        context_lines: int = 2,
+        include_definitions: bool = True,
+        include_references: bool = True,
+        search_mode: str = "substring",  # "exact", "substring", "regex"
+        files: Optional[List[str]] = None,
+    ) -> Tuple[List[Dict[str, Any]], bool]:
+        """Search identifier tags (definitions + references) for a query.
+
+        Pure core behind the tricorder_detect MCP tool and the --detect CLI
+        flag. Returns (results, rescue_used) where each result is
+        {file, line, name, kind, context, quality}. Raises ValueError on an
+        invalid regex pattern.
+        """
+        if search_mode not in ("exact", "substring", "regex"):
+            raise ValueError(
+                f"Invalid search_mode: {search_mode}. Must be 'exact', 'substring', or 'regex'.")
+
+        root = str(self.root)
+        all_files = files if files is not None else discover_src_files(
+            root, use_gitignore=True, exclude_globs=self.exclude_globs)
+
+        # Get all tags (definitions and references) for all files
+        all_tags = []
+        for file_path in all_files:
+            rel_path = self.get_rel_fname(file_path)
+            all_tags.extend(self.get_tags(file_path, rel_path))
+
+        # Filter tags based on search query and options
+        matching_tags = []
+        query_lower = query.lower()
+
+        # Compile regex if needed
+        regex_pattern = None
+        if search_mode == "regex":
+            try:
+                regex_pattern = re.compile(query, re.IGNORECASE)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern: {e}")
+
+        for tag in all_tags:
+            name = tag.name
+            name_lower = name.lower()
+
+            match = False
+            if search_mode == "exact":
+                match = name_lower == query_lower
+            elif search_mode == "substring":
+                match = query_lower in name_lower
+            elif search_mode == "regex":
+                match = bool(regex_pattern.search(name))
+
+            if match:
+                if (tag.kind == "def" and include_definitions) or \
+                   (tag.kind == "ref" and include_references):
+                    matching_tags.append(tag)
+
+        # Sort by relevance (definitions first, then references)
+        matching_tags.sort(key=lambda x: (x.kind != "def", x.name.lower().find(query_lower)))
+
+        # Limit results
+        matching_tags = matching_tags[:max_results]
+
+        # Retrieve-0 rescue: the substring query matched nothing (e.g. because
+        # the agent typed a decorated/qualified/differently-cased name). Retry
+        # over deterministic orthographic variants so a dead-end lookup becomes
+        # a set of near-lookalike candidates instead of an empty result. Flag
+        # them 'fuzzy' so the consumer knows they are not exact-name hits and
+        # must be verified against source. No LLM, reproducible.
+        rescue_used = False
+        if not matching_tags and query:
+            seen = set()
+            for cand in query_variants(query):
+                if len(cand) < 2:
+                    continue
+                cand_l = cand.lower()
+                for tag in all_tags:
+                    if id(tag) in seen:
+                        continue
+                    if cand_l in tag.name.lower():
+                        if (tag.kind == "def" and include_definitions) or \
+                           (tag.kind == "ref" and include_references):
+                            matching_tags.append(tag)
+                            seen.add(id(tag))
+                if len(matching_tags) >= max_results * 2:
+                    break
+            if not matching_tags:
+                # Edit-distance + token-overlap pass (typos, affixes like
+                # serial->serialize that separators/case can't bridge).
+                # ponytail: linear scan, early-exit distance; fine at rescue
+                # scale (fires only on empty). No index until measured slow.
+                qcore = "".join(tokenize_identifier(query)) or query.lower()
+                qtok = set(tokenize_identifier(query))
+                scored = []
+                for tag in all_tags:
+                    if not ((tag.kind == "def" and include_definitions) or
+                            (tag.kind == "ref" and include_references)):
+                        continue
+                    tn = tag.name.lower()
+                    tt = tokenize_identifier(tag.name)
+                    tj = "".join(tt)
+                    d = min(levenshtein(qcore, tn), levenshtein(qcore, tj))
+                    overlap = len(qtok & set(tt)) if qtok else 0
+                    if d <= 2 or (qtok and overlap * 2 >= len(qtok)):
+                        scored.append((d, -overlap, tag.kind != "def", tn, tag))
+                scored.sort(key=lambda s: (s[0], s[1], s[2], s[3]))
+                matching_tags = [s[4] for s in scored[:max_results * 2]]
+            if matching_tags:
+                rescue_used = True
+            if rescue_used:
+                qcore = "".join(tokenize_identifier(query)) or query.lower()
+                matching_tags.sort(key=lambda t: (
+                    min(levenshtein(qcore, t.name.lower()),
+                        levenshtein(qcore, "".join(tokenize_identifier(t.name)))),
+                    t.kind != "def", t.name.lower()))
+
+        # Format results with context
+        results = []
+        for tag in matching_tags:
+            file_path = str(Path(root) / tag.rel_fname)
+
+            # Calculate context range based on context_lines parameter
+            start_line = max(1, tag.line - context_lines)
+            end_line = tag.line + context_lines
+            context_range = list(range(start_line, end_line + 1))
+
+            context = self.render_tree(
+                file_path,
+                tag.rel_fname,
+                context_range
+            )
+
+            if context:
+                results.append({
+                    "file": tag.rel_fname,
+                    "line": tag.line,
+                    "name": tag.name,
+                    "kind": tag.kind,
+                    "context": context,
+                    "quality": "fuzzy" if rescue_used else "exact"
+                })
+
+        return results, rescue_used
+
+    def search_symbols(
+        self,
+        query: str = "",
+        type: Optional[str] = None,
+        file: Optional[str] = None,
+        limit: int = 50,
+        files: Optional[List[str]] = None,
+    ) -> Tuple[List[Dict[str, Any]], bool]:
+        """Search code symbols by name, type, or file path.
+
+        Pure core behind the tricorder_symbols MCP tool and the --symbols CLI
+        flag. Returns (results, rescue) where each result is a symbol record
+        dict (flagged 'fuzzy' when the retrieve-0 rescue fired).
+        """
+        # Enforce limit cap
+        limit = min(max(limit, 1), 200)
+
+        root = str(self.root)
+        all_files = files if files is not None else discover_src_files(
+            root, use_gitignore=True, exclude_globs=self.exclude_globs)
+        all_symbols = []
+
+        for file_path in all_files:
+            rel_path = self.get_rel_fname(file_path)
+
+            # File filter - match against relative path (POSIX normalized)
+            if file and file.lower() not in rel_path.replace('\\', '/').lower():
+                continue
+
+            all_symbols.extend(self.get_symbols(file_path, rel_path))
+
+        # Apply filters
+        results = []
+        query_lower = query.lower()
+
+        for sym in all_symbols:
+            # Name filter (substring, case-insensitive)
+            if query and query_lower not in sym.name.lower():
+                continue
+
+            # Type filter (exact match)
+            if type and sym.type != type:
+                continue
+
+            results.append(sym.to_dict())
+
+        # Sort: definitions first, then by name
+        results.sort(key=lambda x: (x["type"], x["name"].lower()))
+
+        # Retrieve-0 rescue (mirror search_identifiers): retry over orthographic
+        # variants when the plain substring query matched nothing, so
+        # decorated/cased lookups still surface near-lookalike symbols.
+        # Flagged 'fuzzy'.
+        rescue = False
+        if query and not results:
+            seen = set()
+            for cand in query_variants(query):
+                if len(cand) < 2:
+                    continue
+                cand_l = cand.lower()
+                for sym in all_symbols:
+                    if id(sym) in seen:
+                        continue
+                    if type and sym.type != type:
+                        continue
+                    if cand_l in sym.name.lower():
+                        results.append(sym.to_dict())
+                        seen.add(id(sym))
+                if len(results) >= limit * 2:
+                    break
+            if not results:
+                # Edit-distance + token-overlap pass (mirror search_identifiers).
+                qcore = "".join(tokenize_identifier(query)) or query.lower()
+                qtok = set(tokenize_identifier(query))
+                scored = []
+                for sym in all_symbols:
+                    if type and sym.type != type:
+                        continue
+                    sn = sym.name.lower()
+                    st = tokenize_identifier(sym.name)
+                    sj = "".join(st)
+                    d = min(levenshtein(qcore, sn), levenshtein(qcore, sj))
+                    overlap = len(qtok & set(st)) if qtok else 0
+                    if d <= 2 or (qtok and overlap * 2 >= len(qtok)):
+                        scored.append((d, -overlap, sym.type, sn, sym))
+                scored.sort(key=lambda s: (s[0], s[1], s[2], s[3]))
+                results = [s[4].to_dict() for s in scored[:limit * 2]]
+            if results:
+                rescue = True
+            if rescue:
+                qcore = "".join(tokenize_identifier(query)) or query.lower()
+
+                def _sdist(r_):
+                    return min(levenshtein(qcore, r_["name"].lower()),
+                               levenshtein(qcore, "".join(tokenize_identifier(r_["name"]))))
+                results.sort(key=lambda r_: (_sdist(r_), r_["type"], r_["name"].lower()))
+
+        # Apply limit
+        results = results[:limit]
+
+        if rescue:
+            for r_ in results:
+                r_["quality"] = "fuzzy"
+
+        return results, rescue
     
