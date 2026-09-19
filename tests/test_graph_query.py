@@ -296,5 +296,69 @@ class TestGraphQueryMCPTool(unittest.TestCase):
         asyncio.run(run())
 
 
+class TestTestsForTraversal(unittest.TestCase):
+    """tests_for('symbol') returns only callers located in test files."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="tests_for_"))
+        (self.tmp / "src").mkdir()
+        (self.tmp / "tests").mkdir()
+        (self.tmp / "src" / "auth.py").write_text(
+            "def authenticate(user, password):\n    return user == 'admin'\n",
+            encoding="utf-8",
+        )
+        (self.tmp / "src" / "main.py").write_text(
+            "from auth import authenticate\n\ndef run():\n    authenticate('admin', 'x')\n",
+            encoding="utf-8",
+        )
+        (self.tmp / "tests" / "test_auth.py").write_text(
+            "from src.auth import authenticate\n\n"
+            "def test_login():\n    assert authenticate('admin', 'x')\n\n"
+            "def test_bad():\n    assert not authenticate('bob', 'y')\n",
+            encoding="utf-8",
+        )
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_dsl_parses_tests_for(self):
+        parsed = parse_query_dsl("tests_for('authenticate')")
+        self.assertEqual(len(parsed.steps), 1)
+        self.assertEqual(parsed.steps[0].kind, "tests_for")
+        self.assertEqual(parsed.steps[0].target, "authenticate")
+
+    def test_is_test_file(self):
+        from utils import is_test_file
+        for p in ("tests/test_auth.py", "src/tests/test_a.py", "x_test.go",
+                  "foo.test.js", "__tests__/a.js", "a_spec.rb", "test_x.py"):
+            self.assertTrue(is_test_file(p), p)
+        for p in ("src/auth.py", "testing.py", "latest.py", "contest.py"):
+            self.assertFalse(is_test_file(p), p)
+
+    def test_only_test_callers_returned(self):
+        tricorder = Tricorder(root=str(self.tmp), verbose=False)
+        result = tricorder.query_graph(parse_query_dsl("tests_for('authenticate')"))
+        self.assertNotIn("error", result)
+        node_names = {n["name"] for n in result["nodes"]}
+        self.assertIn("test_login", node_names)
+        self.assertIn("test_bad", node_names)
+        # Non-test caller must be excluded even though it calls authenticate.
+        self.assertNotIn("run", node_names)
+        for node in result["nodes"]:
+            if node["name"] == "authenticate":
+                continue
+            self.assertIn("tests", node["file"].replace("\\", "/"),
+                          f"non-test file leaked: {node['file']}")
+        for edge in result["edges"]:
+            self.assertEqual(edge["type"], "tests")
+
+    def test_no_tests_found(self):
+        tricorder = Tricorder(root=str(self.tmp), verbose=False)
+        result = tricorder.query_graph(parse_query_dsl("tests_for('run')"))
+        self.assertNotIn("error", result)
+        # 'run' is only called from non-test code (nothing calls it here at
+        # all) — no test callers expected.
+        callers = [n for n in result["nodes"] if n["name"] != "run"]
+        self.assertEqual(callers, [])
+
+
 if __name__ == "__main__":
     unittest.main()

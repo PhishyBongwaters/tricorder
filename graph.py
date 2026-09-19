@@ -6,7 +6,7 @@ import networkx as nx
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Tuple, Optional, Any
-from utils import SymbolRecord, Tag, discover_src_files, repo_budget, count_tokens, detect_lang, read_text, _base
+from utils import SymbolRecord, Tag, discover_src_files, repo_budget, count_tokens, detect_lang, read_text, _base, is_test_file
 import json as _json
 from scm import get_scm_fname
 from collections import defaultdict
@@ -413,6 +413,28 @@ class GraphMixin:
                             # Fallback: use the reference name as caller
                             neighbors.append((name, ref_file, ref_line, "calls"))
 
+                elif kind == "tests_for":
+                    # Find test callers: like callers, but restricted to test
+                    # files. Answers "which tests exercise this symbol?".
+                    for ref_file, ref_line in refs.get(name, []):
+                        if not is_test_file(ref_file):
+                            continue
+                        if not file_allowed(ref_file, mods):
+                            continue
+                        if ref_file == file and ref_line == line:
+                            continue  # Skip self-reference
+                        if mods.symbol_type:
+                            sym_type = get_symbol_type(ref_file, name)
+                            if sym_type != mods.symbol_type:
+                                continue
+                        # Find the caller (containing symbol) at this reference location
+                        caller = find_containing_symbol(ref_file, ref_line)
+                        if caller:
+                            neighbors.append((caller["name"], ref_file, caller["line"], "tests"))
+                        else:
+                            # Fallback: use the reference name as caller
+                            neighbors.append((name, ref_file, ref_line, "tests"))
+
                 elif kind == "callees":
                     # Find callees: symbols that THIS symbol calls (references FROM this symbol's body)
                     # Use the per-file call graph
@@ -479,8 +501,8 @@ class GraphMixin:
                         # Edge: from current node TO neighbor
                         # For callers: caller calls callee (current), so edge is caller -> callee
                         # For callees: current calls callee, so edge is current -> callee
-                        if kind in ("callers", "refs", "defs"):
-                            # For callers/refs/defs, we're traversing TO the current node
+                        if kind in ("callers", "refs", "defs", "tests_for"):
+                            # For callers/refs/defs/tests_for, we're traversing TO the current node
                             # So the neighbor is the "from" and current is "to"
                             step_edges.append({
                                 "from": n_name, "to": name,

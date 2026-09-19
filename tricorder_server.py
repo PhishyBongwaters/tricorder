@@ -1088,7 +1088,7 @@ async def tricorder_query(
     DSL Grammar:
         query := traversal ('|' traversal)*
         traversal := kind '(' target ')' modifiers?
-        kind := "callers" | "callees" | "refs" | "defs"
+        kind := "callers" | "callees" | "refs" | "defs" | "tests_for"
         target := quoted string (single or double quotes)
         modifiers := (modifier)*
         modifier := "depth=" INT | "exclude=" GLOB | "include=" GLOB
@@ -1098,6 +1098,7 @@ async def tricorder_query(
         "callers('authenticate') depth=2"              # all callers up to 2 hops
         "callees('main') depth=1 exclude=tests/**"     # direct callees, skip tests
         "refs('Config') type=class limit=50"           # all references to class Config
+        "tests_for('authenticate')"                   # tests that call authenticate
         "callers('foo') | callees('bar') depth=3"      # chained traversals
 
     Args:

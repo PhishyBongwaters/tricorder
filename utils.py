@@ -858,7 +858,7 @@ class QueryModifiers:
 @dataclass
 class TraversalStep:
     """A single traversal step in the query."""
-    kind: str  # "callers", "callees", "refs", "defs"
+    kind: str  # "callers", "callees", "refs", "defs", "tests_for"
     target: str  # symbol name to start from
     modifiers: QueryModifiers
 
@@ -869,23 +869,170 @@ class ParsedQuery:
     steps: List[TraversalStep]
 
 
+TEST_FILE_GLOBS = (
+    "*/tests/*",
+    "*/test/*",
+    "*/__tests__/*",
+    "test_*",
+    "*_test.*",
+    "*.test.*",
+    "*_spec.*",
+)
+"""Path patterns (POSIX, matched against full path and basename) that identify
+test files across common layouts: pytest/unittest (test_*.py, *_test.py,
+tests/), Go (*_test.go), JS/TS (*.test.js, __tests__/), RSpec (*_spec.rb)."""
+
+
+def is_test_file(path: str) -> bool:
+    """Return True if path looks like a test file.
+
+    Used by the tests_for graph traversal to restrict callers to test files.
+    Matches against both the full POSIX path and the basename so bare
+    filenames (no directory) work too.
+    """
+    name = path.replace("\\", "/")
+    base = name.rsplit("/", 1)[-1]
+    # The "/" + name probe lets "*/tests/*"-style globs match bare paths
+    # like "tests/test_a.py" (fnmatch '*' can match empty, but the literal
+    # '/' in the pattern still needs a character to anchor against).
+    candidates = (name, "/" + name, base)
+    return any(
+        fnmatch.fnmatchcase(cand, pat)
+        for cand in candidates
+        for pat in TEST_FILE_GLOBS
+    )
+
+
+_WORD_SPLIT = re.compile(r"[_\-\s\./]+")
+
+
+def _camel_split(word: str):
+    """Split a camelCase/CamelCase/screaming token into words. Deterministic."""
+    return [w for w in re.split(
+        r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", word) if w]
+
+
+# Small verb synonym groups for deterministic query expansion (no ML).
+# Each group lists interchangeable verbs commonly swapped in identifiers
+# (get/fetch, set/store...). Expansion is single-word substitution only.
+_SYNONYM_GROUPS = (
+    ("get", "fetch", "load", "retrieve", "read"),
+    ("set", "store", "write", "save", "put"),
+    ("create", "make", "build", "new"),
+    ("delete", "remove", "drop", "clear"),
+    ("find", "search", "lookup", "locate"),
+    ("pack", "dump", "serialize"),
+    ("unpack", "parse", "deserialize"),
+)
+_SYN_MAP = {}
+for _g in _SYNONYM_GROUPS:
+    for _w in _g:
+        _SYN_MAP.setdefault(_w, set()).update(x for x in _g if x != _w)
+
+
+def query_variants(query: str):
+    """Deterministic orthographic variants for a retrieve-0 rescue (no LLM).
+
+    Strips C++-style decorations off a query (template args, parens, namespace
+    qualifier) and re-joins the word parts under every separator/case form so a
+    dead-end exact lookup like `PCM::AddToBuffer<128,128>` or `Add_To_buffer`
+    still resolves to the base symbol name. Results of a rescue are flagged
+    'fuzzy' downstream so the agent/judge know they are not exact-name hits.
+    ponytail: case fold + separator + camel split only; no stemmer, add one if
+    plural/tense variants measurably miss.
+    """
+    q = query.strip()
+    core = re.sub(r"<[^<>]*>", "", q)      # strip template args <128,128>
+    core = re.sub(r"[()]", "", core)       # strip parens (incl. std::map<int>)
+    core = core.split("::")[-1]            # namespace -> basename
+    words = [w for part in _WORD_SPLIT.split(core) for w in _camel_split(part) if w]
+    if not words:
+        words = [core]
+    variants = {q, q.lower()}
+    for sep in ("_", "-", "", " "):
+        variants.add(sep.join(words))
+        variants.add(sep.join(words).lower())
+    variants.add("".join(w.lower() for w in words))
+    # Synonym-swapped forms: single-word substitution from _SYN_MAP, joined
+    # forms only (bounded: one substitution per variant, cap extras).
+    wl = [w.lower() for w in words]
+    extra = 0
+    for i, w in enumerate(wl):
+        for syn in sorted(_SYN_MAP.get(w, ())):
+            if extra >= 20:
+                break
+            swapped = list(wl)
+            swapped[i] = syn
+            variants.add("_".join(swapped))
+            variants.add("".join(swapped))
+            extra += 1
+    variants.discard("")
+    # Prefer the base-name/joined forms, NEVER bare word fragments (a bare
+    # 'get' over-matches every get_* symbol and caps the rescue before the
+    # specific base arrives). Keep the raw-decorated forms last — they should
+    # only win when nothing else did. ponytail: no stemming.
+    def _rank(v):
+        base_l = "".join(w.lower() for w in words)
+        if v.lower() == base_l:
+            return 0
+        if v.lower() == "".join(words).lower():
+            return 1
+        if v == q:
+            return 3
+        return 2
+    return sorted(variants, key=lambda s: (_rank(s), len(s), s))
+
+
+def tokenize_identifier(name: str):
+    """Split an identifier into lowercase word tokens (separators + camel)."""
+    return [w.lower() for part in _WORD_SPLIT.split(name)
+            for w in _camel_split(part) if w]
+
+
+def levenshtein(a: str, b: str, max_dist: int = 2) -> int:
+    """Edit distance with early exit past max_dist (stdlib only)."""
+    if a == b:
+        return 0
+    if abs(len(a) - len(b)) > max_dist:
+        return max_dist + 1
+    if len(a) > len(b):
+        a, b = b, a
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        row_min = i
+        for j, cb in enumerate(b, 1):
+            d = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb))
+            cur.append(d)
+            if d < row_min:
+                row_min = d
+        if row_min > max_dist:
+            return max_dist + 1
+        prev = cur
+    return prev[-1]
+
+
 def parse_query_dsl(dsl: str) -> ParsedQuery:
     """Parse graph query DSL into structured form.
 
     Grammar:
         query := traversal (pipe traversal)*
         traversal := kind '(' target ')' modifiers?
-        kind := "callers" | "callees" | "refs" | "defs"
+        kind := "callers" | "callees" | "refs" | "defs" | "tests_for"
         target := quoted string (single or double quotes)
         modifiers := (modifier)*
         modifier := "depth=" INT | "exclude=" GLOB | "include=" GLOB
                   | "type=" ("function"|"class"|"method"|"variable") | "limit=" INT
         pipe := "|"
 
+    tests_for('name') is callers('name') restricted to test files — it answers
+    "which tests exercise this symbol?".
+
     Examples:
         "callers('authenticate') depth=2"
         "callees('main') depth=1 exclude=tests/**"
         "refs('Config') type=class limit=50"
+        "tests_for('authenticate')"                    # tests calling authenticate
         "callers('foo') | callees('bar') depth=3"
     """
     if not dsl or not dsl.strip():
@@ -900,7 +1047,7 @@ def parse_query_dsl(dsl: str) -> ParsedQuery:
             continue
 
         # Match kind and target: kind('target') or kind("target")
-        match = re.match(r'^(callers|callees|refs|defs)\s*\(\s*([\'"])(.*?)\2\s*\)(.*)$', trav_str)
+        match = re.match(r'^(callers|callees|refs|defs|tests_for)\s*\(\s*([\'"])(.*?)\2\s*\)(.*)$', trav_str)
         if not match:
             raise ValueError(f"Invalid traversal syntax: {trav_str}")
 
