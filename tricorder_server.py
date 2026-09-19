@@ -340,6 +340,89 @@ def _mark_untrusted(resp: dict) -> dict:
     return resp
 
 
+def _detail_decoration_reserve() -> int:
+    """Token overhead of the budget/trust fields added to a detail response.
+
+    Measured from the real decoration dicts so the final serialized response
+    honors max_tokens, not just the symbol portion.
+    """
+    import json as _json
+    skeleton = {"token_estimate": 0, "full_repo_estimate": 0,
+                "savings_pct": 0.0, "truncated": True}
+    skeleton.update(_TRUST_METADATA)
+    return count_tokens(_json.dumps(skeleton), "gpt-4")
+
+
+def _truncate_text_to_tokens(text: str, budget: int) -> str:
+    """Truncate text to at most budget tokens (tiktoken), marking the cut.
+
+    The truncation marker counts against the budget, so the result never
+    exceeds it.
+    """
+    marker = "\n... [truncated to fit max_tokens]"
+    if budget <= 0 or not text:
+        return ""
+    try:
+        import tiktoken as _tt
+    except ImportError:
+        # Fall back to a ~4 chars/token estimate when tiktoken is missing.
+        return text[:budget * 4].rstrip() + marker
+    enc = _tt.get_encoding("cl100k_base")
+    marker_toks = len(enc.encode(marker))
+    toks = enc.encode(text)
+    if len(toks) <= budget:
+        return text
+    cut = enc.decode(toks[:max(0, budget - marker_toks)])
+    # Prefer a clean line boundary over a mid-line cut.
+    if "\n" in cut:
+        cut = cut.rsplit("\n", 1)[0]
+    return cut.rstrip() + marker
+
+
+def _enforce_detail_budget(symbol: dict, max_tokens: int) -> bool:
+    """Trim a tricorder_detail symbol dict to fit max_tokens, in place.
+
+    Trim order: body first (head kept, cut marked), then callees dropped
+    (freeing room to re-expand the body), then callers shortened.
+    Name/file/line/signature metadata is never cut.
+    Returns True when anything was trimmed.
+    """
+    import json as _json
+
+    def _tokens() -> int:
+        return count_tokens(_json.dumps(symbol))
+
+    def _tokens_without_body() -> int:
+        probe = dict(symbol, body="")
+        return count_tokens(_json.dumps(probe))
+
+    if _tokens() <= max_tokens:
+        return False
+
+    body = symbol.get("body") or ""
+    # 1. Body: keep as much as fits alongside everything else.
+    if body:
+        symbol["body"] = _truncate_text_to_tokens(body, max_tokens - _tokens_without_body())
+        if _tokens() <= max_tokens:
+            return True
+
+    # 2. Callees: drop the whole list (callers are more valuable), then give
+    # the body another chance at the freed space.
+    if symbol.get("callees"):
+        symbol["callees"] = []
+        if body:
+            symbol["body"] = _truncate_text_to_tokens(body, max_tokens - _tokens_without_body())
+        if _tokens() <= max_tokens:
+            return True
+
+    # 3. Callers: shorten from the tail until it fits (keep at least one).
+    callers = symbol.get("callers") or []
+    while len(callers) > 1 and _tokens() > max_tokens:
+        callers.pop()
+    symbol["callers"] = callers
+    return True
+
+
 # TC-001: explicit boundary markers around raw repo-derived text so an agent
 # can't mistake injected comments/filenames/instructions for its own prompt.
 _TRUST_BEGIN = "BEGIN UNTRUSTED REPOSITORY CONTEXT"
@@ -1076,6 +1159,12 @@ async def tricorder_detail(
         file: File path containing the symbol (relative to project_root or absolute).
         name: Symbol name to look up.
         line: Optional line number to disambiguate symbols with the same name.
+        max_tokens: Optional token budget for the response. When set, the body
+            is truncated first (head kept, marked), then callees are dropped,
+            then callers are shortened — signature metadata is never cut.
+            Best-effort: name/file/line/signature and the response decorations
+            always survive, so a budget below that floor can still be exceeded.
+            The response gains "truncated": true when trimming occurred.
 
     Returns:
         Dictionary containing 'symbol' (symbol record dict) or 'error' key.
@@ -1107,6 +1196,12 @@ async def tricorder_detail(
             return {"error": "not found"}
 
         resp = {"symbol": detail.to_dict()}
+        if max_tokens is not None and max_tokens > 0:
+            # Reserve room for the budget/trust decorations added below so
+            # the final serialized response honors max_tokens.
+            reserve = _detail_decoration_reserve()
+            if _enforce_detail_budget(resp["symbol"], max(1, max_tokens - reserve)):
+                resp["truncated"] = True
         resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
         return _mark_untrusted(resp)
 
