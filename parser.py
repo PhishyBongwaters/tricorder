@@ -49,7 +49,10 @@ def qualify_with_class_context(name, node, capture_name=""):
     """
     if not name or "::" in name:
         return name
-    if "class" in capture_name:
+    # Class definitions themselves are never qualified. Match the exact
+    # capture suffix (e.g. 'name.definition.class') rather than a substring,
+    # so a future capture like 'class_method' can't accidentally match.
+    if capture_name.endswith(".class"):
         return name
     cls = enclosing_class_name(node)
     if cls:
@@ -377,7 +380,12 @@ class ParserMixin:
                     # Scope the name to its enclosing class/struct (C/C++/Rust
                     # use '::'); e.g. void Foo::bar() -> "Foo::bar".
                     # ponytail: only for the ::-scoped languages, so Python
-                    # stays dotted and isn't mis-scoped.
+                    # stays dotted and isn't mis-scoped. (Tag extraction
+                    # qualifies every language with '::'; SymbolRecord names
+                    # intentionally stay bare here — all consumers normalize
+                    # through utils._base()/substring/fuzzy matching, so the
+                    # two forms still join. Don't widen this gate without
+                    # auditing those joins.)
                     if lang in ("cpp", "c", "rust") and "::" not in name:
                         scope = self._enclosing_class_name(parent)
                         if scope:

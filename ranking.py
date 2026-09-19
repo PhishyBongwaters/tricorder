@@ -203,7 +203,7 @@ class RankingMixin:
         # was built (e.g. class-context qualification rules), the stored tags
         # are stale regardless of file mtimes. Force a full rescan; the fresh
         # scan below re-stamps with the current EXTRACTOR_VERSION.
-        if meta and len(meta) > 3 and meta[3] != EXTRACTOR_VERSION:
+        if meta and meta[3] != EXTRACTOR_VERSION:
             self.output_handlers['info'](
                 f"Extractor v{meta[3]} != v{EXTRACTOR_VERSION}: "
                 f"stored tags are stale, forcing full rescan")
