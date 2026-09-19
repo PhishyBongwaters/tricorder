@@ -37,6 +37,22 @@ def find_git_root(base: str) -> Optional[str]:
     return None
 
 
+def _canonical_db_for(root: str) -> Optional[str]:
+    """First existing index DB for root: <root>/.tricorder/db/<name>.db
+    (--init canonical), else <cache>/db/<name>.db (pre_scan default).
+    Mirrors tricorder_server._canonical_db_for so the CLI --diff mode sees
+    the same index the MCP server uses. None if neither exists."""
+    name = f"{Path(root).name}.db"
+    for cand in (Path(root) / ".tricorder" / "db" / name,
+                 get_cache_root() / "db" / name):
+        try:
+            if cand.exists():
+                return str(cand)
+        except Exception:
+            continue
+    return None
+
+
 def find_src_files(directory: str, exclude_globs: Optional[List[str]] = None) -> List[str]:
     """Find source files in a directory (delegates to shared discover_src_files)."""
     return discover_src_files(directory, use_gitignore=True, exclude_globs=exclude_globs)
@@ -74,6 +90,23 @@ def tool_warning(message):
 def tool_error(message):
     """Print error messages."""
     print(f"Error: {message}", file=sys.stderr)
+
+
+def _effective_db_path(args, root_path) -> Optional[str]:
+    """Resolve the DB path for this run.
+
+    Explicit --db-path wins (unless --no-db). --diff additionally falls back
+    to the canonical index DB so the CLI sees the same index the MCP server
+    uses. The map path keeps its historical in-memory default when no
+    --db-path is given.
+    """
+    if args.no_db:
+        return None
+    if args.db_path:
+        return args.db_path
+    if args.diff:
+        return _canonical_db_for(str(root_path))
+    return None
 
 
 def main():
@@ -181,6 +214,15 @@ Examples:
         help="Output format (default: text)"
     )
 
+    parser.add_argument(
+        "--diff",
+        action="store_true",
+        help="Show what changed since the last scan (added/modified/deleted "
+             "files plus tags for changed files) instead of generating a map. "
+             "Read-only; honors --format."
+    )
+
+    parser.add_argument(
     parser.add_argument(
         "--top",
         type=int,
@@ -507,7 +549,8 @@ Examples:
 
         # Auto-discover when no explicit/positional paths were provided
         if not other_files:
-            output_handlers['info'](f"No explicit files provided, auto-scanning {root_path}...")
+            if not args.diff:
+                output_handlers['info'](f"No explicit files provided, auto-scanning {root_path}...")
             effective_other_files_unresolved = find_src_files(
                 str(root_path), exclude_globs=args.exclude_globs)
             # Sliding window: already-mapped files don't count against the cap.
@@ -538,8 +581,26 @@ Examples:
         exclude_untagged=args.exclude_untagged,
         full_map=args.full,
         use_db=not args.no_db,
-        db_path=args.db_path if (args.db_path and not args.no_db) else None,
+        db_path=_effective_db_path(args, root_path),
     )
+
+    if args.diff:
+        # Delta-map mode: report working-tree changes vs the index and exit.
+        diff = repo_map.diff_against_index()
+        if args.format == "json":
+            import json as _json
+            print(_json.dumps(diff, indent=2))
+        else:
+            if not diff["indexed"]:
+                print("No scan index found — every file is reported as added.")
+            for label in ("added", "modified", "deleted"):
+                files = diff[label]
+                print(f"{label.capitalize()} ({len(files)}):")
+                for f in files:
+                    ntags = len(diff["tags"].get(f, []))
+                    extra = f" [{ntags} tags]" if f in diff["tags"] else ""
+                    print(f"  {f}{extra}")
+        return
 
     try:
         ranked_tags, file_report = repo_map.get_ranked_tags(chat_files, other_files)

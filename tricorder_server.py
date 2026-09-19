@@ -1014,11 +1014,49 @@ async def tricorder_symbols(
         return {"error": f"Error searching symbols: {str(e)}"}
 
 @mcp.tool()
+async def tricorder_diff(
+    project_root: str,
+) -> Dict[str, Any]:
+    """Show what changed in the working tree since the last scan (delta map).
+
+    Compares current file fingerprints against the index's recorded
+    file_state and returns added/modified/deleted files plus parsed tags
+    for the added/modified files — a fraction of a full rescan. Read-only:
+    it never updates the index. When the project was never scanned,
+    every file reports as added with indexed=False.
+
+    Args:
+        project_root: Root directory of the project (must be absolute path!)
+
+    Returns:
+        Dictionary with added/modified/deleted (relative paths),
+        tags ({rel: [tag dicts]}), indexed (bool), plus budget fields.
+    """
+    err, root_path = _validate_project_root(project_root)
+    if err:
+        return {"error": err}
+
+    project_root = str(root_path)
+
+    try:
+        repo_map = _get_tricorder(project_root)
+
+        diff = repo_map.diff_against_index()
+        resp = dict(diff)
+        resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
+        return _mark_untrusted(resp)
+
+    except Exception as e:
+        log.exception(f"Error computing diff for project '{project_root}': {e}")
+        return {"error": f"Error computing diff: {str(e)}"}
+
+@mcp.tool()
 async def tricorder_detail(
     project_root: str,
     file: str,
     name: str,
     line: int = 0,
+    max_tokens: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Get full details for a specific code symbol by file path, name, and optional line number.
 

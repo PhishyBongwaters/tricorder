@@ -163,4 +163,65 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         except FileNotFoundError:
             self.output_handlers['warning'](f"File not found: {fname}")
             return None
+
+    def diff_against_index(self) -> Dict[str, Any]:
+        """Compare the working tree against the DB's recorded file_state.
+
+        Returns a delta map::
+            {
+              "added": [rel, ...],      # on disk, not in index
+              "modified": [rel, ...],   # (size, mtime) differs from index
+              "deleted": [rel, ...],    # in index, not on disk
+              "tags": {rel: [tag dicts]},  # parsed tags for added+modified
+              "indexed": bool,          # False when the DB was never scanned
+            }
+
+        Read-only: it never updates the index. When the DB has no file_state
+        (never scanned, or --no-db), every file reports as added and
+        indexed=False.
+        """
+        stored: Dict[str, Tuple[int, int]] = {}
+        if self._db_store is not None:
+            try:
+                stored = self._db_store.get_file_state()
+            except Exception:
+                stored = {}
+
+        current: Dict[str, Tuple[str, int, int]] = {}
+        for fpath in discover_src_files(str(self.root), use_gitignore=True,
+                                        exclude_globs=self.exclude_globs):
+            try:
+                st = os.stat(fpath)
+            except OSError:
+                continue
+            rel = self.get_rel_fname(fpath)
+            current[rel] = (fpath, st.st_size, int(st.st_mtime))
+
+        added, modified, deleted = [], [], []
+        for rel, (_fpath, size, mtime) in current.items():
+            if rel not in stored:
+                added.append(rel)
+            elif stored[rel] != (size, mtime):
+                modified.append(rel)
+        for rel in stored:
+            if rel not in current:
+                deleted.append(rel)
+
+        tags: Dict[str, list] = {}
+        for rel in sorted(added + modified):
+            fpath = current[rel][0]
+            try:
+                ftags = self.get_tags(fpath, rel)
+                tags[rel] = [t._asdict() for t in ftags]
+            except Exception:
+                tags[rel] = []
+
+        return {
+            "added": sorted(added),
+            "modified": sorted(modified),
+            "deleted": sorted(deleted),
+            "tags": tags,
+            "indexed": bool(stored),
+        }
+
     
