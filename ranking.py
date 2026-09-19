@@ -18,10 +18,48 @@ from report import FileReport
 _COVERAGE_WARN_THRESHOLD = 60.0
 
 
+# Skip list mirrors ParserMixin._SKIP_EXTS / CacheMixin.get_tags early-out.
+# Kept here (not imported) so _parse_worker stays picklable without a self.
+_WORKER_SKIP_SUFFIXES = {'.frag', '.vert', '.inc', '.icns', '.plist', '.entitlements'}
+_WORKER_SKIP_ENDINGS = ('.cmake.in', '.h.in', '.cpp.in', '.hpp.in')
+
+
+def _apply_class_context_to_rows(rows):
+    """Pure, picklable version of ParserMixin._add_class_context_to_tags.
+
+    rows: list of (fname, rel_fname, line, name, kind) -> same shape, with
+    method names qualified as Class::method where the heuristic applies.
+
+    Must stay in sync with ParserMixin._add_class_context_to_tags in parser.py
+    (issue #46). The worker can't call the mixin method (no self, must stay
+    picklable), so the heuristic is duplicated here on tuples.
+    """
+    if not rows:
+        return rows
+    # Sort by line to process in source order, same as the mixin.
+    sorted_rows = sorted(rows, key=lambda r: r[2])
+    result = []
+    current_class = None
+    for fname, rel_fname, line, name, kind in sorted_rows:
+        if kind == "def" and name and name[0].isupper():
+            if '(' not in name and '::' not in name:
+                current_class = name
+                result.append((fname, rel_fname, line, name, kind))
+                continue
+        if kind == "def" and current_class and '(' in name and '::' not in name:
+            result.append((fname, rel_fname, line, f"{current_class}::{name}", kind))
+        else:
+            result.append((fname, rel_fname, line, name, kind))
+    return result
+
+
 # Tier 2 — ProcessPool worker (pure, picklable). Runs in child process, no DB.
 def _parse_worker(args):
     """Parse one file, return [(fname, rel_fname, line, name, kind), ...]. Top-level for pickle."""
     fname, rel_fname = args
+    # Mirror get_tags() early-out: skip files that can't have tree-sitter symbols.
+    if fname.endswith(_WORKER_SKIP_ENDINGS) or os.path.splitext(fname)[1] in _WORKER_SKIP_SUFFIXES:
+        return []
     try:
         from utils import detect_lang, read_text
         from scm import get_scm_fname
@@ -89,7 +127,9 @@ def _parse_worker(args):
                     out.append((fname, rel_fname, line, name, kind))
                 except Exception:
                     continue
-        return out
+        # Qualify method names with class context so the parallel fresh-scan
+        # path matches the sequential/incremental paths (issue #46).
+        return _apply_class_context_to_rows(out)
     except Exception:
         return []
 
