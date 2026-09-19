@@ -912,6 +912,100 @@ async def tricorder_detail(
 
 
 @mcp.tool()
+async def tricorder_locate(
+    project_root: str,
+    query: str,
+    max_tokens: int = 2048,
+    max_alternatives: int = 5,
+) -> Dict[str, Any]:
+    """Locate a symbol in one call: runs detect, then details the best match.
+
+    Auto-escalation for the most common agent flow (find the symbol, show it),
+    collapsing 3-4 round trips into one. Returns the best match's full detail
+    (body/callers/callees, budgeted to max_tokens like tricorder_detail) plus
+    a short list of alternative candidates for disambiguation.
+
+    The best match prefers an exact-name definition; fuzzy rescue candidates
+    are used only when nothing exact matched.
+
+    Args:
+        project_root: Root directory of the project (must be absolute path!)
+        query: Symbol name to locate.
+        max_tokens: Token budget for the matched detail (default 2048).
+            Best-effort; metadata always survives (see tricorder_detail).
+        max_alternatives: Max alternative candidates to list (default 5).
+
+    Returns:
+        Dictionary with query, match (symbol detail dict or None),
+        alternatives ([{name, file, line, kind, quality}]), truncated (bool
+        when the match was budgeted down), plus budget fields.
+    """
+    err, root_path = _validate_project_root(project_root)
+    if err:
+        return {"error": err}
+
+    project_root = str(root_path)
+
+    try:
+        repo_map = _get_tricorder(project_root)
+
+        candidates, _rescue = repo_map.search_identifiers(query, max_results=10)
+        if not candidates:
+            resp = {"query": query, "match": None, "alternatives": [],
+                    "note": f"No matches for '{query}'."}
+            resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
+            return _mark_untrusted(resp)
+
+        # Best match: exact-name definition first, then any exact hit,
+        # then the top fuzzy candidate.
+        def _rank(c):
+            return (c.get("quality") != "exact",
+                    c.get("kind") != "def",
+                    c.get("file", ""), c.get("line", 0))
+
+        best = min(candidates, key=_rank)
+        rest = [c for c in candidates
+                if (c["file"], c["line"], c["name"]) != (best["file"], best["line"], best["name"])]
+
+        match = None
+        truncated = False
+        file_path = str(Path(project_root) / best["file"])
+        detail = repo_map.get_symbol_detail(file_path, best["name"], best["line"])
+
+        alternatives = [
+            {"name": c["name"], "file": c["file"], "line": c["line"],
+             "kind": c["kind"], "quality": c.get("quality", "exact")}
+            for c in rest[:max_alternatives]
+        ]
+
+        resp = {"query": query, "match": None, "alternatives": alternatives}
+        if detail is None:
+            resp["note"] = (f"Best candidate '{best['name']}' in {best['file']} "
+                            f"could not be detailed; see alternatives.")
+
+        if detail is not None:
+            match = detail.to_dict()
+            if max_tokens is not None and max_tokens > 0:
+                # Wrapper overhead: every response field except the match
+                # itself (query/alternatives/note). Measure it so the final
+                # serialized response honors max_tokens, not just the symbol.
+                wrapper_tokens = count_tokens(json.dumps(resp), "gpt-4")
+                match_budget = max_tokens - wrapper_tokens - _detail_decoration_reserve()
+                if _enforce_detail_budget(match, max(1, match_budget)):
+                    truncated = True
+            resp["match"] = match
+
+        if truncated:
+            resp["truncated"] = True
+        resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
+        return _mark_untrusted(resp)
+
+    except Exception as e:
+        log.exception(f"Error locating '{query}' in project '{project_root}': {e}")
+        return {"error": f"Error locating symbol: {str(e)}"}
+
+
+@mcp.tool()
 async def tricorder_query(
     project_root: str,
     query: str,
