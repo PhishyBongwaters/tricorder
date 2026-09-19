@@ -1,0 +1,113 @@
+# CLI Reference
+
+Complete reference for `tricorder`. See the [User Guide](user-guide.md) for
+workflows and the [README](../README.md) for the quick start.
+
+```
+tricorder [paths ...] [options]
+```
+
+`paths` are files or directories to include in the map. If omitted, the
+repository is auto-discovered from `--root`.
+
+## Targeting
+
+| Flag | Default | Description |
+|---|---|---|
+| `paths` | — | Files or directories to map. If omitted, auto-discover from `--root`. |
+| `--root ROOT` | `.` | Repository root directory. |
+| `--chat-files F ...` | — | Files currently being edited — highest ranking priority. |
+| `--mentioned-files F ...` | — | Files explicitly mentioned — high priority. |
+| `--mentioned-idents I ...` | — | Identifiers explicitly mentioned — boosts their ranking. |
+| `--other-files F ...` | — | Other files to consider — lowest priority. |
+| `--exclude-globs PATTERN ...` | — | POSIX globs (relative to `--root`) excluded from auto-scan, e.g. `vendor/** third_party/**`. Vendored subtrees are filtered *before* ranking so first-party code dominates. Ignored when explicit paths are given. |
+| `--max-files N` | `0` (no cap) | Cap on files during auto-discovery when no paths are given. |
+
+Priority order: `--chat-files` > `--mentioned-files` > `--other-files` > auto-discovered.
+
+## Output control
+
+| Flag | Default | Description |
+|---|---|---|
+| `--map-tokens N` | `8192` | Maximum tokens for the generated map. Binary search fits the highest-ranked tags to budget. |
+| `--tier {0,1}` | `0` | `0` = definitions only (~14 tokens/tag); `1` = definitions + context lines (~350 tokens/tag). |
+| `--context-lines N` | `3` | Context lines around each definition when `--tier 1`. |
+| `--top N` | — | Limit output to the top N ranked tags. |
+| `--full` | off | Emit the full map regardless of token budget (disables truncation). |
+| `--format {text,json}` | `text` | Output format. |
+| `--output FILE` | — | Write map to file instead of stdout. |
+| `--exclude-unranked` | off | Drop files with PageRank 0 from the map. |
+| `--exclude-untagged` | off | Skip the `Other files:` section (files with no symbols). |
+| `--mermaid` | off | Output the dependency graph as a Mermaid flowchart instead of a tag map. |
+| `--mermaid-top N` | `30` | Limit the Mermaid graph to the top N nodes. |
+| `--model NAME` | `gpt-4` | Model name used for token counting (tiktoken encoding). |
+| `--max-context-window N` | — | Maximum context window size; adjusts the map token limit when no chat files are given. |
+| `--quiet` | off | Suppress everything except the map (no verbose/info messages). |
+| `--verbose` | off | Enable verbose logging. |
+
+## Pre-index probe (huge repos)
+
+For a known symbol in a giant tree (kernel, monorepo), a full scan wastes
+time walking every file. The probe runs **before** any path walk and is
+authoritative.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--pre-index SYMBOL` | — | Narrow the scan to files containing SYMBOL. rg-first (`rg -l -w` with multi-language globs); ctags fallback only if rg finds nothing. Ctags index builds are refused on >20,000 source files; >100MB tag files are treated as corrupt. |
+| `--pre-index-max-files N` | `100` | Cap on files pulled in from probe results. |
+| `--pre-index-include-parents N` | `0` | Also include N parent directories of matched files. |
+
+Pick a **specific** symbol: `pick_next_task` (~6 matches) lands on `kernel/sched/`;
+`schedule` (thousands of matches) caps out and misses. Example:
+
+```bash
+tricorder /path/to/linux --pre-index "pick_next_task" --pre-index-max-files 20 --map-tokens 2048
+# kernel/sched/ narrowed in ~1.1s, no full-tree walk
+```
+
+Requires `rg` on `PATH` for the fast path.
+
+## Database
+
+DB-backed scanning is the **default**: tags/refs stream into sqlite instead of
+being held in RAM. See [Architecture](architecture.md#scan-pipeline).
+
+| Flag | Description |
+|---|---|
+| `--db-path PATH` | Persist per-file tags/refs to this sqlite file instead of in-memory sqlite. |
+| `--no-db` | Opt out: use the legacy in-memory `nx.MultiDiGraph` path. Escape hatch for parity/debugging. Mutually exclusive with `--db-path`. |
+| `--init` | Create/open the canonical DB at `<root>/.tricorder/db/<name>.db`, print its path, exit. Idempotent; never wipes without `--wipe`. |
+| `--wipe` | With `--init` only: delete the existing canonical DB first. (`--wipe` requires `--init`.) |
+| `--db-coverage` | Print one-line mapped-DB coverage for `--root` (`mapped: N files, M tags, db sig X`) and exit. Prints nothing when unmapped. |
+
+## Diagnostics
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Estimate the token budget without generating the map. |
+| `--signature-only` | Print the 16-char stat-based content signature and exit. No map is built. Used by the lifecycle plugin for cache validation. |
+| `--stats-only [MAP_FILE]` | Print token-budget JSON for `--root` and exit: `{token_estimate, full_repo_estimate, savings_pct}`. No map is built. |
+| `--probe-digest` | Print the turn-0 probe digest (language tally + sizes + navigation hint) for `--root` and exit. No map build, no token budget — cheap even on huge repos. This is the exact text the Hermes/DSH plugins inject at session start. |
+| `--force-refresh` | Force refresh of caches. |
+
+## Examples
+
+```bash
+tricorder .                                   # Map current directory
+tricorder src/ --map-tokens 2048              # Map src/ with a 2048-token budget
+tricorder file1.py file2.py                   # Map specific files
+tricorder --chat-files main.py --other-files src/
+tricorder . --tier 1 --context-lines 5        # Definitions + 5 lines context
+tricorder . --mermaid --mermaid-top 30        # Dependency flowchart
+tricorder . --exclude-globs 'vendor/**' 'third_party/**'
+tricorder . --dry-run --map-tokens 2048       # Budget estimate only
+tricorder . --top 10 --format json             # Top 10 tags as JSON
+```
+
+## Exit behavior
+
+- On success the map (or requested diagnostic) goes to stdout; `--output` writes to a file instead.
+- `--quiet` guarantees stdout contains *only* the map — safe for piping.
+- Resource limits (20k files, 500MB, depth 25, 300s, 1MB/file — see
+  [Architecture](architecture.md#security-model)) produce a partial result plus
+  a `scan_warning`, never a silent truncation.
