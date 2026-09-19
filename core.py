@@ -4,16 +4,11 @@ Tricorder class for generating repository maps.
 
 import os
 import sys
-import fnmatch
 import threading
-import hashlib
 from pathlib import Path
 # Pin project dir ahead of sys.path (mirror tricorder.py) so utils/scm resolve to THIS repo.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from collections import namedtuple, defaultdict
-from typing import List, Dict, Set, Optional, Tuple, Callable, Any, Union
-from dataclasses import dataclass
-import networkx as nx
+from typing import List, Dict, Optional, Tuple, Callable
 from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget
 from cache import TagsCacheMixin, CACHE_VERSION
 from parser import ParserMixin
@@ -98,8 +93,8 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         self.cache_ttl = cache_ttl
         self.full_map = full_map
         
-        # Flat-memory parse store (SPEC_db_map Goal 3). off by default — the
-        # default execution path stays byte-identical until the DB path is proven.
+        # Flat-memory parse store (SPEC_db_map Goal 3). DB-backed ranking is the
+        # default execution path (use_db=True); --no-db selects the legacy path.
         self._db_active = bool(use_db)
         self._db_path = db_path
         self._db_store: Optional[DBStore] = None

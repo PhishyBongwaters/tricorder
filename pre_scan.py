@@ -8,12 +8,12 @@ import sys
 import time
 from pathlib import Path
 
-REPOS_DIR = Path(r"D:\Projects\Tricorder-Testing-Repos")
+REPOS_DIR = Path(os.environ.get("TRICORDER_TESTBED", r"D:\Projects\Tricorder-Testing-Repos"))
 # DBs belong in tricorder's canonical cache root (get_cache_root()), NOT a
 # throwaway dir under the testing-repos folder.
 from utils import get_cache_root
 DB_DIR = get_cache_root() / "db"
-TRICORDER = Path(r"D:\Projects\tricorder\tricorder.py")
+TRICORDER = Path(os.environ.get("TRICORDER_SCRIPT", r"D:\Projects\tricorder\tricorder.py"))
 
 
 def scan_repo(repo_path: Path, db_path: Path, tricorder: Path = TRICORDER) -> dict:

@@ -17,10 +17,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-TESTBED = Path(r"D:\Projects\Tricorder-Testing-Repos")
-DBDIR = Path(r"D:\Projects\tricorder\.tricorder\db")
+TESTBED = Path(os.environ.get("TRICORDER_TESTBED", r"D:\Projects\Tricorder-Testing-Repos"))
+DBDIR = Path(os.environ.get("TRICORDER_DBDIR", r"D:\Projects\tricorder\.tricorder\db"))
 MAP = {
-    "projectm": Path(r"D:\Projects\projectm"),
+    "projectm": Path(os.environ.get("TRICORDER_PROJECTM", r"D:\Projects\projectm")),
     "vaultwarden": TESTBED / "vaultwarden",
     "go": TESTBED / "go",
     "kotlin": TESTBED / "kotlin",

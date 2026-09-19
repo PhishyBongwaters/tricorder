@@ -140,6 +140,11 @@ class RankingMixin:
 
         Matches incremental (Goal 6) needs cheaply: (rel, size, mtime). Exact
         contents hashing is deferred; sizes+mtimes catch edited/added files.
+
+        Note: mtime is truncated to whole seconds (int(st.st_mtime)), so a
+        sub-second edit that preserves file size will not invalidate the
+        signature. Acceptable trade-off for a cheap signature; use content
+        hashing if this ever causes stale-cache misses.
         """
         parts = []
         for fname in sorted(included):
@@ -433,7 +438,6 @@ class RankingMixin:
             # Tier 2: parallel when large, else sequential with batch commit
             use_parallel_fresh = len(all_fnames) >= 200 and (os.cpu_count() or 1) > 1
             if use_parallel_fresh:
-                self.output_handlers['info'](f"[DEBUG] Parallel fresh scan: {len(all_fnames)} files, {os.cpu_count()} workers")
                 work_fresh = [(f, self.get_rel_fname(f)) for f in all_fnames if os.path.exists(f)]
                 # Mark excluded for missing
                 for f in all_fnames:
@@ -444,7 +448,6 @@ class RankingMixin:
                         included.append(f)
                 batch = 0
                 with concurrent.futures.ProcessPoolExecutor(max_workers=(2 if len(all_fnames) > 15000 else min(4, os.cpu_count() or 4))) as ex:
-                    self.output_handlers['info'](f"[DEBUG] ProcessPoolExecutor created")
                     futures = {ex.submit(_parse_worker, w): w for w in work_fresh}
                     for fut in concurrent.futures.as_completed(futures):
                         fname, rel_fname = futures[fut]
