@@ -11,6 +11,52 @@ _PARSER_TIMEOUT_S = float(os.environ.get("TRICORDER_PARSER_TIMEOUT_S", "5"))
 _PARSER_CACHE: dict = {}  # lang -> (language, parser) ponytail: one per language, not per file
 from scm import get_scm_fname
 
+# Tree-sitter node types that denote a class/struct-like scope, across the
+# grammars tricorder supports. Used to structurally qualify method names
+# (Class::method) instead of relying on the name heuristic.
+_CLASS_NODE_TYPES = ("class_declaration", "struct_declaration", "class_specifier",
+                     "impl_item", "class_definition")
+# Child node types that carry the class/struct name. "name" covers grammars
+# like tree-sitter-python where class_definition -> name (not identifier).
+_CLASS_NAME_CHILD_TYPES = ("identifier", "type_identifier", "class_identifier",
+                           "scoped_identifier", "name")
+
+
+def enclosing_class_name(node):
+    """Return the name of the nearest enclosing class/struct, or None.
+
+    Pure and picklable (module-level): safe to call from the ProcessPool
+    worker as well as from ParserMixin methods. Innermost class wins for
+    nesting. Returns None when the node is not inside any class-like scope.
+    """
+    cur = node.parent
+    while cur is not None:
+        if cur.type in _CLASS_NODE_TYPES:
+            for child in cur.children:
+                if child.type in _CLASS_NAME_CHILD_TYPES:
+                    text = child.text
+                    return text.decode("utf-8", errors="ignore") if text else ""
+            return ""
+        cur = cur.parent
+    return None
+
+
+def qualify_with_class_context(name, node, capture_name=""):
+    """Qualify a def name as Class::name using tree structure.
+
+    Returns the (possibly qualified) name. Class definitions themselves are
+    never qualified; names already containing '::' are left alone.
+    """
+    if not name or "::" in name:
+        return name
+    if "class" in capture_name:
+        return name
+    cls = enclosing_class_name(node)
+    if cls:
+        return f"{cls}::{name}"
+    return name
+
+
 class ParserMixin:
     _SKIP_EXTS = {'.frag', '.vert', '.inc', '.icns', '.plist', '.entitlements',
                   '.cmake.in', '.h.in', '.cpp.in', '.hpp.in'}
@@ -179,6 +225,14 @@ class ParserMixin:
                     line_num = node.start_point[0] + 1
                     # Handle potential None value
                     name = node.text.decode('utf-8') if node.text else ""
+
+                    # Structural class-context qualification (Class::method):
+                    # tree-based, so it covers Python and other languages where
+                    # the name heuristic never fires. The name-heuristic
+                    # fallback in _add_class_context_to_tags still runs later
+                    # (via get_tags) for grammars without a mapped class node.
+                    if kind == "def":
+                        name = qualify_with_class_context(name, node, capture_name)
                     
                     tags.append(Tag(
                         rel_fname=rel_fname,
@@ -199,19 +253,10 @@ class ParserMixin:
 
         Handles layouts where the function sits inside a class_declaration /
         struct_declaration / impl_item rather than directly.
+        Delegates to the module-level pure function (picklable for workers);
+        returns "" when no enclosing class is found (legacy contract).
         """
-        cur = node.parent
-        cls_types = ("class_declaration", "struct_declaration", "class_specifier",
-                     "impl_item", "class_definition")
-        while cur is not None:
-            if cur.type in cls_types:
-                for child in cur.children:
-                    if child.type in ("identifier", "type_identifier",
-                                       "class_identifier", "scoped_identifier"):
-                        return child.text.decode("utf-8", errors="ignore")
-                return ""
-            cur = cur.parent
-        return ""
+        return enclosing_class_name(node) or ""
 
     def get_symbols(self, fname: str, rel_fname: str) -> List[SymbolRecord]:
         """Extract SymbolRecord objects from a file's AST.

@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Set, Tuple, Optional, Any
 from utils import Tag, SymbolRecord
 from report import FileReport
+from parser import qualify_with_class_context
 _COVERAGE_WARN_THRESHOLD = 60.0
 from database import DBStore, EXTRACTOR_VERSION
 from importance import filter_important_files
@@ -124,6 +125,11 @@ def _parse_worker(args):
                 try:
                     line = node.start_point[0] + 1
                     name = node.text.decode("utf-8") if node.text else ""
+                    # Structural class-context qualification (Class::method),
+                    # mirroring ParserMixin.get_tags_raw. Covers Python and
+                    # other languages where the name heuristic never fires.
+                    if kind == "def":
+                        name = qualify_with_class_context(name, node, cap_name)
                     out.append((fname, rel_fname, line, name, kind))
                 except Exception:
                     continue
@@ -192,6 +198,17 @@ class RankingMixin:
         # (Pre-scan case: db_path was provided and DB already populated)
         needed_rels = {self.get_rel_fname(f) for f in all_fnames}
         meta = db.get_meta()
+
+        # Extractor staleness gate: if the tag extractor changed since this DB
+        # was built (e.g. class-context qualification rules), the stored tags
+        # are stale regardless of file mtimes. Force a full rescan; the fresh
+        # scan below re-stamps with the current EXTRACTOR_VERSION.
+        if meta and len(meta) > 3 and meta[3] != EXTRACTOR_VERSION:
+            self.output_handlers['info'](
+                f"Extractor v{meta[3]} != v{EXTRACTOR_VERSION}: "
+                f"stored tags are stale, forcing full rescan")
+            db.reset()
+            meta = None
         
         if meta and meta[0] == 1:  # schema_version == 1
             stored_root, stored_sig = meta[1], meta[2]
