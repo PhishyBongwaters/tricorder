@@ -98,5 +98,32 @@ class TestDiffAgainstIndex(unittest.TestCase):
         self.assertIn("deleted", result)
 
 
+class TestCliDiffAlias(unittest.TestCase):
+    """--since is a pure alias for --diff at the CLI layer."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="diff_alias_"))
+        (self.tmp / "a.py").write_text("def alpha():\n    return 1\n", encoding="utf-8")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.cli = str(Path(__file__).resolve().parent.parent / "tricorder.py")
+
+    def _run(self, *args):
+        import subprocess
+        return subprocess.run(
+            [sys.executable, self.cli, "--root", str(self.tmp), *args],
+            capture_output=True, text=True, timeout=120,
+        )
+
+    def test_since_matches_diff(self):
+        p_diff = self._run("--diff", "--format", "json")
+        p_since = self._run("--since", "--format", "json")
+        self.assertEqual(p_diff.returncode, 0, p_diff.stderr[-500:])
+        self.assertEqual(p_since.returncode, 0, p_since.stderr[-500:])
+        import json
+        # No index DB here: both report every file as added, identically.
+        self.assertEqual(json.loads(p_since.stdout), json.loads(p_diff.stdout))
+        self.assertIn("added", json.loads(p_since.stdout))
+
+
 if __name__ == "__main__":
     unittest.main()

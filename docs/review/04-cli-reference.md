@@ -41,7 +41,7 @@ tricorder.py --chat-files main.py --other-files src/
   hint). No map, no budget. Same text the Hermes/DSH plugins inject.
 - `--db-coverage`: one-line mapped-DB coverage for `--root`, exit.
   Silent when unmapped.
-- `--diff`: delta map — added/modified/deleted files since the last
+- `--diff` / `--since`: delta map — added/modified/deleted files since the last
   scan, plus tags for changed files. Read-only; honors `--format`.
 - `--detect QUERY` / `--symbols QUERY`: identifier/symbol search
   without a map build (MCP `tricorder_detect` / `tricorder_symbols`

@@ -215,11 +215,11 @@ Examples:
     )
 
     parser.add_argument(
-        "--diff",
+        "--diff", "--since",
         action="store_true",
         help="Show what changed since the last scan (added/modified/deleted "
              "files plus tags for changed files) instead of generating a map. "
-             "Read-only; honors --format."
+             "Read-only; honors --format. --since is an alias for --diff."
     )
 
     parser.add_argument(

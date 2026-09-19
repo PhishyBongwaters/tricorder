@@ -55,7 +55,7 @@ All honor `--format` (JSON output is machine-clean — no info lines).
 | `--detect QUERY` | — | Identifier search, MCP `tricorder_detect` equivalent: definitions + references with file, line, context. |
 | `--symbols QUERY` | — | Symbol search, MCP `tricorder_symbols` equivalent: name, type, file, line range, signature. |
 | `--max-results N` | `50` | Result cap for `--detect` / `--symbols`. |
-| `--diff` | off | Delta map: added/modified/deleted files since the last scan, plus tags for changed files. Read-only. |
+| `--diff`, `--since` | off | Delta map: added/modified/deleted files since the last scan, plus tags for changed files. Read-only. `--since` is an alias for `--diff`. |
 
 ```bash
 tricorder /path/to/repo --detect authenticate --format json

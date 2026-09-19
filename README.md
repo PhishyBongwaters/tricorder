@@ -61,7 +61,7 @@ That's it. No config files, no model keys, no network calls — everything runs 
 - **Pre-index probe** — `--pre-index SYMBOL` narrows giant trees via ripgrep in ~1s (no full walk)
 - **Graph query DSL** — `callers('auth') depth=2 exclude=tests/**` replaces 5+ round-trips; `tests_for('x')` finds covering tests
 - **One-call locate** — `tricorder_locate` runs detect → detail in a single round trip with a token budget
-- **Delta maps** — `tricorder_diff` / `--diff` shows what changed since the last scan (read-only)
+- **Delta maps** — `tricorder_diff` / `--diff` (alias `--since`) shows what changed since the last scan (read-only)
 - **Budget-aware detail** — `tricorder_detail(max_tokens=…)` trims body → callees → callers, never identity
 - **Cross-file call graph** — import-resolved callers/callees, persisted across processes
 - **DB-backed scanning (default)** — tags stream into sqlite; extractor versioning forces rescan when the parser changes
