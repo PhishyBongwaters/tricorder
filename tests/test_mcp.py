@@ -1,4 +1,5 @@
 """Tests for MCP server path handling and token limit enforcement."""
+import os
 import sys
 import unittest
 sys.path.insert(0, '.')
@@ -23,10 +24,17 @@ class TestMCPPathHandling(unittest.TestCase):
         self.assertEqual(str(rel), 'file.py')
 
     def test_path_normalize_consistency(self):
-        """Multiple relative paths resolve consistently."""
-        paths = ['./utils.py', 'utils.py', '.\\\\utils.py']
+        """Multiple relative paths resolve consistently (portable forms)."""
+        paths = ['./utils.py', 'utils.py']
         resolved = [str(Path(p).resolve()) for p in paths]
         self.assertEqual(len(set(resolved)), 1, "All relative paths should resolve to same absolute path")
+
+    @unittest.skipUnless(os.name == 'nt', "backslash separators only normalize on Windows")
+    def test_path_normalize_windows_backslash(self):
+        """Windows: '.\\utils.py' resolves like './utils.py'."""
+        paths = ['./utils.py', '.\\utils.py']
+        resolved = [str(Path(p).resolve()) for p in paths]
+        self.assertEqual(len(set(resolved)), 1, "Backslash relative path should resolve consistently")
 
 
 class TestMCPTokenLimit(unittest.TestCase):

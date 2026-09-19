@@ -129,15 +129,29 @@ class TestGraphQueryIntegration(unittest.TestCase):
         self.assertTrue(any("authenticate" in name for name, _ in node_names))
 
     def test_exclude_glob_filter(self):
-        """Test exclude glob filtering."""
+        """Test exclude glob filtering.
+
+        Transportable: globs match project-root-relative paths, so the test
+        asserts on relative paths (the old version asserted on the absolute
+        path, which spuriously contains 'tests/' from the repo layout and
+        passed vacuously on Windows where separators are backslashes).
+        """
         tricorder = Tricorder(root=str(self.project_root), verbose=False)
         from utils import parse_query_dsl
-        parsed = parse_query_dsl("callers('authenticate') depth=2 exclude=tests/**")
+        # Baseline: without exclude, auth.py contributes nodes.
+        parsed_all = parse_query_dsl("callers('authenticate') depth=2")
+        result_all = tricorder.query_graph(parsed_all)
+        files_all = {Path(n["file"]).name for n in result_all["nodes"]}
+        self.assertIn("auth.py", files_all,
+                      "fixture should yield auth.py nodes without exclude")
+        # With exclude, no node may come from auth.py.
+        parsed = parse_query_dsl("callers('authenticate') depth=2 exclude=auth.py")
         result = tricorder.query_graph(parsed)
-
-        # No nodes should be from tests/ directory
+        self.assertTrue(result["nodes"], "excluding auth.py should still leave main.py nodes")
         for node in result["nodes"]:
-            self.assertNotIn("tests/", node["file"])
+            rel = os.path.relpath(node["file"], str(self.project_root))
+            self.assertNotEqual(rel.replace(os.sep, "/"), "auth.py",
+                                f"excluded file leaked into results: {node['file']}")
 
     def test_depth_limiting(self):
         """Test depth limiting."""

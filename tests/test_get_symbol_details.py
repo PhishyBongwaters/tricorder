@@ -1,6 +1,8 @@
 """Tests for tricorder_detail MCP tool (Milestone 3)."""
 import asyncio
+import shutil
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -145,63 +147,6 @@ class TestGetSymbolDetails(unittest.TestCase):
         self.assertNotIn("error", result)
         self.assertEqual(result["symbol"]["name"], "count_tokens")
 
-    def test_cpp_symbol_with_trailing_parens(self):
-        """C/C++ tree-sitter queries yield names with trailing '()'; tricorder_detail
-        must still match a clean name. Regression for stretchMonitors() in projectM."""
-        import os
-        header = r"D:\Projects\projectm\src\sdl-test-ui\pmSDL.hpp"
-        if not os.path.isfile(header):
-            self.skipTest(f"projectM header not found: {header}")
-        result = asyncio.run(tricorder_detail(
-            project_root=r"D:\Projects\projectm",
-            file=r"src\sdl-test-ui\pmSDL.hpp",
-            name="stretchMonitors"
-        ))
-        self.assertNotIn("error", result)
-        # C++ methods are now scoped (Class::method); the base name must match.
-        returned = result["symbol"]["name"].rstrip("()")
-        self.assertTrue(
-            returned == "stretchMonitors" or returned.endswith("::stretchMonitors"),
-            f"expected stretchMonitors (scoped or bare), got {returned!r}",
-        )
-
-    def test_function_scope_isolation(self):
-        """Callees and callers are scoped to the function body, not the whole file.
-
-        PCM.cpp has sibling functions with overlapping call targets (e.g.
-        UpdateSpectrum, Align, CopyNewWaveformData).  GetFrameAudioData must
-        NOT list callees from UpdateFrameAudioData or CopyNewWaveformData.
-        """
-        import os
-        pcm = r"D:\Projects\projectm\src\libprojectM\Audio\PCM.cpp"
-        if not os.path.isfile(pcm):
-            self.skipTest(f"PCM.cpp not found: {pcm}")
-
-        result = asyncio.run(tricorder_detail(
-            project_root=r"D:\Projects\projectm",
-            file=r"src\libprojectM\Audio\PCM.cpp",
-            name="GetFrameAudioData"
-        ))
-        self.assertNotIn("error", result)
-        sym = result["symbol"]
-
-        # end_line must cover the body, not just the declarator
-        self.assertGreaterEqual(sym["end_line"], 97,
-                                "end_line should cover the full function body")
-
-        # Collect callee names
-        callee_names = {c["name"] for c in sym["callees"]}
-
-        # These are defined in PCM.cpp but belong to OTHER functions —
-        # they must NOT appear as callees of GetFrameAudioData.
-        false_positives = callee_names & {"CopyNewWaveformData", "UpdateSpectrum", "Align"}
-        self.assertFalse(false_positives,
-                         f"GetFrameAudioData should not see callees from sibling functions: {false_positives}")
-
-        # Verify end_line is correct (PCM.cpp GetFrameAudioData body is L76-97)
-        self.assertEqual(sym["end_line"], 97,
-                         "end_line must match the actual closing brace of the function body")
-
     def test_performance(self):
         """Single symbol lookup returns in <1s."""
         start = time.time()
@@ -213,6 +158,94 @@ class TestGetSymbolDetails(unittest.TestCase):
         elapsed = time.time() - start
         self.assertNotIn("error", result)
         self.assertLess(elapsed, 1.0, f"Took {elapsed:.2f}s, expected <1s")
+
+
+class TestCppSymbolDetailsSynthetic(unittest.TestCase):
+    """Portable replacements for the projectM-dependent tests.
+
+    Synthesizes a small C++ project in a temp dir exercising the same code
+    paths (scoped-name matching, function-scope callee isolation) without
+    the D:\\Projects\\projectm checkout.
+    """
+
+    HEADER = '''#pragma once
+class Monitor {
+public:
+    void stretchMonitors();
+    int width();
+};
+'''
+
+    IMPL = '''#include "monitor.hpp"
+
+void UpdateSpectrum() {}
+void Align() {}
+void CopyNewWaveformData() {}
+
+void GetFrameAudioData() {
+    UpdateSpectrum();
+}
+
+void UpdateFrameAudioData() {
+    CopyNewWaveformData();
+    Align();
+}
+
+void Monitor::stretchMonitors() {
+    width();
+}
+'''
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="cpp_detail_"))
+        (self.tmp / "monitor.hpp").write_text(self.HEADER, encoding="utf-8")
+        (self.tmp / "audio.cpp").write_text(self.IMPL, encoding="utf-8")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_cpp_scoped_name_match(self):
+        """tricorder_detail matches a clean name against a scoped C++ symbol
+        (Monitor::stretchMonitors). Portable version of the projectM
+        stretchMonitors() regression test."""
+        result = asyncio.run(tricorder_detail(
+            project_root=str(self.tmp),
+            file="monitor.hpp",
+            name="stretchMonitors",
+        ))
+        self.assertNotIn("error", result)
+        # C++ methods are scoped (Class::method); the base name must match.
+        returned = result["symbol"]["name"].rstrip("()")
+        self.assertTrue(
+            returned == "stretchMonitors" or returned.endswith("::stretchMonitors"),
+            f"expected stretchMonitors (scoped or bare), got {returned!r}",
+        )
+
+    def test_function_scope_isolation(self):
+        """Callees are scoped to the function body, not the whole file.
+
+        audio.cpp has sibling functions with overlapping call targets
+        (UpdateSpectrum, Align, CopyNewWaveformData). GetFrameAudioData must
+        NOT list callees belonging to UpdateFrameAudioData.
+        """
+        result = asyncio.run(tricorder_detail(
+            project_root=str(self.tmp),
+            file="audio.cpp",
+            name="GetFrameAudioData",
+        ))
+        self.assertNotIn("error", result)
+        sym = result["symbol"]
+
+        # end_line must cover the body, not just the declarator
+        self.assertGreaterEqual(sym["end_line"], 9,
+                                "end_line should cover the full function body")
+
+        callee_names = {c["name"] for c in sym["callees"]}
+        self.assertIn("UpdateSpectrum", callee_names,
+                      "the function's own callee must be listed")
+        # Defined in audio.cpp but belonging to a SIBLING function —
+        # they must NOT appear as callees of GetFrameAudioData.
+        false_positives = callee_names & {"CopyNewWaveformData", "Align"}
+        self.assertFalse(false_positives,
+                         f"GetFrameAudioData should not see callees from sibling functions: {false_positives}")
 
 
 if __name__ == '__main__':
