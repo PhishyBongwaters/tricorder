@@ -106,8 +106,11 @@ class ParserMixin:
                     result.append(tag)
                     continue
             
-            # For methods/functions, if we're in a class context, prefix with class name
-            if tag.kind == "def" and current_class and '(' in tag.name:
+            # For methods/functions, if we're in a class context, prefix with class name.
+            # The '::' guard mirrors _apply_class_context_to_rows (ranking.py):
+            # structural qualification in get_tags_raw may already have scoped
+            # the name (e.g. 'Monitor::stretchMonitors()') — never qualify twice.
+            if tag.kind == "def" and current_class and '(' in tag.name and '::' not in tag.name:
                 # This looks like a method definition
                 new_name = f"{current_class}::{tag.name}"
                 # Create new tag with updated name

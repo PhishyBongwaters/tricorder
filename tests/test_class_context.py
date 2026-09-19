@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from parser import ParserMixin, qualify_with_class_context
 from ranking import _parse_worker, _apply_class_context_to_rows
 from database import DBStore, EXTRACTOR_VERSION
+from utils import Tag
 
 PY_CODE = '''
 class Renderer:
@@ -102,6 +103,28 @@ class TestStructuralQualification(unittest.TestCase):
                 ('a.cpp', 'a.cpp', 20, 'AddToBuffer(int x)', 'def')]
         out = _apply_class_context_to_rows(rows)
         self.assertEqual(out[1][3], 'PCM::AddToBuffer(int x)')
+
+    def test_heuristic_parity_on_paren_names(self):
+        """Regression: the sequential heuristic must not double-qualify names
+        the structural pass already scoped. Simulates post-get_tags_raw state
+        for a grammar yielding paren-suffixed names (e.g. C++): the mixin
+        path (ParserMixin._add_class_context_to_tags) must agree with the
+        parallel worker path (_apply_class_context_to_rows)."""
+        h = _Harness({})
+        tags = [
+            Tag('a.cpp', 'a.cpp', 1, 'Monitor', 'def'),
+            Tag('a.cpp', 'a.cpp', 4, 'Monitor::stretchMonitors()', 'def'),
+            Tag('a.cpp', 'a.cpp', 8, 'PCM', 'def'),
+            Tag('a.cpp', 'a.cpp', 12, 'AddToBuffer(int x)', 'def'),
+        ]
+        mixin_out = [t.name for t in h._add_class_context_to_tags(tags)]
+        rows = [(t.fname, t.rel_fname, t.line, t.name, t.kind) for t in tags]
+        worker_out = [r[3] for r in _apply_class_context_to_rows(rows)]
+        self.assertEqual(mixin_out, worker_out,
+                         "sequential and parallel heuristics diverged")
+        self.assertEqual(mixin_out,
+                         ['Monitor', 'Monitor::stretchMonitors()',
+                          'PCM', 'PCM::AddToBuffer(int x)'])
 
     def test_mixin_method_legacy_contract(self):
         h = _Harness({})
