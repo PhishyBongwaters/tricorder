@@ -247,6 +247,48 @@ void Monitor::stretchMonitors() {
         self.assertFalse(false_positives,
                          f"GetFrameAudioData should not see callees from sibling functions: {false_positives}")
 
+    def test_qualified_query_resolves_correct_class(self):
+        """A qualified query (Renderer::render) must return Renderer::render,
+        not the first substring match in file order.
+
+        Regression: exact match compared _base(sym.name) == symbol_name
+        (only the symbol side based), so a qualified query never hit exact
+        and the fuzzy fallback returned class Renderer (via
+        "renderer" in "renderer::render") instead of the requested method.
+        """
+        (self.tmp / "render.cpp").write_text(
+            "class Previewer {\npublic:\n    void render();\n};\n\n"
+            "class Renderer {\npublic:\n    void render();\n};\n\n"
+            "void Previewer::render() {}\n"
+            "void Renderer::render() {}\n",
+            encoding="utf-8",
+        )
+        result = asyncio.run(tricorder_detail(
+            project_root=str(self.tmp),
+            file="render.cpp",
+            name="Renderer::render",
+        ))
+        self.assertNotIn("error", result)
+        sym = result["symbol"]
+        self.assertEqual(sym["name"], "Renderer::render")
+        self.assertEqual(sym["type"], "function")
+
+    def test_qualified_query_python_base_match(self):
+        """A qualified query against Python (bare symbol names) resolves via
+        base-name exact match instead of falling through to fuzzy."""
+        (self.tmp / "widget.py").write_text(
+            "class Widget:\n    def render(self):\n        return 1\n",
+            encoding="utf-8",
+        )
+        result = asyncio.run(tricorder_detail(
+            project_root=str(self.tmp),
+            file="widget.py",
+            name="Widget::render",
+        ))
+        self.assertNotIn("error", result)
+        sym = result["symbol"]
+        self.assertEqual(sym["name"], "render")
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -556,12 +556,26 @@ class GraphMixin:
         # TC-011: this is the root of the "not found" retry loop — detail was
         # brittle where the explore tools are fuzzy.
         symbol_l = symbol_name.lower()
+        symbol_base = _base(symbol_name)
+        # Pass 1: full-name match — a qualified query (C++/Rust Class::method)
+        # against a qualified symbol. Pass 2: base-name match with BOTH sides
+        # based. Previously only the symbol side was based
+        # (_base(sym.name) == symbol_name), so a qualified query could never
+        # hit exact and fell through to fuzzy, which returns the first
+        # substring match in file order: e.g. "Renderer::render" matched class
+        # "Renderer" (via "renderer" in "renderer::render") or the wrong
+        # class's method instead of Renderer::render.
         for sym in symbols:
-            sym_name = _base(sym.name)
-            if sym_name == symbol_name:
+            if sym.name == symbol_name:
                 if line == 0 or sym.line == line:
                     target = sym
                     break
+        if target is None:
+            for sym in symbols:
+                if _base(sym.name) == symbol_base:
+                    if line == 0 or sym.line == line:
+                        target = sym
+                        break
         if target is None:
             # fuzzy: case-insensitive + substring (mirror detect/symbols)
             for sym in symbols:
