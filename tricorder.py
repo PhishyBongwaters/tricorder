@@ -501,7 +501,10 @@ Examples:
         }
     else:
         output_handlers = {
-            'info': tool_output,
+            # JSON mode must stay machine-parseable on stdout: info chatter
+            # would corrupt it, so info goes nowhere (warnings/errors
+            # already go to stderr and are safe).
+            'info': (lambda *a: None) if args.format == "json" else tool_output,
             'warning': tool_warning,
             'error': tool_error
         }

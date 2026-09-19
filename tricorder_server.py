@@ -247,13 +247,16 @@ def _detail_decoration_reserve() -> int:
     return count_tokens(_json.dumps(skeleton), "gpt-4")
 
 
+_TRUNCATION_MARKER = "\n... [truncated to fit max_tokens]"
+
+
 def _truncate_text_to_tokens(text: str, budget: int) -> str:
     """Truncate text to at most budget tokens (tiktoken), marking the cut.
 
     The truncation marker counts against the budget, so the result never
     exceeds it.
     """
-    marker = "\n... [truncated to fit max_tokens]"
+    marker = _TRUNCATION_MARKER
     if budget <= 0 or not text:
         return ""
     try:
@@ -271,6 +274,48 @@ def _truncate_text_to_tokens(text: str, budget: int) -> str:
     if "\n" in cut:
         cut = cut.rsplit("\n", 1)[0]
     return cut.rstrip() + marker
+
+
+def _shave_body(symbol: dict) -> bool:
+    """Remove ~10% of a symbol dict's body (in place), keeping the marker.
+
+    Returns False when there is no body left to shave — the metadata floor.
+    Used both by the budget trimmer and by the final total-budget check.
+    """
+    cur = symbol.get("body") or ""
+    if not cur:
+        return False
+    base = cur[:-len(_TRUNCATION_MARKER)] \
+        if cur.endswith(_TRUNCATION_MARKER) else cur
+    new_len = int(len(base) * 0.9)
+    if new_len >= len(base):
+        return False
+    trimmed = base[:new_len].rstrip()
+    symbol["body"] = trimmed + _TRUNCATION_MARKER if trimmed else ""
+    return True
+
+
+def _final_budget_check(resp: dict, symbol: Optional[dict], max_tokens: int,
+                        project_root: str) -> None:
+    """Verify a fully-decorated response honors max_tokens, in place.
+
+    The decoration reserve used during trimming is an estimate (placeholder
+    values, serialization merge effects), so shave the symbol body until the
+    serialized total actually fits. Refreshes the token-estimate fields
+    afterwards; the 2-token headroom absorbs digit-length wobble when the
+    refreshed estimates are re-serialized. Stops at the metadata floor
+    (best effort — identity/signature are never cut).
+    """
+    trimmed = False
+    for _ in range(4):
+        if count_tokens(json.dumps(resp), "gpt-4") <= max_tokens - 2:
+            break
+        if symbol is None or not _shave_body(symbol):
+            break
+        trimmed = True
+    if trimmed:
+        resp["truncated"] = True
+        resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
 
 
 def _enforce_detail_budget(symbol: dict, max_tokens: int) -> bool:
@@ -314,6 +359,14 @@ def _enforce_detail_budget(symbol: dict, max_tokens: int) -> bool:
     while len(callers) > 1 and _tokens() > max_tokens:
         callers.pop()
     symbol["callers"] = callers
+
+    # 4. Final clamp: the body above was budgeted in raw-text tokens, but
+    # _tokens() measures the JSON-serialized form, where escaping
+    # (newlines, quotes) inflates the count. Shave the body until the
+    # serialized total actually fits. Metadata is never touched; if even
+    # the metadata alone exceeds the budget, this is best-effort.
+    while _tokens() > max_tokens and _shave_body(symbol):
+        pass
     return True
 
 
@@ -897,14 +950,23 @@ async def tricorder_detail(
             return {"error": "not found"}
 
         resp = {"symbol": detail.to_dict()}
+        trimmed = False
         if max_tokens is not None and max_tokens > 0:
             # Reserve room for the budget/trust decorations added below so
             # the final serialized response honors max_tokens.
             reserve = _detail_decoration_reserve()
             if _enforce_detail_budget(resp["symbol"], max(1, max_tokens - reserve)):
-                resp["truncated"] = True
+                trimmed = True
+        if trimmed:
+            resp["truncated"] = True
         resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
-        return _mark_untrusted(resp)
+        resp = _mark_untrusted(resp)
+        if max_tokens is not None and max_tokens > 0:
+            # Final guarantee: the reserve above is an estimate, so verify
+            # the serialized total and shave the body if drift pushed it
+            # over (estimates refreshed inside).
+            _final_budget_check(resp, resp["symbol"], max_tokens, project_root)
+        return resp
 
     except Exception as e:
         log.exception(f"Error getting symbol details for '{name}' in '{file_path}': {e}")
@@ -975,7 +1037,7 @@ async def tricorder_locate(
         alternatives = [
             {"name": c["name"], "file": c["file"], "line": c["line"],
              "kind": c["kind"], "quality": c.get("quality", "exact")}
-            for c in rest[:max_alternatives]
+            for c in rest[:max(0, max_alternatives)]
         ]
 
         resp = {"query": query, "match": None, "alternatives": alternatives}
@@ -998,7 +1060,12 @@ async def tricorder_locate(
         if truncated:
             resp["truncated"] = True
         resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
-        return _mark_untrusted(resp)
+        resp = _mark_untrusted(resp)
+        if max_tokens is not None and max_tokens > 0 and resp.get("match") is not None:
+            # Same final guarantee as tricorder_detail: verify the
+            # serialized total, shaving the match body on estimate drift.
+            _final_budget_check(resp, resp["match"], max_tokens, project_root)
+        return resp
 
     except Exception as e:
         log.exception(f"Error locating '{query}' in project '{project_root}': {e}")

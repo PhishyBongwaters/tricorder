@@ -11,7 +11,7 @@ discover → parse → qualify → store → rank → render
 ```
 
 1. **Discover** (`utils.discover_src_files`): walk `--root`, filter by
-   extension (`utils.EXTENSIONS`, 28 languages), apply `--exclude-globs`,
+   extension (`utils.EXTENSIONS`, 34 languages), apply `--exclude-globs`,
    enforce the resource envelope (20k files / 500MB / depth 25 / 300s).
    `--pre-index SYMBOL` short-circuits this: rg-first file narrowing, no walk.
 2. **Parse** (`ParserMixin.get_tags_raw`): tree-sitter per file (5s hard timeout

@@ -127,6 +127,21 @@ class TestCliSearch(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr[-500:])
         self.assertIn("run", p.stdout)
 
+    def test_map_json_pure(self):
+        # Map-mode JSON must be machine-parseable: info chatter
+        # ("auto-scanning...") goes nowhere on stdout in JSON mode.
+        p = self._run("--format", "json", "--no-db")
+        self.assertEqual(p.returncode, 0, p.stderr[-500:])
+        d = json.loads(p.stdout)  # raises if stdout is polluted
+        self.assertIn("tags", d)
+        self.assertNotIn("auto-scanning", p.stdout)
+
+    def test_map_text_keeps_info(self):
+        # ...but text mode still shows the human chatter.
+        p = self._run("--no-db")
+        self.assertEqual(p.returncode, 0, p.stderr[-500:])
+        self.assertIn("auto-scanning", p.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

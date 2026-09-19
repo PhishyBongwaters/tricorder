@@ -54,7 +54,7 @@ That's it. No config files, no model keys, no network calls — everything runs 
 
 ## Features
 
-- **Tree-sitter parsing, 28 languages** — 11 with full signature + return-type extraction (Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby)
+- **Tree-sitter parsing, 34 languages** — 11 with full signature + return-type extraction (Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby)
 - **Class-context qualification** — methods scoped as `Class::method` from AST structure, identical across sequential and parallel scans
 - **PageRank ranking** — the important code surfaces first, inside your token budget
 - **Token-aware output** — binary search fits the map to `--map-tokens`; tiers (T0 definitions → T1 with context) let you stop at the cheapest rung that answers the question

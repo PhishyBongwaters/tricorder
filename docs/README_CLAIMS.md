@@ -47,7 +47,7 @@ validation status starts as `pending` and is updated as checks run.
 - [pending] Mermaid graphs — dependency flowcharts with chat files highlighted
 - [pending] Cross-file call graph — import-resolved callers/callees
 - [pending] Caching — content-aware invalidation, outside repo (TC-003)
-- [pending] 28 languages total
+- [pending] 34 languages total
 - [pending] 11 languages with signatures + return types
 
 ## 7. CLI Usage > Basic Mapping

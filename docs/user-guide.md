@@ -247,7 +247,7 @@ All optional env vars:
 ## Troubleshooting
 
 **"No symbols found" / empty map.** Check the language is supported
-(`utils.EXTENSIONS`, 28 languages) and the files aren't excluded by
+(`utils.EXTENSIONS`, 34 languages) and the files aren't excluded by
 `--exclude-globs`. Umbrella headers with no symbols correctly yield zero tags.
 
 **Scan is slow on a huge repo.** Use `--pre-index SYMBOL` to narrow first;
@@ -278,7 +278,7 @@ caches stay under `TRICORDER_CACHE_HOME`. Scanned repos are never written to
 
 **Which languages get signatures?** Python, JavaScript, TypeScript, C, C++,
 Java, Go, Rust, Swift, C#, Ruby — enforced by
-`tests/test_language_matrix.py`. 28 languages parse overall.
+`tests/test_language_matrix.py`. 34 languages parse overall.
 
 **Why do Python methods show as `Renderer::render` in the map but `render`
 in `tricorder_symbols`?** Deliberate: tags qualify every language with
