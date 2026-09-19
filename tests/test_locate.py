@@ -47,6 +47,18 @@ class TestLocate(unittest.TestCase):
         kw.setdefault("project_root", str(self.tmp))
         return asyncio.run(tricorder_locate(**kw))
 
+    def test_exact_name_definition_wins(self):
+        # A substring query matching two defs must prefer the exact name,
+        # not just the alphabetically-first file.
+        (self.tmp / "src" / "aaa.py").write_text(
+            "def authenticate_user(u):\n    return u\n", encoding="utf-8")
+        r = self._locate(query="authenticate")
+        m = r["match"]
+        self.assertIsNotNone(m)
+        self.assertEqual(m["name"], "authenticate")
+        self.assertTrue(m["file"].replace("\\", "/").endswith("src/auth.py"),
+                        f"exact-name def should win, got {m['file']}")
+
     def test_best_match_is_definition(self):
         r = self._locate(query="authenticate")
         self.assertNotIn("error", r)

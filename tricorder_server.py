@@ -1020,9 +1020,12 @@ async def tricorder_locate(
 
         # Best match: exact-name definition first, then any exact hit,
         # then the top fuzzy candidate.
+        qlower = query.lower()
+
         def _rank(c):
             return (c.get("quality") != "exact",
                     c.get("kind") != "def",
+                    c.get("name", "").lower() != qlower,
                     c.get("file", ""), c.get("line", 0))
 
         best = min(candidates, key=_rank)

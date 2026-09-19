@@ -242,6 +242,10 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         {file, line, name, kind, context, quality}. Raises ValueError on an
         invalid regex pattern.
         """
+        # Honor the caller's cap: the rescue pool below intentionally
+        # over-collects (2x) for re-ranking headroom, so clamp here and
+        # trim again after the rescue re-sort.
+        max_results = max(1, max_results)
         if search_mode not in ("exact", "substring", "regex"):
             raise ValueError(
                 f"Invalid search_mode: {search_mode}. Must be 'exact', 'substring', or 'regex'.")
@@ -343,6 +347,8 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                     min(levenshtein(qcore, t.name.lower()),
                         levenshtein(qcore, "".join(tokenize_identifier(t.name)))),
                     t.kind != "def", t.name.lower()))
+                # Trim the 2x rescue pool back to the caller's cap.
+                del matching_tags[max_results:]
 
         # Format results with context
         results = []

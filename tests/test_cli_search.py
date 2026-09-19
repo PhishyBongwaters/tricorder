@@ -64,6 +64,20 @@ class TestCoreSearch(unittest.TestCase):
         self.assertTrue(results)
         self.assertTrue(all(r["quality"] == "fuzzy" for r in results))
 
+    def test_search_identifiers_rescue_honors_cap(self):
+        # Rescue over-collects 2x for re-ranking; the caller-facing
+        # cap must still hold.
+        results, rescue = self.tc.search_identifiers("authentcate", max_results=1)
+        self.assertTrue(rescue)
+        self.assertLessEqual(len(results), 1)
+
+    def test_search_identifiers_negative_cap(self):
+        # A negative cap must not turn into a [:-n] slice surprise.
+        results, _ = self.tc.search_identifiers("authenticate", max_results=-3)
+        self.assertLessEqual(len(results), 1)
+        results, _ = self.tc.search_identifiers("authentcate", max_results=-3)
+        self.assertLessEqual(len(results), 1)
+
     def test_search_symbols(self):
         results, rescue = self.tc.search_symbols("auth")
         self.assertFalse(rescue)
