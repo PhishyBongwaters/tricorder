@@ -16,9 +16,9 @@ whether you're a human at a terminal or an agent via MCP.
 
 ## Installation
 
-**Requirements:** Python 3.11+, `rg` (ripgrep) on `PATH` for the pre-index
-fast path. `ctags` (Universal Ctags) is optional — used only as a fallback
-probe.
+**Requirements:** Python 3.11+. `rg` (ripgrep) on `PATH` is recommended for
+the pre-index fast path — without it, `ctags` (Universal Ctags) is used as a
+fallback probe when available.
 
 ```bash
 git clone https://github.com/PhishyBongwaters/tricorder

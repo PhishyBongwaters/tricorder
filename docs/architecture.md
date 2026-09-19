@@ -87,15 +87,18 @@ PageRank over the file/symbol reference graph (`networkx`), then:
 
 ## Caching
 
-Three layers, all **outside the scanned repo** (TC-003 — a repo never controls
-cache state):
+Three layers (TC-003 — a repo never controls cache state; automatic caches
+stay outside the scanned repo):
 
 1. **Tags diskcache** (`cache.TagsCacheMixin`): per-file tag bundles keyed by
    content signature, under `<tricorder workspace>/.tricorder/cache/`.
    Override the root with `TRICORDER_CACHE_HOME`.
 2. **Cross-ref index bundle**: described above.
-3. **Tag DB**: `:memory:` sqlite per scan, or `--db-path` / `--init` for
-   persistence.
+3. **Tag DB**: `:memory:` sqlite per scan; the pre-scan default persists to
+   `<cache>/db/<name>.db` (outside the repo). Explicit `--init` instead
+   creates the canonical DB at `<root>/.tricorder/db/<name>.db` — inside the
+   project, like `.git`, so it travels with the checkout. Because it lives in
+   the repo, `--init` is opt-in; nothing writes there implicitly.
 
 Invalidation is stat-based (`{path}:{size}:{mtime}` sha256), not TTL.
 `--signature-only` prints the 16-char signature the lifecycle plugin compares;
@@ -109,7 +112,7 @@ Repository content is **untrusted input**. Controls:
 |---|---|---|
 | TC-001 | Content boundary | Raw maps wrapped in `BEGIN/END UNTRUSTED REPOSITORY CONTEXT`. |
 | TC-002 | Resource envelope | 20k files, 500MB, depth 25, 300s, 1MB/file → partial result + `scan_warning`. Tunable via `TRICORDER_MAX_*`. |
-| TC-003 | Cache isolation | All caches outside the repo. |
+| TC-003 | Cache isolation | Automatic caches outside the repo; the opt-in `--init` DB lives at `<root>/.tricorder/db/` by design. |
 | TC-004 | Parser timeout | 5s hard timeout per file (`TRICORDER_PARSER_TIMEOUT_S`); hangs are skipped. |
 | TC-005 | Trust metadata | Every MCP response stamped `source: scanned_repository`, `trust: untrusted_repository_content`. |
 | TC-006 | Path containment | `chat_files`/`detail` file params rejected outside `project_root`. |

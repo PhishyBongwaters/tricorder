@@ -45,6 +45,24 @@ Priority order: `--chat-files` > `--mentioned-files` > `--other-files` > auto-di
 | `--quiet` | off | Suppress everything except the map (no verbose/info messages). |
 | `--verbose` | off | Enable verbose logging. |
 
+## Search modes (no map build)
+
+These flags look things up without generating a map and exit immediately.
+All honor `--format` (JSON output is machine-clean — no info lines).
+
+| Flag | Default | Description |
+|---|---|---|
+| `--detect QUERY` | — | Identifier search, MCP `tricorder_detect` equivalent: definitions + references with file, line, context. |
+| `--symbols QUERY` | — | Symbol search, MCP `tricorder_symbols` equivalent: name, type, file, line range, signature. |
+| `--max-results N` | `50` | Result cap for `--detect` / `--symbols`. |
+| `--diff` | off | Delta map: added/modified/deleted files since the last scan, plus tags for changed files. Read-only. |
+
+```bash
+tricorder /path/to/repo --detect authenticate --format json
+tricorder /path/to/repo --symbols "test_" --max-results 20
+tricorder /path/to/repo --diff          # what changed since the last --init scan?
+```
+
 ## Pre-index probe (huge repos)
 
 For a known symbol in a giant tree (kernel, monorepo), a full scan wastes

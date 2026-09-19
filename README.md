@@ -33,12 +33,13 @@ Three interfaces, one engine: a **CLI** for humans and scripts, an **MCP server*
 | Manual dependency tracing | Automatic call graph + PageRank |
 | Context window overflow | Token-budgeted output (~1.5% of the full repo) |
 
-**Measured:** 15/15 benchmarks pass across C++, Rust, TypeScript, Go, and the Linux kernel — 95–100% token savings on every repo. See [Benchmarks](docs/benchmarks.md).
+**Measured:** 15/15 benchmarks pass across C++, Rust, TypeScript, Go, and the Linux kernel — 86.7–100% token savings. See [Benchmarks](docs/benchmarks.md).
 
 ## Quick Start
 
 ```bash
-# Requires Python 3.11+ and ripgrep (rg) on PATH
+# Requires Python 3.11+ (ripgrep recommended for the --pre-index fast path;
+# ctags is used as fallback when rg isn't on PATH)
 git clone https://github.com/PhishyBongwaters/tricorder
 cd tricorder
 python -m venv .venv
@@ -58,7 +59,10 @@ That's it. No config files, no model keys, no network calls — everything runs 
 - **PageRank ranking** — the important code surfaces first, inside your token budget
 - **Token-aware output** — binary search fits the map to `--map-tokens`; tiers (T0 definitions → T1 with context) let you stop at the cheapest rung that answers the question
 - **Pre-index probe** — `--pre-index SYMBOL` narrows giant trees via ripgrep in ~1s (no full walk)
-- **Graph query DSL** — `callers('auth') depth=2 exclude=tests/**` replaces 5+ round-trips
+- **Graph query DSL** — `callers('auth') depth=2 exclude=tests/**` replaces 5+ round-trips; `tests_for('x')` finds covering tests
+- **One-call locate** — `tricorder_locate` runs detect → detail in a single round trip with a token budget
+- **Delta maps** — `tricorder_diff` / `--diff` shows what changed since the last scan (read-only)
+- **Budget-aware detail** — `tricorder_detail(max_tokens=…)` trims body → callees → callers, never identity
 - **Cross-file call graph** — import-resolved callers/callees, persisted across processes
 - **DB-backed scanning (default)** — tags stream into sqlite; extractor versioning forces rescan when the parser changes
 - **Content-aware caching** — cache lives outside the repo; stat-based signatures invalidate on change
@@ -88,7 +92,7 @@ tricorder-mcp          # STDIO server; register in your MCP client
     "type": "stdio", "args": [] } } }
 ```
 
-Five tools: `tricorder_scan`, `tricorder_detect`, `tricorder_symbols`, `tricorder_detail`, `tricorder_query`. Full reference in [MCP Reference](docs/mcp-reference.md). A bundled skill (`skills/tricorder/SKILL.md`) teaches agents the escalation ladder: map → detect → detail → tier-1 → full file.
+Seven tools: `tricorder_scan`, `tricorder_detect`, `tricorder_symbols`, `tricorder_detail`, `tricorder_query`, `tricorder_diff`, `tricorder_locate`. Full reference in [MCP Reference](docs/mcp-reference.md). A bundled skill (`skills/tricorder/SKILL.md`) teaches agents the escalation ladder: map → detect → detail → tier-1 → full file.
 
 ## The Escalation Ladder
 

@@ -126,6 +126,7 @@ Deep-dive on one symbol: full body plus its callers and callees.
 | `file` | string | — | **Required.** File containing the symbol (relative to root). |
 | `name` | string | — | **Required.** Symbol name. |
 | `line` | int | `0` | Line number to disambiguate (optional). |
+| `max_tokens` | int | — | Optional token budget for the response. Trims body, then callees, then callers (never identity/signature). Adds `"truncated": true`. Best-effort below the metadata floor. |
 
 **Returns:** the symbol record with `body`, `callers`, `callees`. Name matching
 is exact on the base name first, then fuzzy (substring, `::`-aware) — a symbol
@@ -150,7 +151,7 @@ with one query.
 ```
 query      := traversal ('|' traversal)*
 traversal  := kind '(' target ')' modifiers?
-kind       := callers | callees | refs
+kind       := callers | callees | refs | tests_for
 modifiers  := depth=N | exclude=GLOB | include=GLOB
               | type=function|class|method|variable | limit=N
 ```
@@ -167,6 +168,46 @@ callers('foo') | callees('bar') depth=3
 **Returns:** `{nodes, edges, token_estimate, savings_pct}` — the subgraph as
 node/edge lists, sized to `token_limit`.
 
+`tests_for('symbol')` behaves like `callers` but only follows references from
+recognized test files (`tests/`, `test_*`, `*_test.*`, `*.test.*`,
+`*_spec.*`, `__tests__/`) and labels those edges `tests` — "what tests cover
+this symbol?"
+
+---
+
+## tricorder_diff
+
+What changed since the last scan. Read-only; compares working-tree file
+fingerprints against the scan index.
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `project_root` | string | — | **Required.** Absolute path. |
+
+**Returns:** `{added, modified, deleted, tags, indexed}` — sorted path lists
+plus parsed tags for added/modified files. When no index exists every
+discovered file is reported as `added` and `indexed` is `false`.
+
+---
+
+## tricorder_locate
+
+One-call auto-escalation: runs detect, then details the best match. Collapses
+the usual find-the-symbol → show-it flow into a single round trip.
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `project_root` | string | — | **Required.** Absolute path. |
+| `query` | string | — | **Required.** Symbol name to locate. |
+| `max_tokens` | int | `2048` | Token budget for the matched detail (best-effort; metadata always survives). |
+| `max_alternatives` | int | `5` | Max alternative candidates listed for disambiguation. |
+
+**Returns:** `{query, match, alternatives, truncated?}` — `match` is the best
+match's full detail (exact-name definition preferred; fuzzy rescue used only
+when nothing exact matched), `alternatives` are the other candidates as
+`{name, file, line, kind, quality}`. `match` is `None` with a `note` when
+nothing is found.
+
 ---
 
 ## The escalation ladder
@@ -179,3 +220,7 @@ the question:
 3. **`tricorder_detail`** (~50–400 tokens) — "what does it do, who calls it?"
 4. **`tricorder_scan` tier=1** (~350 tokens/tag) — "show me the shape of this subsystem"
 5. **Read the file** (last resort) — full source when necessary
+
+Shortcuts: **`tricorder_locate`** collapses rungs 2–3 into one call
+("find it and show it"), and **`tricorder_diff`** answers "what changed since
+the last scan?" without re-scanning.
