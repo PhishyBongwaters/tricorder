@@ -44,6 +44,10 @@ tricorder . --mermaid --top 10       # Dependency graph
 ## Core Features
 
 - **Tree-sitter + PageRank** — accurate parsing, relevance-ranked maps
+- **Class-context qualification** — method definitions scoped as `Class::method` from tree structure (not name heuristics); sequential and parallel scan paths produce identical names
+- **Parallel scanning** — `ProcessPoolExecutor` fresh/incremental scans kick in at ≥200 files
+- **Extractor versioning** — tag databases are stamped with `EXTRACTOR_VERSION`; a DB built by an older extractor forces a full rescan instead of serving stale names
+- **DB-backed ranking (default)** — tags/refs stream into sqlite; `--no-db` selects the legacy in-memory graph path
 - **Token-aware** — binary search fits map to budget (~1.5% of full repo)
 - **Pre-index probe** — `--pre-index SYMBOL` narrows huge trees in ~1s (rg-first, no full walk)
 - **Graph query DSL** — `callers('auth') depth=2 exclude=tests/**` replaces 5+ round-trips
@@ -84,7 +88,22 @@ tricorder . --top 10                 # Top N ranked files
 tricorder . --mermaid --mermaid-top 30  # Mermaid flowchart
 |tricorder . --signature-only         # Content signature for cache debugging
 |tricorder . --full                   # Emit full map regardless of token budget
+tricorder . --db-path /tmp/tags.db    # Persist tag DB to a file (default: in-memory sqlite)
+tricorder . --no-db                   # Legacy in-memory graph path (escape hatch for parity/debugging)
+tricorder . --init                    # Create/open canonical DB at <root>/.tricorder/db/, print path, exit
+tricorder . --init --wipe             # Delete existing canonical DB first, then init
+tricorder . --db-coverage             # One-line mapped-DB coverage for --root
 ```
+
+### Tag Extraction Pipeline
+
+Every scan — sequential, incremental, or parallel — funnels through the same naming rules:
+
+1. **Structural qualification** (`parser.qualify_with_class_context`): a `def` tag inside a class/struct-like node (`class_declaration`, `struct_declaration`, `class_specifier`, `impl_item`, `class_definition`) becomes `Class::method`. Innermost class wins for nesting; names already containing `::` and class definitions themselves are never re-qualified. Pure and picklable, so the `ProcessPoolExecutor` workers apply it identically to the in-process path.
+2. **Heuristic fallback** (`_add_class_context_to_tags` / `_apply_class_context_to_rows`): for grammars without a mapped class node, an uppercase, paren-free `def` sets the current class and subsequent `name(` defs get prefixed. The two implementations are kept in behavioral sync (issue #46) — the worker version operates on tuples because it has no `self`.
+3. **Staleness gate**: the tag DB is stamped with `EXTRACTOR_VERSION` (currently 2). If the extractor changes, stored tags are stale regardless of file mtimes — the next scan forces a full rescan and re-stamps.
+
+One deliberate asymmetry: `get_symbols()` (MCP `tricorder_symbols`, graph def index) qualifies only C/C++/Rust names and leaves Python symbols bare, while tags qualify every language. All consumers join through `utils._base()` / substring / fuzzy matching, so the two forms always resolve to the same symbol.
 
 ### Output Tiers
 
@@ -434,7 +453,7 @@ Union = 28 distinct languages. Canonical list in `utils.py` `EXTENSIONS`. `.h` f
 
 1. **Gen 1 — Aider `RepoMap`** (Paul Gauthier): tree-sitter + PageRank.
 2. **Gen 2 — RepoMapper** (Paul Davis / pdavis68): standalone CLI + MCP server. Upstream: https://github.com/pdavis68/RepoMapper
-3. **Gen 3 — tricorder**: our fork — 8 bug fixes, 199 tests, 10-language signature extraction, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, full rebrand.
+3. **Gen 3 — tricorder**: our fork — bug fixes, 226+ tests (93 subtests), 11-language signature extraction, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, full rebrand, DB-backed ranking with extractor versioning.
 
 Lineage intentionally kept visible. MIT Licensed.
 
