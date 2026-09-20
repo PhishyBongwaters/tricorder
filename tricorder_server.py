@@ -833,7 +833,7 @@ async def tricorder_detect(
     project_root: str,
     query: str,
     max_results: int = 50,
-    context_lines: int = 2,
+    context_lines: int = 1,
     include_definitions: bool = True,
     include_references: bool = True,
     pre_index: Optional[str] = None,
@@ -847,7 +847,8 @@ async def tricorder_detect(
         project_root: Root directory of the project to search.  (must be an absolute path!)
         query: Search query (identifier name)
         max_results: Maximum number of results to return
-        context_lines: Number of lines of context to show
+        context_lines: Lines of context around each hit (default 1; render
+            diet — blank lines stripped, match line always kept).
         include_definitions: Whether to include definition occurrences
         include_references: Whether to include reference occurrences
         pre_index: Optional symbol to pre-index (narrow file set before search)
@@ -963,17 +964,22 @@ async def tricorder_diff(
     """Show what changed in the working tree since the last scan (delta map).
 
     Compares current file fingerprints against the index's recorded
-    file_state and returns added/modified/deleted files plus parsed tags
-    for the added/modified files — a fraction of a full rescan. Read-only:
-    it never updates the index. When the project was never scanned,
-    every file reports as added with indexed=False.
+    file_state and returns added/modified/deleted files plus per-file tag
+    heads for the added/modified files — a fraction of a full rescan.
+    Render diet: tag lists are capped per file (default 50); exact totals
+    stay in tag_counts, cuts are explicit in tags_omitted/tags_truncated.
+    When the project was never scanned, every file reports as added with
+    indexed=False and no tags are parsed (the file list IS the delta).
+    Read-only: it never updates the index.
 
     Args:
         project_root: Root directory of the project (must be absolute path!)
 
     Returns:
         Dictionary with added/modified/deleted (relative paths),
-        tags ({rel: [tag dicts]}), indexed (bool), plus budget fields.
+        tags ({rel: [tag dicts]}, capped heads), tag_counts ({rel: exact
+        int}), tags_omitted ({rel: int}), tags_truncated (bool), indexed
+        (bool), plus budget fields.
     """
     err, root_path = _validate_project_root(project_root)
     if err:

@@ -643,9 +643,14 @@ Examples:
                 files = diff[label]
                 print(f"{label.capitalize()} ({len(files)}):")
                 for f in files:
-                    ntags = len(diff["tags"].get(f, []))
-                    extra = f" [{ntags} tags]" if f in diff["tags"] else ""
+                    # Exact counts survive tag-head capping (tag_counts);
+                    # fall back to the head length for old-shaped dicts.
+                    ntags = diff["tag_counts"].get(f, len(diff["tags"].get(f, [])))
+                    extra = f" [{ntags} tags]" if f in diff["tag_counts"] or f in diff["tags"] else ""
                     print(f"  {f}{extra}")
+            if diff["tags_truncated"]:
+                omitted = sum(diff["tags_omitted"].values())
+                print(f"(tag lists capped per file; {omitted} tags omitted, counts exact)")
         return
 
     if args.detect is not None or args.symbols is not None:

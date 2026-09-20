@@ -129,6 +129,58 @@ class TestCoreSearch(unittest.TestCase):
         self.assertIn("authenticate", {r["name"] for r in results})
         self.assertTrue(all(r["context"] == "" for r in results))
 
+    def test_search_identifiers_strips_blank_context_lines(self):
+        # Render diet: blank/whitespace-only lines are dropped from the
+        # context window. The match line is always kept and survivors
+        # keep their numbers, so no positional accuracy is lost.
+        tmp = Path(tempfile.mkdtemp(prefix="cli_search_blank_"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "spaced.py").write_text(
+            "\n\ndef spaced_out():\n\n\n    return 1\n\n",
+            encoding="utf-8",
+        )
+        tc = Tricorder(root=str(tmp), use_db=False, verbose=False)
+        results, _ = tc.search_identifiers("spaced_out", context_lines=2)
+        self.assertTrue(results)
+        hit = next(r for r in results if r["name"] == "spaced_out"
+                   and r["kind"] == "def")
+        body_lines = hit["context"].splitlines()[1:]  # skip rel_fname header
+        # The def line (3) is present with its number intact.
+        self.assertTrue(any(l.startswith("  3:") and "def spaced_out" in l
+                            for l in body_lines))
+        # No blank/whitespace-only rendered lines remain.
+        for l in body_lines:
+            code = l.split(": ", 1)[1] if ": " in l else ""
+            self.assertTrue(code.strip(), f"blank context line kept: {l!r}")
+
+    def test_search_identifiers_default_window_is_one(self):
+        # Lean default: ±1 line. The ref hit sits on line 3 with live code
+        # on lines 1 and 5: with the old ±2 default those distance-2 lines
+        # leaked into the context; with ±1 they must not. Callers needing
+        # more pass context_lines explicitly; file/line/name stay exact.
+        tmp = Path(tempfile.mkdtemp(prefix="cli_search_window_"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "m.py").write_text(
+            "x = 1\n"
+            "y = 2\n"
+            "authenticate('a', 'b')\n"
+            "z = 4\n"
+            "w = 5\n",
+            encoding="utf-8",
+        )
+        tc = Tricorder(root=str(tmp), use_db=False, verbose=False)
+        results, _ = tc.search_identifiers("authenticate")
+        hit = next(r for r in results if r["line"] == 3)
+        nums = [int(l.strip().split(":")[0])
+                for l in hit["context"].splitlines()[1:]]
+        self.assertEqual(sorted(nums), [2, 3, 4])
+        # And the explicit opt-out still works:
+        wide, _ = tc.search_identifiers("authenticate", context_lines=2)
+        hit_wide = next(r for r in wide if r["line"] == 3)
+        nums_wide = [int(l.strip().split(":")[0])
+                     for l in hit_wide["context"].splitlines()[1:]]
+        self.assertEqual(sorted(nums_wide), [1, 2, 3, 4, 5])
+
     def test_search_symbols(self):
         results, rescue = self.tc.search_symbols("auth")
         self.assertFalse(rescue)

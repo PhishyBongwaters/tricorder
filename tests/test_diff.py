@@ -118,6 +118,72 @@ class TestDiffAgainstIndex(unittest.TestCase):
         self.assertIn("modified", result)
         self.assertIn("deleted", result)
 
+    def test_tags_capped_with_exact_counts(self):
+        # Render diet: a 200-def changed file ships a 50-tag head, but the
+        # exact total and the omitted count stay explicit — a trimmed list
+        # never hides how much was dropped.
+        big = "".join(f"def func_{i}():\n    return {i}\n" for i in range(200))
+        _write(self.tmp / "big.py", big)
+        self._index()
+        # _index() only covers a.py/b.py: record big.py too, then modify it.
+        db = DBStore(self.db_path)
+        st = os.stat(self.tmp / "big.py")
+        db.set_file_state("big.py", st.st_size, int(st.st_mtime))
+        db.conn.commit()
+        db.conn.close()
+        time.sleep(0.02)
+        _write(self.tmp / "big.py", big + "\ndef extra():\n    return -1\n")
+        now = time.time() + 5
+        os.utime(self.tmp / "big.py", (now, now))
+
+        d = self._tricorder().diff_against_index()
+        self.assertEqual(d["modified"], ["big.py"])
+        self.assertEqual(len(d["tags"]["big.py"]), 50)
+        self.assertEqual(d["tag_counts"]["big.py"], 201)
+        self.assertEqual(d["tags_omitted"]["big.py"], 151)
+        self.assertTrue(d["tags_truncated"])
+        # Small files are untouched by the cap and report no omissions.
+        self.assertNotIn("a.py", d["tags_omitted"])
+        # Internal consistency: total == head + omitted.
+        self.assertEqual(d["tag_counts"]["big.py"],
+                         len(d["tags"]["big.py"]) + d["tags_omitted"]["big.py"])
+
+    def test_tags_uncapped_when_small(self):
+        self._index()
+        time.sleep(0.02)
+        _write(self.tmp / "a.py", "def alpha():\n    return 1\n\ndef gamma():\n    return 3\n")
+        now = time.time() + 5
+        os.utime(self.tmp / "a.py", (now, now))
+        d = self._tricorder().diff_against_index()
+        names = {t["name"] for t in d["tags"]["a.py"]}
+        self.assertIn("alpha", names)
+        self.assertIn("gamma", names)
+        self.assertFalse(d["tags_truncated"])
+        self.assertEqual(d["tags_omitted"], {})
+
+    def test_unindexed_diff_parses_no_tags(self):
+        # Concise --diff on a never-scanned repo: without a baseline the
+        # file list IS the delta — no full-repo tag inventory (which would
+        # be a scan, not a diff).
+        d = self._tricorder().diff_against_index()
+        self.assertFalse(d["indexed"])
+        self.assertEqual(sorted(d["added"]), ["a.py", "b.py"])
+        self.assertEqual(d["tags"], {})
+        self.assertEqual(d["tag_counts"], {})
+        self.assertFalse(d["tags_truncated"])
+
+    def test_include_tags_false_gives_file_lists_only(self):
+        self._index()
+        time.sleep(0.02)
+        _write(self.tmp / "a.py", "def alpha():\n    return 1\n\ndef gamma():\n    return 3\n")
+        now = time.time() + 5
+        os.utime(self.tmp / "a.py", (now, now))
+        d = self._tricorder().diff_against_index(include_tags=False)
+        self.assertEqual(d["modified"], ["a.py"])
+        self.assertEqual(d["tags"], {})
+        self.assertEqual(d["tag_counts"], {})
+        self.assertFalse(d["tags_truncated"])
+
 
 class TestCliDiffAlias(unittest.TestCase):
     """--since is a pure alias for --diff at the CLI layer."""

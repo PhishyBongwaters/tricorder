@@ -165,7 +165,11 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
             self.output_handlers['warning'](f"File not found: {fname}")
             return None
 
-    def diff_against_index(self) -> Dict[str, Any]:
+    def diff_against_index(
+        self,
+        include_tags: bool = True,
+        max_tags_per_file: int = 50,
+    ) -> Dict[str, Any]:
         """Compare the working tree against the DB's recorded file_state.
 
         Returns a delta map::
@@ -173,9 +177,22 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
               "added": [rel, ...],      # on disk, not in index
               "modified": [rel, ...],   # (size, mtime) differs from index
               "deleted": [rel, ...],    # in index, not on disk
-              "tags": {rel: [tag dicts]},  # parsed tags for added+modified
+              "tags": {rel: [tag dicts]},  # per-file tag HEADS for
+                                           # added+modified (capped)
+              "tag_counts": {rel: int},    # exact per-file tag totals
+              "tags_omitted": {rel: int},  # heads cut short: total - kept
+              "tags_truncated": bool,      # any head capped
               "indexed": bool,          # False when the DB was never scanned
             }
+
+        Render diet: a concise diff must not ship a whole-repo tag
+        inventory. Per-file tag lists are capped at max_tags_per_file
+        (0 = unlimited); exact totals stay available via tag_counts and
+        every cut is explicit via tags_omitted/tags_truncated.
+        include_tags=False skips tag parsing entirely (file lists only).
+        When the index is absent (indexed=False) no tags are parsed at
+        all: without a baseline the file list IS the delta, and a
+        full-repo inventory would be a scan, not a diff.
 
         Read-only: it never updates the index. When the DB has no file_state
         (never scanned, or --no-db), every file reports as added and
@@ -225,27 +242,40 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 deleted.append(rel)
 
         tags: Dict[str, list] = {}
-        for rel in sorted(added + modified):
-            fpath = current[rel][0]
-            try:
-                ftags = self.get_tags(fpath, rel)
-                tags[rel] = [t._asdict() for t in ftags]
-            except Exception:
-                tags[rel] = []
+        tag_counts: Dict[str, int] = {}
+        tags_omitted: Dict[str, int] = {}
+        indexed = bool(stored)
+        if include_tags and indexed:
+            for rel in sorted(added + modified):
+                fpath = current[rel][0]
+                try:
+                    ftags = self.get_tags(fpath, rel)
+                    all_tags = [t._asdict() for t in ftags]
+                except Exception:
+                    all_tags = []
+                tag_counts[rel] = len(all_tags)
+                if max_tags_per_file and len(all_tags) > max_tags_per_file:
+                    tags[rel] = all_tags[:max_tags_per_file]
+                    tags_omitted[rel] = len(all_tags) - max_tags_per_file
+                else:
+                    tags[rel] = all_tags
 
         return {
             "added": sorted(added),
             "modified": sorted(modified),
             "deleted": sorted(deleted),
             "tags": tags,
-            "indexed": bool(stored),
+            "tag_counts": tag_counts,
+            "tags_omitted": tags_omitted,
+            "tags_truncated": bool(tags_omitted),
+            "indexed": indexed,
         }
 
     def search_identifiers(
         self,
         query: str,
         max_results: int = 50,
-        context_lines: int = 2,
+        context_lines: int = 1,
         include_definitions: bool = True,
         include_references: bool = True,
         search_mode: str = "substring",  # "exact", "substring", "regex"
@@ -257,6 +287,11 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         flag. Returns (results, rescue_used) where each result is
         {file, line, name, kind, context, quality}. Raises ValueError on an
         invalid regex pattern.
+
+        Render diet: context defaults to ±1 line (plus blank-line
+        stripping). The match line ±1 disambiguates hits; file/line/name
+        stay exact, so a thinner window loses no accuracy — escalate to
+        symbols/detail when the window is not enough.
         """
         # Empty query would substring-match every identifier; return no
         # matches instead of shipping arbitrary tags as "exact" hits.
@@ -381,6 +416,18 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
             start_line = max(1, tag.line - context_lines)
             end_line = tag.line + context_lines
             context_range = list(range(start_line, end_line + 1))
+
+            # Render diet: blank/whitespace-only lines carry no code
+            # information but dominate context bytes (measured ~75% of a
+            # detect payload, mostly empty lines). Drop them from the
+            # window; the match line is always kept and survivors keep
+            # their numbers, so no positional accuracy is lost.
+            code_lines = self.get_file_text(file_path).splitlines()
+            context_range = [
+                ln for ln in context_range
+                if ln == tag.line
+                or (1 <= ln <= len(code_lines) and code_lines[ln - 1].strip())
+            ] or [tag.line]
 
             context = self.render_tree(
                 file_path,
