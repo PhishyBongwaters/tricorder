@@ -9,7 +9,7 @@
 ## Completed
 
 ### M0.9.1 - Token Budget Fields ✅ DONE
-- MCP tools: `token_estimate`, `full_repo_estimate`, `savings_pct` added to all 5 tools
+- MCP tools: `token_estimate`, `full_repo_estimate`, `savings_pct` added to all 7 tools
 - CLI: `--stats-only <map>` + `--format json` budget fields implemented
 - Plugin: `/tricorder status` surfaces savings vs full-repo via venv delegation
 

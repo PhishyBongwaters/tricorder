@@ -126,7 +126,7 @@ Repository content is **untrusted input**. Controls:
 | Module | Role |
 |---|---|
 | `tricorder.py` | CLI entry point, argparse, output wiring |
-| `tricorder_server.py` | MCP server (fastmcp), 5 tools |
+| `tricorder_server.py` | MCP server (fastmcp), 7 tools |
 | `core.py` | `Tricorder` class — composes the mixins |
 | `parser.py` | `ParserMixin` — tree-sitter extraction, qualification |
 | `ranking.py` | `RankingMixin` — DB scan, PageRank, budget fit, workers |
