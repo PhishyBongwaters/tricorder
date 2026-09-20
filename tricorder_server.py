@@ -107,6 +107,20 @@ def _canonical_db_for(project_root: str) -> Optional[str]:
     return None
 
 
+def _prescan_db_for(root_path: Path) -> Optional[str]:
+    """Shared-cache pre-scan DB for the generate_map path.
+
+    The lookup is by directory basename, so a same-named repo elsewhere can
+    collide in the shared cache; db_root_matches rejects those (serving
+    another repo's index would silently corrupt the map).
+    """
+    if PRE_SCAN_DB_DIR.exists():
+        candidate = PRE_SCAN_DB_DIR / f"{root_path.name}.db"
+        if candidate.exists() and db_root_matches(str(candidate), str(root_path)):
+            return str(candidate)
+    return None
+
+
 @lru_cache(maxsize=32)
 def _get_tricorder(project_root: str) -> "Tricorder":
     """Reuse one Tricorder per root across tool calls (TC-011).
@@ -532,13 +546,7 @@ async def tricorder_scan(
     abs_other_files = [f for f in abs_other_files if f not in abs_chat_files_set]
 
     # 4. Instantiate and run Tricorder
-    # Check for pre-scan DB
-    root_name2 = root_path.name
-    db_path2 = None
-    if PRE_SCAN_DB_DIR.exists():
-        candidate2 = PRE_SCAN_DB_DIR / f"{root_name2}.db"
-        if candidate2.exists():
-            db_path2 = str(candidate2)
+    db_path2 = _prescan_db_for(root_path)
 
     try:
         repo_mapper = Tricorder(

@@ -241,6 +241,13 @@ class TestCanonicalDbRootGuard(unittest.TestCase):
         self.assertFalse(d["indexed"])
         self.assertEqual(d["added"], ["b.py"])
 
+    def test_server_prescan_db_rejects_collision(self):
+        # The generate_map pre-scan lookup must not hand repo B repo A's
+        # cached DB either.
+        import tricorder_server as srv
+        self.assertIsNone(srv._prescan_db_for(self.repo_b))
+        self.assertEqual(srv._prescan_db_for(self.repo_a), str(self.cache_db))
+
 
 if __name__ == "__main__":
     unittest.main()
