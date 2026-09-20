@@ -539,6 +539,8 @@ Examples:
                 args.root = first_spec
 
     root_path = Path(args.root).resolve()
+    if not root_path.is_dir():
+        parser.error(f"--root is not an existing directory: {args.root}")
 
     # Pre-index probe runs FIRST, before any full-tree walk: the probe is
     # instant (rg-streamed) and gives the authoritative narrow set. Only if
