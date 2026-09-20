@@ -192,8 +192,41 @@ class TestGraphQueryIntegration(unittest.TestCase):
         result = tricorder.query_graph(parsed, token_limit=100)
 
         self.assertIn("token_estimate", result)
-        if result["token_estimate"] > 100:
-            self.assertIsNotNone(result.get("tier_hint"))
+        self.assertIsNotNone(result.get("tier_hint"),
+                             "over-budget query must carry a tier_hint")
+        # The estimate must describe the payload actually returned,
+        # not the pre-truncation one.
+        import json as _json
+        from utils import count_tokens
+        actual = count_tokens(_json.dumps({"nodes": result["nodes"],
+                                           "edges": result["edges"]}))
+        self.assertEqual(result["token_estimate"], actual)
+        self.assertLessEqual(len(result["nodes"]), max(1, 100 // 50))
+
+    def test_no_truncation_under_budget(self):
+        """Under-budget results are returned whole, with no tier_hint."""
+        tricorder = Tricorder(root=str(self.project_root), verbose=False)
+        from utils import parse_query_dsl
+
+        parsed = parse_query_dsl("callers('authenticate') depth=10")
+        result = tricorder.query_graph(parsed)
+        huge = tricorder.query_graph(parsed, token_limit=10 ** 9)
+
+        self.assertIsNone(result.get("tier_hint"))
+        self.assertEqual(len(result["nodes"]), len(huge["nodes"]))
+        self.assertEqual(len(result["edges"]), len(huge["edges"]))
+
+    def test_nonpositive_token_limit_disables_truncation(self):
+        """token_limit <= 0 must not produce empty/negative slices."""
+        tricorder = Tricorder(root=str(self.project_root), verbose=False)
+        from utils import parse_query_dsl
+
+        parsed = parse_query_dsl("callers('authenticate') depth=10")
+        full = tricorder.query_graph(parsed, token_limit=10 ** 9)
+        for lim in (0, -5):
+            result = tricorder.query_graph(parsed, token_limit=lim)
+            self.assertEqual(len(result["nodes"]), len(full["nodes"]))
+            self.assertEqual(len(result["edges"]), len(full["edges"]))
 
     def test_not_found(self):
         """Test unknown symbol returns empty result with symbol_not_found flag."""

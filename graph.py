@@ -534,17 +534,29 @@ class GraphMixin:
         budget = repo_budget(self.root, 0)
         full_repo = budget.get("full_repo_estimate", 0)
 
+        # Truncate only when over budget (never silently): the slice used
+        # to apply unconditionally, dropping nodes/edges with no tier_hint
+        # whenever the result exceeded token_limit // 50 nodes. A
+        # non-positive token_limit disables truncation instead of
+        # producing empty/negative slices.
+        tier_hint = None
+        nodes_ret, edges_ret = nodes, edges
+        if token_limit > 0 and token_est > token_limit:
+            tier_hint = (f"Response truncated: {token_est} tokens > limit {token_limit}. "
+                         "Consider increasing token_limit or reducing depth/limit.")
+            nodes_ret = nodes[:max(1, token_limit // 50)]
+            edges_ret = edges[:max(1, token_limit // 30)]
+            # Re-estimate on the payload actually returned, not the
+            # pre-truncation one.
+            token_est = count_tokens(_json.dumps({"nodes": nodes_ret, "edges": edges_ret}))
+
         savings = 0.0
         if full_repo:
             savings = round(max(0.0, 1 - token_est / full_repo) * 100, 1)
 
-        tier_hint = None
-        if token_est > token_limit:
-            tier_hint = f"Response truncated: {token_est} tokens > limit {token_limit}. Consider increasing token_limit or reducing depth/limit."
-
         return {
-            "nodes": nodes[:token_limit // 50],
-            "edges": edges[:token_limit // 30],
+            "nodes": nodes_ret,
+            "edges": edges_ret,
             "token_estimate": token_est,
             "full_repo_estimate": full_repo,
             "savings_pct": savings,

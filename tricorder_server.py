@@ -1112,11 +1112,6 @@ async def tricorder_query(
         - tier_hint (if response truncated)
         - stats: {nodes_visited, edges_traversed}
     """
-    if not os.path.isdir(project_root):
-        return {"error": f"Project root directory not found: {project_root}"}
-
-    project_root = str(Path(project_root).resolve())
-
     # Parse query DSL
     try:
         parsed = parse_query_dsl(query)
@@ -1125,6 +1120,12 @@ async def tricorder_query(
 
     if not parsed.steps:
         return {"error": "Empty query"}
+
+    err, root_path = _validate_project_root(project_root)
+    if err:
+        return {"error": err}
+
+    project_root = str(root_path)
 
     try:
         repo_map = _get_tricorder(project_root)
