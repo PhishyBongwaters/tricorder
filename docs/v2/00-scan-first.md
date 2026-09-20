@@ -27,9 +27,16 @@ python chunk_resume.py /path/to/repo
 ```
 
 `--init` creates `<root>/.tricorder/db/<name>.db`, applies schema
-(`database.py` `_DDL`) and size-based journal mode, and exits. Re-running
-is safe; only `--init --wipe` deletes. `--wipe` without `--init` is a
-hard error (exit 2).
+(`database.py` `_DDL`) and size-based journal mode, stamps ownership
+(`meta.root`; extractor_version=0 = "not yet indexed", so the first scan
+does a full rescan), and exits. Re-running is safe; only `--init --wipe`
+deletes. `--wipe` without `--init` is a hard error (exit 2).
+
+After `--init`, bare CLI runs (no `--db-path`) resume into the canonical
+DB automatically: the sliding window drops already-mapped files before the
+`--max-files` cap, so repeated `--max-files N` runs walk forward through
+the repo instead of re-scanning the first N files. `--no-db` opts out and
+stays in-memory. Explicit `--db-path` still wins.
 
 ## Chunking (large repos)
 

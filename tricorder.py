@@ -99,18 +99,17 @@ def tool_error(message):
 def _effective_db_path(args, root_path) -> Optional[str]:
     """Resolve the DB path for this run.
 
-    Explicit --db-path wins (unless --no-db). --diff additionally falls back
-    to the canonical index DB so the CLI sees the same index the MCP server
-    uses. The map path keeps its historical in-memory default when no
-    --db-path is given.
+    Explicit --db-path wins (unless --no-db). Otherwise fall back to the
+    canonical index DB (--init canonical, else shared-cache) so the CLI
+    map path resumes the same index the MCP server uses and --diff sees.
+    None when no DB exists yet (historical in-memory default preserved
+    for fresh repos); --no-db always forces None.
     """
     if args.no_db:
         return None
     if args.db_path:
         return args.db_path
-    if args.diff:
-        return _canonical_db_for(str(root_path))
-    return None
+    return _canonical_db_for(str(root_path))
 
 
 def main():
@@ -341,8 +340,8 @@ Examples:
         "--db-path",
         metavar="PATH",
         help="Persist per-file tags/refs to this sqlite file (flat-memory tree walk). "
-             "DB-backed scan is the DEFAULT; --db-path optionally persists to a file "
-             "instead of in-memory sqlite."
+             "Without it, the scan resumes the canonical --init DB when one "
+             "exists, else uses in-memory sqlite. --no-db forces in-memory."
     )
 
     parser.add_argument(
@@ -418,7 +417,17 @@ Examples:
         init_db.parent.mkdir(parents=True, exist_ok=True)
         if args.wipe and init_db.exists():
             init_db.unlink()
-        DBStore(str(init_db)).conn.close()
+        # Stamp ownership: with an empty meta table, _canonical_db_for's
+        # db_root_matches rejects the DB, so --diff/map resumption would
+        # never see it until a scan wrote meta. extractor_version=0 marks
+        # it "not yet indexed" (staleness unknown), so the first scan does
+        # a full rescan and re-stamps with the real signature.
+        _init_store = DBStore(str(init_db))
+        try:
+            _init_store.set_meta(str(init_root), "", 0)
+            _init_store.commit()
+        finally:
+            _init_store.close()
         print(str(init_db))
         sys.exit(0)
 
@@ -581,10 +590,12 @@ Examples:
                 p = root_path / path_spec_str
             effective_other_files_unresolved.extend(find_src_files(str(p), exclude_globs=args.exclude_globs))
 
-        # Sliding window: already-mapped files don't count against the cap.
+        # Sliding window: resolve the DB exactly like the Tricorder
+        # below, so --max-files caps unmapped files whether the DB is
+        # explicit, canonical (--init), or absent (in-memory).
         effective_other_files_unresolved = drop_mapped_files(
             effective_other_files_unresolved, root_path,
-            args.db_path if (args.db_path and not args.no_db) else None)
+            _effective_db_path(args, root_path))
         if args.max_files > 0 and len(effective_other_files_unresolved) > args.max_files:
             output_handlers['warning'](
                 f"Explicit paths yielded {len(effective_other_files_unresolved)} files, "
@@ -599,10 +610,12 @@ Examples:
                 output_handlers['info'](f"No explicit files provided, auto-scanning {root_path}...")
             effective_other_files_unresolved = find_src_files(
                 str(root_path), exclude_globs=args.exclude_globs)
-            # Sliding window: already-mapped files don't count against the cap.
+            # Sliding window: resolve the DB exactly like the Tricorder
+            # below, so --max-files caps unmapped files whether the DB is
+            # explicit, canonical (--init), or absent (in-memory).
             effective_other_files_unresolved = drop_mapped_files(
                 effective_other_files_unresolved, root_path,
-                args.db_path if (args.db_path and not args.no_db) else None)
+                _effective_db_path(args, root_path))
             if args.max_files > 0 and len(effective_other_files_unresolved) > args.max_files:
                 output_handlers['warning'](
                     f"Auto-scanned {len(effective_other_files_unresolved)} files, "
