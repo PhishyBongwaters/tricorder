@@ -19,7 +19,7 @@ from typing import List, Optional
 # venv/site-packages (e.g. the Hermes agent's own utils.py when tricorder is
 # launched through an editable install that shares a process's sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES, safe_write, get_cache_root
+from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES, safe_write, get_cache_root, db_root_matches
 from scm import get_scm_fname
 from importance import filter_important_files
 from core import Tricorder
@@ -41,12 +41,16 @@ def _canonical_db_for(root: str) -> Optional[str]:
     """First existing index DB for root: <root>/.tricorder/db/<name>.db
     (--init canonical), else <cache>/db/<name>.db (pre_scan default).
     Mirrors tricorder_server._canonical_db_for so the CLI --diff mode sees
-    the same index the MCP server uses. None if neither exists."""
+    the same index the MCP server uses. None if neither exists.
+
+    Basename collisions in the shared cache (same folder name, different
+    repo) are rejected via db_root_matches — a mismatched DB reports as
+    absent rather than corrupting the delta map."""
     name = f"{Path(root).name}.db"
     for cand in (Path(root) / ".tricorder" / "db" / name,
                  get_cache_root() / "db" / name):
         try:
-            if cand.exists():
+            if cand.exists() and db_root_matches(str(cand), root):
                 return str(cand)
         except Exception:
             continue
@@ -443,6 +447,10 @@ Examples:
                         _m = _con.execute(
                             "SELECT root, signature FROM meta ORDER BY rowid DESC LIMIT 1"
                         ).fetchone()
+                        # Basename collision in the shared cache: only report a
+                        # DB whose recorded root is this root.
+                        if _m and _m[0] and not db_root_matches(str(_cand), str(_cov_root)):
+                            continue
                         _sig = (_m[1][:8] if _m and _m[1] else "?")
                         print(
                             f"mapped: {_n} files, {_t} tags (db sig {_sig}). "

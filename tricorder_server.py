@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fastmcp import FastMCP, settings
 from core import Tricorder
 from database import drop_mapped_files
-from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write, query_variants, tokenize_identifier, levenshtein
+from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write, query_variants, tokenize_identifier, levenshtein, db_root_matches
 from scm import get_scm_fname
 from importance import filter_important_files
 from ctags_probe import probe_and_narrow
@@ -91,12 +91,16 @@ mcp = FastMCP("tricorder")
 @lru_cache(maxsize=32)
 def _canonical_db_for(project_root: str) -> Optional[str]:
     """First existing DB: <root>/.tricorder/db/<name>.db (--init canonical),
-    else <cache>/db/<name>.db (pre_scan default). None if neither mapped."""
+    else <cache>/db/<name>.db (pre_scan default). None if neither mapped.
+
+    The lookup is by directory basename, so a same-named repo elsewhere can
+    leave a colliding DB in the shared cache; db_root_matches rejects those
+    (serving another repo's index would silently corrupt answers)."""
     name = f"{Path(project_root).name}.db"
     for cand in (Path(project_root) / ".tricorder" / "db" / name,
                  PRE_SCAN_DB_DIR / name):
         try:
-            if cand.exists():
+            if cand.exists() and db_root_matches(str(cand), project_root):
                 return str(cand)
         except Exception:
             continue

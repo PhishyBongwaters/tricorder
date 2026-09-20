@@ -62,6 +62,33 @@ def get_cache_root() -> Path:
     return base
 
 
+def db_root_matches(db_path: str, root: str) -> bool:
+    """True when the DB's meta.root is the same directory as root.
+
+    Canonical-DB lookup is by directory basename, so two repos that share a
+    folder name collide in the shared cache dir. Serving the wrong repo's
+    index would silently corrupt diff/detect/detail answers — a mismatched
+    DB is treated as absent instead. Read-only; never creates the DB.
+    """
+    import sqlite3 as _sq
+    try:
+        con = _sq.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            row = con.execute(
+                "SELECT root FROM meta ORDER BY rowid DESC LIMIT 1").fetchone()
+        finally:
+            con.close()
+    except Exception:
+        return False
+    if not row or not row[0]:
+        return False
+    try:
+        return (os.path.normcase(os.path.abspath(row[0]))
+                == os.path.normcase(os.path.abspath(root)))
+    except Exception:
+        return False
+
+
 def safe_write(path, text, *, allow_escape=False, encoding="utf-8") -> Path:
     """Write text to a Tricorder-managed path. Structural guard for the
     never-write-to-scanned-repo invariant (TC-006/TC-008).
