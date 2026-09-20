@@ -241,12 +241,24 @@ class TestCanonicalDbRootGuard(unittest.TestCase):
         self.assertFalse(d["indexed"])
         self.assertEqual(d["added"], ["b.py"])
 
-    def test_server_prescan_db_rejects_collision(self):
-        # The generate_map pre-scan lookup must not hand repo B repo A's
-        # cached DB either.
+    def test_scan_db_resolution_is_canonical(self):
+        # tricorder_scan must use the same canonical lookup as the other
+        # tools: an in-repo .tricorder/db/<name>.db wins over the shared
+        # cache, and a colliding cache DB is still rejected for repo B.
         import tricorder_server as srv
-        self.assertIsNone(srv._prescan_db_for(self.repo_b))
-        self.assertEqual(srv._prescan_db_for(self.repo_a), str(self.cache_db))
+        in_repo = self.repo_a / ".tricorder" / "db" / "proj.db"
+        in_repo.parent.mkdir(parents=True, exist_ok=True)
+        db = DBStore(str(in_repo))
+        db.set_meta(str(self.repo_a), "sig")
+        db.conn.commit()
+        db.conn.close()
+        srv._canonical_db_for.cache_clear()
+        try:
+            self.assertEqual(srv._canonical_db_for(str(self.repo_a)),
+                             str(in_repo))
+            self.assertIsNone(srv._canonical_db_for(str(self.repo_b)))
+        finally:
+            srv._canonical_db_for.cache_clear()
 
 
 if __name__ == "__main__":
