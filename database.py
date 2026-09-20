@@ -17,6 +17,8 @@ Schema v1:
 Modes:
     DBStore(path)    -> file-backed sqlite (--db-path)
     DBStore(None)    -> in-memory sqlite      (--no-db)
+    DBStore(path, read_only=True) -> file-backed sqlite, frozen
+        (mode=ro&immutable=1, no DDL/migration/commit)
 """
 from __future__ import annotations
 
@@ -482,7 +484,9 @@ def drop_mapped_files(files, root, db_path):
         # masking real absence); no DB means nothing is mapped.
         return files
     try:
-        db = DBStore(db_path)
+        # Read-only: this helper only reads mapped_rels() (notably on the
+        # CLI --diff path, where the target DB may be unwritable).
+        db = DBStore(db_path, read_only=True)
         try:
             mapped = db.mapped_rels()
         finally:
