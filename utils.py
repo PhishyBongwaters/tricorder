@@ -1143,3 +1143,27 @@ def _base(name: str) -> str:
     elif name.endswith('()'):
         name = name[:-2]
     return name
+
+
+def _qual(name: str) -> str:
+    """Strip signature suffix but keep namespace scope.
+
+    Companion to _base(): 'PCM::GetFrameAudioData() const -> FrameAudioData'
+    becomes 'PCM::GetFrameAudioData', whereas _base() gives
+    'GetFrameAudioData'. Used for graph traversal keys so a qualified query
+    keeps its identity instead of degrading to the bare name (F1).
+    """
+    if '(' in name:
+        name = name.split('(', 1)[0]
+    return name
+
+
+def _scope(name: str) -> Optional[str]:
+    """Namespace scope of a symbol name, or None if unqualified.
+
+    'A::B::run' -> 'A::B'; 'run' -> None. Signature text is ignored.
+    """
+    q = _qual(name)
+    if '::' in q:
+        return q.rsplit('::', 1)[0]
+    return None

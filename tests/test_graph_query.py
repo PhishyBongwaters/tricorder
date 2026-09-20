@@ -151,6 +151,77 @@ class TestGraphQueryIntegration(unittest.TestCase):
         self.assertFalse(any("other" in s for s in seen),
                         f"sibling method's call leaked into callees: {sorted(seen)}")
 
+    def _write_fixture(self, files):
+        tmp = Path(tempfile.mkdtemp(prefix="f1_qual_"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        for name, text in files.items():
+            (tmp / name).write_text(text, encoding="utf-8")
+        return tmp
+
+    def test_qualified_defs_scope_filtered(self):
+        # F1: defs('A::run') must resolve to A's definition only, not B's
+        # homonym. The old base-name fallback put the bare name in
+        # current_targets, conflating every same-named definition.
+        tmp = self._write_fixture({
+            "a.py": "class A:\n    def run(self):\n        return 1\n",
+            "b.py": "class B:\n    def run(self):\n        return 2\n",
+        })
+        t = Tricorder(root=str(tmp), verbose=False)
+        result = t.query_graph(parse_query_dsl("defs('A::run')"))
+        self.assertTrue(result["nodes"], "A::run must resolve (no vacuous pass)")
+        files = {n["file"] for n in result["nodes"]}
+        self.assertEqual(files, {str(tmp / "a.py")},
+                         f"expected only a.py, got: {sorted(files)}")
+        # Unqualified query keeps the old behavior: both definitions.
+        both = t.query_graph(parse_query_dsl("defs('run')"))
+        self.assertEqual({n["file"] for n in both["nodes"]},
+                         {str(tmp / "a.py"), str(tmp / "b.py")})
+
+    def test_qualified_refs_use_qualified_index(self):
+        # F1: where the index holds qualified refs (Rust `use` bindings),
+        # refs('ops_a::run') must traverse only those — no conflation with
+        # ops_b::run and no bare-name-fallback flag.
+        tmp = self._write_fixture({
+            "ops_a.rs": "pub fn run() -> i32 {\n    1\n}\n",
+            "ops_b.rs": "pub fn run() -> i32 {\n    2\n}\n",
+            "main.rs": ("use crate::ops_a::run as run_a;\n"
+                        "use crate::ops_b::run as run_b;\n\n"
+                        "fn main() {\n    let x = run_a();\n    let y = run_b();\n}\n"),
+        })
+        t = Tricorder(root=str(tmp), verbose=False)
+        result = t.query_graph(parse_query_dsl("refs('ops_a::run')"))
+        self.assertTrue(result["edges"], "qualified ref must resolve (no vacuous pass)")
+        sites = {(e["from_file"], e["from_line"]) for e in result["edges"]}
+        self.assertEqual(sites, {(str(tmp / "main.rs"), 5)},
+                         f"expected only the ops_a call site, got: {sorted(sites)}")
+        self.assertTrue(all("resolution" not in e for e in result["edges"]),
+                        "qualified hit must not be flagged as a fallback")
+        self.assertEqual(result["stats"].get("bare_name_fallbacks"), 0)
+
+    def test_bare_fallback_flagged(self):
+        # F1: where the index only has bare refs (Python attribute calls),
+        # refs('A::run') still traverses them (recall) but every edge is
+        # flagged bare-name-fallback instead of silently conflating.
+        tmp = self._write_fixture({
+            "a.py": "class A:\n    def run(self):\n        return 1\n",
+            "b.py": "class B:\n    def run(self):\n        return 2\n",
+            "c.py": ("from a import A\nfrom b import B\n"
+                     "a = A()\nb = B()\na.run()\nb.run()\n"),
+        })
+        t = Tricorder(root=str(tmp), verbose=False)
+        result = t.query_graph(parse_query_dsl("refs('A::run')"))
+        self.assertTrue(result["edges"], "fallback must still find refs (no vacuous pass)")
+        self.assertTrue(all(e.get("resolution") == "bare-name-fallback"
+                            for e in result["edges"]),
+                        f"all edges must be flagged: {result['edges']}")
+        self.assertGreater(result["stats"].get("bare_name_fallbacks", 0), 0)
+        # The definition side stays precise: only A's def is a node target.
+        def_files = {n["file"] for n in result["nodes"] if n["line"] == 2}
+        self.assertNotIn(str(tmp / "b.py"), def_files)
+        # Unqualified query: no flags, old behavior preserved.
+        plain = t.query_graph(parse_query_dsl("refs('run')"))
+        self.assertTrue(all("resolution" not in e for e in plain["edges"]))
+
     def test_exclude_glob_filter(self):
         """Test exclude glob filtering.
 

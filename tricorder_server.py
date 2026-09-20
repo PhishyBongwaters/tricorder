@@ -1117,9 +1117,12 @@ async def tricorder_query(
         Dictionary with:
         - nodes: list of {name, file, line, type}
         - edges: list of {from, to, from_file, to_file, from_line, to_line, type}
+          (edges traversed via a bare-name fallback also carry
+          "resolution": "bare-name-fallback" — the query was qualified but the
+          index only holds bare names, so homonyms may conflate)
         - token_estimate, full_repo_estimate, savings_pct
         - tier_hint (if response truncated)
-        - stats: {nodes_visited, edges_traversed}
+        - stats: {nodes_visited, edges_traversed, bare_name_fallbacks}
     """
     # Parse query DSL
     try:
