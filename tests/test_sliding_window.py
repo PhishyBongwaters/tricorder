@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -139,6 +140,69 @@ class TestCliCanonicalResume(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr[-500:])
         self.assertEqual(self._file_state_count(), 0,
                          "--no-db must not write the canonical DB")
+
+
+class TestUnwritableCanonical(unittest.TestCase):
+    """A canonical DB that exists but isn't writable must degrade the map
+    path to in-memory (with a warning), not crash on the first write."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="ro_canonical_"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        # Canonical DB with stamped ownership (what --init now produces).
+        dbdir = self.tmp / ".tricorder" / "db"
+        dbdir.mkdir(parents=True)
+        self.db = dbdir / f"{self.tmp.name}.db"
+        store = DBStore(str(self.db))
+        try:
+            store.set_meta(str(self.tmp), "", 0)
+            store.commit()
+        finally:
+            store.close()
+
+    def _patch_unwritable(self):
+        # os.access reports writable as root; simulate the non-root
+        # read-only case by patching the writability probe itself.
+        return mock.patch("tricorder._db_writable", return_value=False)
+
+    def test_db_writable_true_for_writable(self):
+        from tricorder import _db_writable
+        self.assertTrue(_db_writable(str(self.db)))
+
+    def test_for_write_skips_unwritable_canonical(self):
+        with self._patch_unwritable():
+            self.assertIsNone(_effective_db_path(_args(), self.tmp, for_write=True))
+
+    def test_reader_keeps_unwritable_canonical(self):
+        # --diff never updates the index, so a read-only DB stays usable.
+        with self._patch_unwritable():
+            self.assertEqual(
+                _effective_db_path(_args(), self.tmp, for_write=False),
+                str(self.db))
+
+    def test_explicit_db_path_ignores_guard(self):
+        with self._patch_unwritable():
+            self.assertEqual(
+                _effective_db_path(_args(db_path="/x.db"), self.tmp, for_write=True),
+                "/x.db")
+
+    def test_warning_fires_on_degradation(self):
+        from tricorder import _unwritable_canonical_warning
+        with self._patch_unwritable():
+            scan_db_path = _effective_db_path(_args(), self.tmp, for_write=True)
+            msg = _unwritable_canonical_warning(_args(), self.tmp, scan_db_path)
+        self.assertIsNotNone(msg, "degradation must warn")
+        self.assertIn("not writable", msg)
+        # Non-vacuous: no warning when the DB is usable...
+        scan_db_path = _effective_db_path(_args(), self.tmp, for_write=True)
+        self.assertEqual(scan_db_path, str(self.db))
+        self.assertIsNone(
+            _unwritable_canonical_warning(_args(), self.tmp, scan_db_path))
+        # ...or when the canonical DB isn't in play at all.
+        self.assertIsNone(
+            _unwritable_canonical_warning(_args(no_db=True), self.tmp, None))
+        self.assertIsNone(
+            _unwritable_canonical_warning(_args(diff=True), self.tmp, None))
 
 
 if __name__ == "__main__":

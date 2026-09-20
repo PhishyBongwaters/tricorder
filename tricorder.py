@@ -96,7 +96,18 @@ def tool_error(message):
     print(f"Error: {message}", file=sys.stderr)
 
 
-def _effective_db_path(args, root_path) -> Optional[str]:
+def _db_writable(db_path: str) -> bool:
+    """True when the process can write the DB file and its directory.
+
+    SQLite needs the directory too (WAL -shm/-wal sidecars). A canonical
+    DB that exists but isn't writable (read-only checkout, foreign owner)
+    can't back a map scan — the extractor gate does DELETEs on first use.
+    """
+    p = Path(db_path)
+    return os.access(str(p), os.W_OK) and os.access(str(p.parent), os.W_OK)
+
+
+def _effective_db_path(args, root_path, *, for_write=False) -> Optional[str]:
     """Resolve the DB path for this run.
 
     Explicit --db-path wins (unless --no-db). Otherwise fall back to the
@@ -104,12 +115,30 @@ def _effective_db_path(args, root_path) -> Optional[str]:
     map path resumes the same index the MCP server uses and --diff sees.
     None when no DB exists yet (historical in-memory default preserved
     for fresh repos); --no-db always forces None.
+
+    for_write: map scans write file_state/tags, so an existing-but-
+    unwritable canonical DB is skipped — degrading to in-memory beats
+    crashing on the first write. Readers (--diff) keep a read-only DB:
+    diff_against_index never updates the index.
     """
     if args.no_db:
         return None
     if args.db_path:
         return args.db_path
-    return _canonical_db_for(str(root_path))
+    cand = _canonical_db_for(str(root_path))
+    if cand and for_write and not _db_writable(cand):
+        return None
+    return cand
+
+
+def _unwritable_canonical_warning(args, root_path, scan_db_path) -> Optional[str]:
+    """Warning text when the map path degraded to in-memory because the
+    canonical DB exists but isn't writable. None when nothing degraded."""
+    if (not args.diff and not args.no_db and not args.db_path
+            and scan_db_path is None and _canonical_db_for(str(root_path))):
+        return ("Canonical DB exists but is not writable; this run scans "
+                "in-memory (no resumption).")
+    return None
 
 
 def main():
@@ -562,6 +591,16 @@ Examples:
     if not root_path.is_dir():
         parser.error(f"--root is not an existing directory: {args.root}")
 
+    # Resolve once: explicit --db-path wins, else the canonical --init DB
+    # when usable. Map scans write, so an existing-but-unwritable
+    # canonical DB (read-only checkout, foreign owner) degrades to
+    # in-memory with a warning instead of crashing on the first write.
+    # --diff only reads, so it keeps a read-only DB.
+    scan_db_path = _effective_db_path(args, root_path, for_write=not args.diff)
+    _warn = _unwritable_canonical_warning(args, root_path, scan_db_path)
+    if _warn:
+        output_handlers['warning'](_warn)
+
     # Pre-index probe runs FIRST, before any full-tree walk: the probe is
     # instant (rg-streamed) and gives the authoritative narrow set. Only if
     # --pre-index is absent OR the probe finds nothing do we walk the tree.
@@ -595,7 +634,7 @@ Examples:
         # explicit, canonical (--init), or absent (in-memory).
         effective_other_files_unresolved = drop_mapped_files(
             effective_other_files_unresolved, root_path,
-            _effective_db_path(args, root_path))
+            scan_db_path)
         if args.max_files > 0 and len(effective_other_files_unresolved) > args.max_files:
             output_handlers['warning'](
                 f"Explicit paths yielded {len(effective_other_files_unresolved)} files, "
@@ -615,7 +654,7 @@ Examples:
             # explicit, canonical (--init), or absent (in-memory).
             effective_other_files_unresolved = drop_mapped_files(
                 effective_other_files_unresolved, root_path,
-                _effective_db_path(args, root_path))
+                scan_db_path)
             if args.max_files > 0 and len(effective_other_files_unresolved) > args.max_files:
                 output_handlers['warning'](
                     f"Auto-scanned {len(effective_other_files_unresolved)} files, "
@@ -640,7 +679,7 @@ Examples:
         exclude_untagged=args.exclude_untagged,
         full_map=args.full,
         use_db=not args.no_db,
-        db_path=_effective_db_path(args, root_path),
+        db_path=scan_db_path,
     )
 
     if args.diff:

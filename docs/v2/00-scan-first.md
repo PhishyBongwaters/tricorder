@@ -36,7 +36,10 @@ After `--init`, bare CLI runs (no `--db-path`) resume into the canonical
 DB automatically: the sliding window drops already-mapped files before the
 `--max-files` cap, so repeated `--max-files N` runs walk forward through
 the repo instead of re-scanning the first N files. `--no-db` opts out and
-stays in-memory. Explicit `--db-path` still wins.
+stays in-memory. Explicit `--db-path` still wins. A canonical DB that
+exists but isn't writable (read-only checkout, foreign owner) degrades
+the map scan to in-memory with a warning instead of crashing on the
+first write; `--diff` only reads, so it keeps a read-only DB.
 
 ## Chunking (large repos)
 
