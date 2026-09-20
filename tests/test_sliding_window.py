@@ -1,4 +1,4 @@
-"""Tests for the sliding-window resume path: drop_mapped_files, --init
+"""Tests for the prefix-cap resume path: drop_mapped_files, --init
 ownership stamping, and canonical-DB resumption without --db-path."""
 import shutil
 import sqlite3
@@ -118,20 +118,31 @@ class TestCliCanonicalResume(unittest.TestCase):
         # until a scan wrote meta, silently disabling resumption).
         self.assertEqual(_canonical_db_for(str(self.tmp)), str(self._canonical()))
 
-    def test_bare_max_files_runs_resume_into_canonical(self):
+    def test_rising_caps_resume_into_canonical(self):
+        # --max-files is a prefix cap (house rule): a fixed-cap rerun adds
+        # zero; resumed scans need rising caps.
         self._run("--init")
         r1 = self._run("--max-files", "2", "--map-tokens", "100000", "--quiet")
         self.assertEqual(r1.returncode, 0, r1.stderr[-500:])
         self.assertEqual(self._file_state_count(), 2,
                          "first bare run must populate the canonical DB")
-        r2 = self._run("--max-files", "2", "--map-tokens", "100000", "--quiet")
+        r2 = self._run("--max-files", "4", "--map-tokens", "100000", "--quiet")
         self.assertEqual(r2.returncode, 0, r2.stderr[-500:])
         self.assertEqual(self._file_state_count(), 4,
-                         "second bare run must slide past mapped files")
-        # The second map covers the next window, not the first.
+                         "rising cap must extend the mapped prefix")
+        # The second map covers the new prefix slice, not the first.
         self.assertNotIn("def f0", r2.stdout)
         self.assertNotIn("def f1", r2.stdout)
         self.assertIn("def f2", r2.stdout)
+
+    def test_fixed_cap_rerun_adds_zero(self):
+        self._run("--init")
+        self._run("--max-files", "2", "--map-tokens", "100000", "--quiet")
+        self.assertEqual(self._file_state_count(), 2)
+        r2 = self._run("--max-files", "2", "--map-tokens", "100000", "--quiet")
+        self.assertEqual(r2.returncode, 0, r2.stderr[-500:])
+        self.assertEqual(self._file_state_count(), 2,
+                         "fixed-cap rerun must add zero (prefix cap)")
 
     def test_no_db_leaves_canonical_untouched(self):
         self._run("--init")

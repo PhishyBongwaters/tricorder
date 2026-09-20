@@ -7,10 +7,13 @@ How the moving parts work under the flow in `01-pipeline.md`.
 - Grammars come from `grep-ast` (`grep_ast.tsl.get_language /
   get_parser`), cached per language in `_PARSER_CACHE` — one parser
   instance per language per process, not per file.
-- Tag queries are `.scm` files shipped *inside the grep-ast package*
+- Tag queries are `.scm` files in the repo's `queries/` tree
   (`scm.py:get_scm_fname` maps language → filename, e.g.
-  `python-tags.scm`). There is no local queries directory; adding a
-  language means grep-ast must ship its grammar + query.
+  `python-tags.scm`, preferring `queries/tree-sitter-language-pack/`
+  then `queries/tree-sitter-languages/`). Adding a language means
+  adding its `<lang>-tags.scm` there plus an `scm.py` map entry
+  (full workflow in `07-language-expansion.md`) — not waiting on an
+  upstream package.
 - Captures split on `name.definition` → `def`, `name.reference` →
   `ref`; anything else (e.g. `reference.call`) is ignored for tags.
   Lines are 1-based (`start_point[0] + 1`).

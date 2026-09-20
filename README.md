@@ -2,7 +2,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-301%20passed%2C%203%20skipped-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-339%20passed%2C%201%20skipped-brightgreen.svg)](tests/)
 
 **Turn any codebase into a token-efficient map an LLM agent can actually navigate.**
 
@@ -55,7 +55,7 @@ That's it. No config files, no model keys, no network calls — everything runs 
 
 ## Features
 
-- **Tree-sitter parsing, 34 languages** — 11 with full signature + return-type extraction (Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby)
+- **Tree-sitter parsing, 93 validated languages** — 11 with full signature + return-type extraction (Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby)
 - **Class-context qualification** — methods scoped as `Class::method` from AST structure, identical across sequential and parallel scans
 - **PageRank ranking** — the important code surfaces first, inside your token budget
 - **Token-aware output** — binary search fits the map to `--map-tokens`; tiers (T0 definitions → T1 with context) let you stop at the cheapest rung that answers the question
@@ -117,7 +117,7 @@ Tricorder treats **repository content as untrusted input**. Every MCP response i
 .venv/Scripts/python -m pytest tests/ -q -p no:cacheprovider   # full suite
 ```
 
-301 tests passing, 3 skipped (ctags/Windows-only), 93 subtests. Bug reports and PRs welcome — please include a failing test where practical. See [AGENTS.md](AGENTS.md) for repo conventions.
+339 tests passing, 1 skipped (Windows-only), 93 subtests. Bug reports and PRs welcome — please include a failing test where practical. See [AGENTS.md](AGENTS.md) for repo conventions.
 
 ## Lineage
 

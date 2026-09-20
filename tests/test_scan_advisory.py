@@ -17,12 +17,15 @@ class TestScanBreakEvenAdvisory(unittest.TestCase):
         self.assertIsNone(_scan_break_even_advisory(-5))
 
     def test_small_repo_advises_skip_for_one_offs(self):
-        # 76-file benchmark point: scanning buys nothing per query.
+        # 76-file benchmark point: scanning buys nothing per query —
+        # measured negative per-query returns, so no query-count
+        # threshold is claimed.
         advice = _scan_break_even_advisory(76)
         self.assertIsNotNone(advice)
         self.assertIn("76 files", advice)
         self.assertIn("skip", advice.lower())
-        self.assertIn("10+", advice)
+        self.assertNotIn("10+", advice)
+        self.assertIn("negative", advice)
         # Advisory only: no refusal language.
         self.assertNotIn("refus", advice.lower())
         self.assertNotIn("will not", advice.lower())

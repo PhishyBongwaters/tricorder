@@ -19,7 +19,7 @@ from typing import List, Optional
 # venv/site-packages (e.g. the Hermes agent's own utils.py when tricorder is
 # launched through an editable install that shares a process's sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES, safe_write, get_cache_root, db_root_matches
+from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES, safe_write, get_cache_root, db_root_matches, _db_writable, read_only_connect
 from scm import get_scm_fname
 from importance import filter_important_files
 from core import Tricorder
@@ -94,17 +94,6 @@ def tool_warning(message):
 def tool_error(message):
     """Print error messages."""
     print(f"Error: {message}", file=sys.stderr)
-
-
-def _db_writable(db_path: str) -> bool:
-    """True when the process can write the DB file and its directory.
-
-    SQLite needs the directory too (WAL -shm/-wal sidecars). A canonical
-    DB that exists but isn't writable (read-only checkout, foreign owner)
-    can't back a map scan — the extractor gate does DELETEs on first use.
-    """
-    p = Path(db_path)
-    return os.access(str(p), os.W_OK) and os.access(str(p.parent), os.W_OK)
 
 
 def _effective_db_path(args, root_path, *, for_write=False) -> Optional[str]:
@@ -438,6 +427,15 @@ Examples:
     if args.wipe and not args.init:
         parser.error("--wipe requires --init")
 
+    # Validate an explicit --root before the early-exit flags (--init,
+    # --db-coverage, --signature-only, --stats-only, --probe-digest):
+    # a root that isn't a directory must fail clean here, not die later
+    # in mkdir/compute_signature with a traceback.
+    if args.root not in (None, ".", ""):
+        _early_root = Path(args.root).resolve()
+        if not _early_root.is_dir():
+            parser.error(f"--root is not an existing directory: {args.root}")
+
     # --init: canonical DB path, create dirs, open (schema + journal by size
     # handled in DBStore.__init__), print path, exit. Early, like --probe-digest.
     if args.init:
@@ -468,7 +466,6 @@ Examples:
     # + DSH). Prints nothing when unmapped. Read-only; never creates or writes
     # (no blind sqlite connect — existence checked first).
     if args.db_coverage:
-        import sqlite3 as _sq
         _cov_root = Path(args.root).resolve()
         _cov_name = _cov_root.name + ".db"
         # (candidate, repo_local): the repo-local DB needs no ownership check —
@@ -488,7 +485,7 @@ Examples:
                     continue
                 if not _cov_local and not db_root_matches(str(_cand), str(_cov_root)):
                     continue
-                _con = _sq.connect(f"file:{_cand}?mode=ro", uri=True)
+                _con = read_only_connect(str(_cand))
                 try:
                     # Coverage is file_state rows (house rule: never
                     # tags-distinct — tagless files own zero tag rows).
@@ -605,6 +602,13 @@ Examples:
     if _warn:
         output_handlers['warning'](_warn)
 
+    # --diff is read-only: an explicit --db-path must already exist.
+    # Letting Tricorder/DBStore connect would create + schema-initialize
+    # a fresh file (sqlite3.connect creates 0-byte stubs), silently
+    # turning "diff against my index" into "diff against nothing".
+    if args.diff and args.db_path and not os.path.exists(args.db_path):
+        parser.error(f"--diff needs an existing index DB; no DB at: {args.db_path}")
+
     # Pre-index probe runs FIRST, before any full-tree walk: the probe is
     # instant (rg-streamed) and gives the authoritative narrow set. Only if
     # --pre-index is absent OR the probe finds nothing do we walk the tree.
@@ -633,18 +637,19 @@ Examples:
                 p = root_path / path_spec_str
             effective_other_files_unresolved.extend(find_src_files(str(p), exclude_globs=args.exclude_globs))
 
-        # Sliding window: resolve the DB exactly like the Tricorder
-        # below, so --max-files caps unmapped files whether the DB is
-        # explicit, canonical (--init), or absent (in-memory).
-        effective_other_files_unresolved = drop_mapped_files(
-            effective_other_files_unresolved, root_path,
-            scan_db_path)
+        # Prefix cap (house rule): --max-files caps the discovery
+        # prefix FIRST, then already-mapped files within the prefix are
+        # dropped so a resumed rising-cap run doesn't re-parse them.
+        # Fixed-cap reruns add zero; resume with a rising cap.
         if args.max_files > 0 and len(effective_other_files_unresolved) > args.max_files:
             output_handlers['warning'](
                 f"Explicit paths yielded {len(effective_other_files_unresolved)} files, "
                 f"capping to {args.max_files}"
             )
             effective_other_files_unresolved = effective_other_files_unresolved[:args.max_files]
+        effective_other_files_unresolved = drop_mapped_files(
+            effective_other_files_unresolved, root_path,
+            scan_db_path)
         other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
 
         # Auto-discover when no explicit/positional paths were provided
@@ -653,18 +658,19 @@ Examples:
                 output_handlers['info'](f"No explicit files provided, auto-scanning {root_path}...")
             effective_other_files_unresolved = find_src_files(
                 str(root_path), exclude_globs=args.exclude_globs)
-            # Sliding window: resolve the DB exactly like the Tricorder
-            # below, so --max-files caps unmapped files whether the DB is
-            # explicit, canonical (--init), or absent (in-memory).
-            effective_other_files_unresolved = drop_mapped_files(
-                effective_other_files_unresolved, root_path,
-                scan_db_path)
+            # Prefix cap (house rule): --max-files caps the discovery
+            # prefix FIRST, then already-mapped files within the prefix are
+            # dropped so a resumed rising-cap run doesn't re-parse them.
+            # Fixed-cap reruns add zero; resume with a rising cap.
             if args.max_files > 0 and len(effective_other_files_unresolved) > args.max_files:
                 output_handlers['warning'](
                     f"Auto-scanned {len(effective_other_files_unresolved)} files, "
                     f"capping to {args.max_files}"
                 )
                 effective_other_files_unresolved = effective_other_files_unresolved[:args.max_files]
+            effective_other_files_unresolved = drop_mapped_files(
+                effective_other_files_unresolved, root_path,
+                scan_db_path)
             other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
 
     mentioned_fnames = set(args.mentioned_files) if args.mentioned_files else None

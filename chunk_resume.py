@@ -4,8 +4,9 @@
 Usage: chunk_resume.py <repo-path> [--start-cap N] [--step N] [--timeout S] [--db-path PATH]
 
 Loops `tricorder.py --db-path <canonical> --max-files <cap>` with a rising
-cap. Each run parses up to <cap> UNMAPPED files (drop_mapped_files slides
-the window, so fixed-cap reruns also advance). After each chunk, reads
+cap. --max-files is a prefix cap: each run takes the first <cap> files of
+the walk and skips already-mapped ones, so the rising cap is what advances
+coverage (a fixed-cap rerun adds zero). After each chunk, reads
 counts from the DB; stops when mapped == discovered total (DONE) or when
 two consecutive chunks add zero files (STALL, exit 1). Serial, one run at
 a time — no worker pool, no DB merge.
@@ -82,7 +83,7 @@ def main():
             )
         except subprocess.TimeoutExpired:
             # Clean failure, not a traceback: completed chunks are already in
-            # the DB (sliding window skips them), so re-running resumes.
+            # the DB (already-mapped files are skipped), so re-running resumes.
             files, tag_files, tags, refs = db_counts(db)
             print(f"TIMEOUT: chunk {i} exceeded --timeout={args.timeout}s "
                   f"(mapped {files}/{total} so far). Re-run to resume.")

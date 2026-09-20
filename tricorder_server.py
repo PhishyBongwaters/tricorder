@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fastmcp import FastMCP, settings
 from core import Tricorder
 from database import drop_mapped_files
-from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write, db_root_matches
+from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write, db_root_matches, _db_writable
 from scm import get_scm_fname
 from importance import filter_important_files
 from ctags_probe import probe_and_narrow
@@ -118,8 +118,15 @@ def _get_tricorder(project_root: str) -> "Tricorder":
     untagged/bloat files (per user: bloat -> exclude always).
     ponytail: single key (root), bounded LRU.
     """
-    # Check for pre-scan DB (in-repo canonical first, cache fallback)
+    # Check for pre-scan DB (in-repo canonical first, cache fallback).
+    # Same unwritable-canonical guard as the CLI map path: an existing
+    # but read-only DB can't back a scan (the extractor gate DELETEs on
+    # first use), so degrade to in-memory instead of crashing.
     db_path = _canonical_db_for(project_root)
+    if db_path and not _db_writable(db_path):
+        log.warning(f"Canonical DB {db_path} is not writable; "
+                    "this MCP scan runs in-memory (no resumption).")
+        db_path = None
 
     return Tricorder(
         root=project_root,
@@ -234,9 +241,9 @@ def _scan_break_even_advisory(n_files: int) -> Optional[str]:
             f"Small repo ({n_files} files): a full scan costs ~{index_s:.0f}s "
             "but buys little per query — at this size plain search measured "
             "faster and leaner (76-file bench: 9 KB / 0.06s baseline vs "
-            "23 KB / 9.3s). For one-off queries skip the scan "
-            "(detect/detail cold-parse in seconds); scan only if you expect "
-            "10+ queries this session."
+            "23 KB / 9.3s), i.e. negative per-query returns, so the index "
+            "never pays for itself here. Skip the scan; detect/detail "
+            "cold-parse in seconds."
         )
     break_even = max(
         1, round(index_s / (_STEPS_SAVED_PER_QUERY * _S_PER_ROUND_TRIP)))
@@ -648,13 +655,21 @@ async def tricorder_scan(
         if not effective_other_files:
             log.info("No other_files provided, scanning root directory for context...")
             effective_other_files = find_src_files(project_root, exclude_globs=exclude_globs)
-            # Sliding window: already-mapped files don't count against the cap.
-            _cand = _canonical_db_for(project_root)
-            effective_other_files = drop_mapped_files(
-                effective_other_files, project_root, _cand)
+            # Prefix cap (house rule): max_files caps the discovery prefix
+            # FIRST, then already-mapped files within the prefix are dropped
+            # so a resumed rising-cap run doesn't re-parse them. Fixed-cap
+            # reruns add zero; resume with a rising cap.
             if max_files > 0 and len(effective_other_files) > max_files:
                 log.warning(f"Auto-scanned {len(effective_other_files)} files, capping to {max_files}")
                 effective_other_files = effective_other_files[:max_files]
+            # Skip the drop when the canonical DB isn't writable — it can't
+            # back this scan (degraded to in-memory above), so nothing in it
+            # is authoritative for the window.
+            _cand = _canonical_db_for(project_root)
+            if _cand and not _db_writable(_cand):
+                _cand = None
+            effective_other_files = drop_mapped_files(
+                effective_other_files, project_root, _cand)
 
     # Add a print statement for debugging so you can see what the tool is working with.
     log.debug(f"Chat files: {chat_files_list}")

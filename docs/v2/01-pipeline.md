@@ -12,16 +12,19 @@ reported partial walk, never unbounded CPU. Threaded walk
 paths the CLI auto-scans `--root`; `find_git_root` resolves `.` to the
 enclosing repo. Output is an ordered file list. Nothing parsed yet.
 
-`--max-files N` (default 1000, `0` = uncapped) caps how many files
-enter the run. `drop_mapped_files` (`database.py`) removes files
-already in `file_state` first, so the cap limits *unmapped* files —
-the sliding window that makes resume-by-rerun work.
+`--max-files N` (default 0 = uncapped) caps the discovery prefix:
+the first N files of the walk enter the run. `drop_mapped_files`
+(`database.py`) then removes files already in `file_state` within that
+prefix, so a resumed rising-cap run doesn't re-parse them. Fixed-cap
+reruns add zero — resume with a rising cap (`chunk_resume.py`
+enforces this).
 
 ## 2. Parse (`parser.py:ParserMixin.get_tags_raw`, `cache.py:get_tags`)
 
 Per file: extension → grammar (`detect_lang`), tree-sitter parse via
-`grep_ast.tsl` (parser cached per language; `.scm` tag queries ship
-inside the grep-ast package — details in `04-internals.md`), `.scm`
+`grep_ast.tsl` (parser cached per language; `.scm` tag queries live in
+the repo's `queries/` tree — `scm.py:get_scm_fname` maps language →
+filename, e.g. `python-tags.scm`; details in `04-internals.md`), `.scm`
 query extracts
 `Tag(rel_fname, fname, line, name, kind)` with kind `def` or `ref`.
 Code is never executed. One bad file (missing grammar, binary junk,
@@ -45,7 +48,7 @@ Schema v1, six tables:
 
 - `tags(file, rel_file, line, name, kind)` — one row per def/ref.
 - `refs(from_file, to_file, name)` — materialized edges (stage 6).
-- `meta(schema_version, root, signature)` — exactly one row.
+- `meta(schema_version, root, signature, extractor_version)` — exactly one row.
 - `file_state(rel_file, size, mtime)` — per-file stat fingerprint.
 - `stop_names(name)` — def-names skipped by `populate_refs` (>50
   files), persisted so "no callers" vs "too common" stays answerable.

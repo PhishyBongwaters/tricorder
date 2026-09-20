@@ -6,12 +6,12 @@ for them, not a gap.
 
 ## Triage (judgment, verify per language while working)
 
-CODE — worth a query (25): bash, cairo, clojure, cmake, fortran, func,
+CODE — worth a query (30): bash, cairo, clojure, cmake, fortran, func,
 gdscript, glsl, gn, groovy, hack, haskell, julia, llvm, make, matlab,
 pascal, perl, powershell, proto, sql, svelte, tsx, verilog, vue, wast,
 wat, zig, uxntal, tablegen.
 
-CONFIG/DATA — `no-query` is correct (21): comment, css, csv,
+CONFIG/DATA — `no-query` is correct (20): comment, css, csv,
 dockerfile, git_config, gitattributes, gitcommit, gitignore, gomod,
 gosum, html, ini, jsdoc, json, latex, markdown, pymanifest,
 requirements, toml, yaml.

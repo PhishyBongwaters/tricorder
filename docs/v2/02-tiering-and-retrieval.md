@@ -56,7 +56,7 @@ file is truth.
 
 The `/tricorder root|scan|status|help` slash commands and turn-0
 injection live in the unported Hermes/DSH plugin surface (see
-`02-tiering-and-retrieval.md`, "MCP + turn-0 plugin — TBD"). No usage
+"MCP + turn-0 plugin — TBD" below). No usage
 docs until the plugin port lands and is verified live.
 
 ## MCP + turn-0 plugin — TBD (not ported)

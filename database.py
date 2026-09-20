@@ -443,11 +443,19 @@ class DBStore:
 
 
 def drop_mapped_files(files, root, db_path):
-    """Sliding window: drop walked files already mapped in the DB so a
-    --max-files cap limits *unmapped* files, not the walk prefix.
+    """Drop walked files already mapped in the DB.
 
-    Same-file helper for CLI + MCP (one implementation, no drift).
-    No DB or any mapped set -> input unchanged. Pure path-string work.
+    Used after the --max-files prefix cap: files inside the prefix that
+    are already indexed are skipped so a resumed rising-cap run doesn't
+    re-parse them. Same-file helper for CLI + MCP (one implementation,
+    no drift). No DB or any mapped set -> input unchanged.
+
+    Rel comparison is case-normalized (os.path.normcase — identity on
+    POSIX, lowercases on Windows): stored rels come from
+    Tricorder.get_rel_fname (Path.relative_to, case-insensitive on
+    Windows) while this loop computes rels via os.path.relpath
+    (case-sensitive component compare on ntpath) against a
+    realpath-resolved root — a case-mismatched root must still match.
     """
     if not db_path or not files:
         return files
@@ -465,6 +473,8 @@ def drop_mapped_files(files, root, db_path):
         return files
     if not mapped:
         return files
+    norm = os.path.normcase
+    mapped_n = {norm(m) for m in mapped}
     root_s = str(root)
     kept = []
     for f in files:
@@ -475,7 +485,7 @@ def drop_mapped_files(files, root, db_path):
         except ValueError:
             kept.append(f)
             continue
-        if rel not in mapped:
+        if norm(rel) not in mapped_n:
             kept.append(f)
     return kept
 

@@ -7,6 +7,7 @@ import json
 import os
 import fnmatch
 import re
+import tempfile
 import time
 import sys
 from pathlib import Path
@@ -62,6 +63,48 @@ def get_cache_root() -> Path:
     return base
 
 
+def read_only_connect(db_path: str):
+    """Open a sqlite DB read-only; never creates the file.
+
+    immutable=1 matters: every file DB uses WAL journal mode, and a
+    plain mode=ro open of a WAL DB fails ("unable to open database
+    file") when the -shm/-wal sidecars can't be created — exactly the
+    read-only-checkout case these probes target. immutable=1 tells
+    sqlite to read the main file only, skipping sidecar access (the
+    caller must not need uncheckpointed WAL rows, and must hold the
+    connection only briefly — the file is assumed frozen meanwhile).
+    """
+    import sqlite3 as _sq
+    return _sq.connect(f"file:{db_path}?mode=ro&immutable=1", uri=True)
+
+
+def _db_writable(db_path: str) -> bool:
+    """True when the process can write the DB file and its directory.
+
+    SQLite needs the directory too (WAL -shm/-wal sidecars). A canonical
+    DB that exists but isn't writable (read-only checkout, foreign owner)
+    can't back a map scan — the extractor gate does DELETEs on first use.
+
+    The directory check is a create+delete probe file, not
+    os.access(dir, W_OK): on Windows os.access uses MSVC _waccess, which
+    for directories checks existence only, never ACLs. The file check
+    keeps os.access — it honors ACLs on files on Windows.
+    """
+    p = Path(db_path)
+    if p.exists() and not os.access(str(p), os.W_OK):
+        return False
+    try:
+        fd, probe = tempfile.mkstemp(dir=str(p.parent),
+                                     prefix=".tricorder-wprobe-")
+        try:
+            os.close(fd)
+        finally:
+            os.unlink(probe)
+        return True
+    except OSError:
+        return False
+
+
 def db_root_matches(db_path: str, root: str) -> bool:
     """True when the DB's meta.root is the same directory as root.
 
@@ -70,9 +113,8 @@ def db_root_matches(db_path: str, root: str) -> bool:
     index would silently corrupt diff/detect/detail answers — a mismatched
     DB is treated as absent instead. Read-only; never creates the DB.
     """
-    import sqlite3 as _sq
     try:
-        con = _sq.connect(f"file:{db_path}?mode=ro", uri=True)
+        con = read_only_connect(db_path)
         try:
             row = con.execute(
                 "SELECT root FROM meta ORDER BY rowid DESC LIMIT 1").fetchone()
