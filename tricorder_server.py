@@ -923,10 +923,11 @@ async def tricorder_detail(
     Returns:
         Dictionary containing 'symbol' (symbol record dict) or 'error' key.
     """
-    if not os.path.isdir(project_root):
-        return {"error": f"Project root directory not found: {project_root}"}
+    err, root_path = _validate_project_root(project_root)
+    if err:
+        return {"error": err}
 
-    project_root = str(Path(project_root).resolve())
+    project_root = str(root_path)
 
     # Resolve file path — accept relative or absolute
     file_path = Path(file)

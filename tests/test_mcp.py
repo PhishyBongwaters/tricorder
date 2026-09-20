@@ -393,5 +393,59 @@ class TestMCPTrustMetadata(unittest.TestCase):
             self.assertEqual(result.get("trust"), "untrusted_repository_content")
 
 
+class TestMCPValidationUnify(unittest.TestCase):
+    """tricorder_detail must use the shared _validate_project_root like the
+    other six MCP tools (strict resolve, is-dir check, readability).
+
+    8375d81 unified tricorder_query but missed tricorder_detail, which kept
+    the weaker inline isdir check: a path that exists-but-is-a-file got the
+    misleading "not found" message, and unreadable roots slipped through to
+    fail obscurely later.
+    """
+
+    def setUp(self):
+        import tempfile
+        import shutil
+        self.tmpdir = tempfile.mkdtemp(prefix="tricorder_val_")
+        self.addCleanup(shutil.rmtree, self.tmpdir, True)
+
+    def test_detail_missing_root_uses_unified_message(self):
+        """Missing root -> unified 'not found or inaccessible' message."""
+        import asyncio
+        from tricorder_server import tricorder_detail
+        bad_root = str(Path(self.tmpdir) / "does-not-exist")
+        result = asyncio.run(tricorder_detail(
+            project_root=bad_root, file="x.py", name="x"))
+        self.assertIn("error", result)
+        self.assertEqual(result["error"],
+                         f"Project root not found or inaccessible: {bad_root}")
+
+    def test_detail_file_not_dir_uses_unified_message(self):
+        """Existing file (not a dir) -> unified 'not a directory' message,
+        not the misleading 'not found' the old inline check produced."""
+        import asyncio
+        from tricorder_server import tricorder_detail
+        not_a_dir = str(Path(self.tmpdir) / "afile.txt")
+        Path(not_a_dir).write_text("x", encoding="utf-8")
+        result = asyncio.run(tricorder_detail(
+            project_root=not_a_dir, file="x.py", name="x"))
+        self.assertIn("error", result)
+        self.assertEqual(result["error"],
+                         f"Project root is not a directory: {not_a_dir}")
+
+    def test_detail_bad_root_parity_with_detect(self):
+        """detail and detect reject the same bad root with the same error."""
+        import asyncio
+        from tricorder_server import tricorder_detail, tricorder_detect
+        bad_root = str(Path(self.tmpdir) / "does-not-exist")
+        d1 = asyncio.run(tricorder_detail(
+            project_root=bad_root, file="x.py", name="x"))
+        d2 = asyncio.run(tricorder_detect(
+            project_root=bad_root, query="x"))
+        self.assertIn("error", d1)
+        self.assertIn("error", d2)
+        self.assertEqual(d1["error"], d2["error"])
+
+
 if __name__ == '__main__':
     unittest.main()
