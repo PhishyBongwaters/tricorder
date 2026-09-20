@@ -146,10 +146,6 @@ class TestCliDiffAlias(unittest.TestCase):
         self.assertIn("added", json.loads(p_since.stdout))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestCanonicalDbRootGuard(unittest.TestCase):
     """Same folder name, different repos: the shared-cache DB lookup must not
     serve repo A's index for repo B. Canonical lookup is by directory
@@ -244,3 +240,7 @@ class TestCanonicalDbRootGuard(unittest.TestCase):
         d = t.diff_against_index()
         self.assertFalse(d["indexed"])
         self.assertEqual(d["added"], ["b.py"])
+
+
+if __name__ == "__main__":
+    unittest.main()
