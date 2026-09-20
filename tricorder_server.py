@@ -204,6 +204,52 @@ def _savings_pct(token_estimate: int, full_repo_estimate: int) -> float:
     return round(max(0.0, 1 - token_estimate / full_repo_estimate) * 100, 1)
 
 
+# Break-even constants, sized from the two navigation benchmarks
+# (2026-09-20). Small repo: 76 files — tricorder 8 steps / 23.0 KB /
+# 9.3 s vs baseline 12 steps / 9.1 KB / 0.06 s (index buys nothing per
+# query). Django: 7,116 files, 6,046 indexed — index 50.6 s; per query
+# 8 steps / 12.8 KB vs baseline 13 steps / 31.6 KB (saves ~5
+# round-trips, ~60% bytes).
+_INDEX_S_PER_FILE = 50.6 / 6046  # ~0.0084 s/file, through the Django point
+_INDEX_FIXED_S = 5.0              # floor: process startup + cache overhead
+_SMALL_REPO_FILES = 200           # below this, one-off queries skip the scan
+_STEPS_SAVED_PER_QUERY = 5        # 13 -> 8 steps (Django bench)
+_S_PER_ROUND_TRIP = 45            # agent-latency assumption; stated, not hidden
+
+
+def _scan_break_even_advisory(n_files: int) -> Optional[str]:
+    """Advise (never refuse) whether a full scan is worth the upfront cost.
+
+    Rule: scan_cost < per-query savings x expected queries. Small repos
+    show negative per-query returns (plain search wins), so one-off
+    queries should skip the scan; large repos save ~5 round-trips and
+    ~60% bytes per query, so multi-query agent sessions still benefit.
+    Returns None when there is nothing to advise on.
+    """
+    if n_files <= 0:
+        return None
+    index_s = max(_INDEX_FIXED_S, _INDEX_S_PER_FILE * n_files)
+    if n_files < _SMALL_REPO_FILES:
+        return (
+            f"Small repo ({n_files} files): a full scan costs ~{index_s:.0f}s "
+            "but buys little per query — at this size plain search measured "
+            "faster and leaner (76-file bench: 9 KB / 0.06s baseline vs "
+            "23 KB / 9.3s). For one-off queries skip the scan "
+            "(detect/detail cold-parse in seconds); scan only if you expect "
+            "10+ queries this session."
+        )
+    break_even = max(
+        1, round(index_s / (_STEPS_SAVED_PER_QUERY * _S_PER_ROUND_TRIP)))
+    noun = "query" if break_even == 1 else "queries"
+    return (
+        f"Indexing {n_files} files costs ~{index_s:.0f}s one-time "
+        "(incremental after). Each query saves ~5 round-trips and ~60% "
+        "response bytes vs manual search (7k-file bench) — at ~45s per "
+        f"round-trip the index pays for itself after ~{break_even} {noun}. "
+        "Worth it for multi-query sessions; skip for one-offs."
+    )
+
+
 def _full_repo_tokens(project_root: str) -> int:
     """Estimate full-repo token cost (sum of raw source-file reads)."""
     return repo_budget(project_root, 0)["full_repo_estimate"]
@@ -546,11 +592,11 @@ async def tricorder_scan(
     :param output_format: Output format — "text" (default) for prioritized definitions, "mermaid" for dependency graph as Mermaid flowchart.
     :param tier: 0 for definitions only (T0, cheapest), 1 for definitions + context lines (T1, expensive). Stop at the lowest tier that answers the question.
     :param context_lines: Lines of context around each definition when tier=1.
-    :param dry_run: If True, estimate token budget without generating the map. Returns tag count, tokens per tag, tags at budget, and full repo estimate.
+    :param dry_run: If True, estimate token budget without generating the map. Returns tag count, tokens per tag, tags at budget, full repo estimate, and a scan_advisory break-even note (advise, never refuse).
     :param exclude_globs: Optional list of glob patterns (POSIX, relative to project_root) to exclude from auto-scan, e.g. ["vendor/**", "third_party/**"]. Filters vendored/third-party subtrees before ranking so first-party code dominates the map. Ignored when other_files is explicitly provided.
     :param full: If True, emit the full repository map regardless of token_limit, disabling truncation. Use for full-repo indexing to disk. Defaults to False.
     :returns: A dictionary containing:
-        - If dry_run: 'tags', 'tokens_per_tag', 'tags_at_budget', 'full_repo_estimate'.
+        - If dry_run: 'tags', 'tokens_per_tag', 'tags_at_budget', 'full_repo_estimate', and 'scan_advisory' (break-even advice on whether indexing is worth it).
         - If output_file is set: 'map_file' (path), 'token_estimate' (int), 'tier' (int), 'format' (str), 'report' (dict), and optionally 'tier_hint' (advisory).
         - If output_file is None: 'map' (the full map string), 'report' (dict) — backward compatible.
         - On success, all responses include 'source' ('scanned_repository') and 'trust' ('untrusted_repository_content') for provenance tracking.
@@ -701,6 +747,13 @@ async def tricorder_scan(
                 if tags_at_budget < len(ranked_tags):
                     pct = round(tags_at_budget / len(ranked_tags) * 100, 1)
                     result["tier_hint"] = f"T0 incomplete: {tags_at_budget}/{len(ranked_tags)} tags fit ({pct}%). Consider tier=1 or higher token_limit."
+                # Break-even gate: advise (never refuse) whether indexing is
+                # worth it — sized from benchmark data, see
+                # _scan_break_even_advisory.
+                advisory = _scan_break_even_advisory(
+                    file_report.total_files_considered)
+                if advisory:
+                    result["scan_advisory"] = advisory
                 return _attach_scan_warning(_mark_untrusted(result))
 
             # output_file path — generate the actual map, write to disk, return metadata
