@@ -267,23 +267,27 @@ def to_tree(
 
             abs_fname = str(self.root / rel_fname)
             max_rank = max(rank for rank, tag in file_tag_list)
-            rendered = render_tree(self, abs_fname, rel_fname, lois)
-            if not rendered:
+            # Body only (no filename header — it is written above). _render_body
+            # is the shared path with the streaming branch; render_tree's
+            # first line is NOT a filename header on the TreeContext path
+            # (grep-ast==0.9.0 format() emits code lines only), so the old
+            # rendered_lines[1:] surgery silently dropped one context line.
+            body = _render_body(self, abs_fname, rel_fname, lois)
+            if not body:
                 continue
 
-            rendered_lines = rendered.splitlines()
-            first_line = rendered_lines[0]
-            code_lines = rendered_lines[1:]
             lc = file_line_counts.get(rel_fname)
             if lc:
                 first_line = f"{rel_fname} ({lc} lines)"
+            else:
+                first_line = rel_fname
             rank_line = f"(Rank value: {max_rank:.4f})\n"
             if len(set(rank for rank, _ in file_tag_list)) == 1 and all(
                 max(r for r, _ in file_tags) == max_rank for _, file_tags in sorted_files
             ):
                 rank_line = ""
             group_parts.append(
-                f"{first_line}\n{rank_line}\n\n" + "\n".join(code_lines)
+                f"{first_line}\n{rank_line}\n\n" + body
             )
 
         if group_parts:

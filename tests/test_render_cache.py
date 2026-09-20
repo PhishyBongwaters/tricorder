@@ -81,5 +81,49 @@ class TestRenderTreeContext(unittest.TestCase):
         self.assertIs(tc.tree_context_cache["a.py"][1], tree_before)
 
 
+class TestToTreeBodyParity(unittest.TestCase):
+    """to_tree streaming and non-streaming must render identical output.
+
+    The non-streaming branch assumed render_tree's first line is a filename
+    header (true for the T0 path and the legacy fallback) and discarded
+    rendered_lines[0]. But the resurrected T1 path returns
+    TreeContext.format() output whose first line is a code line
+    (grep-ast==0.9.0 emits no filename header), so one context line was
+    silently dropped — while the streaming branch (via _render_body, which
+    never did line surgery) kept it.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="totree_"))
+        self.src = self.tmp / "a.py"
+        self.src.write_text(
+            '"""Module docstring."""\n\n\ndef foo():\n    return 1\n',
+            encoding="utf-8",
+        )
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_streaming_matches_non_streaming(self):
+        from io import StringIO
+        tc = Tricorder(root=str(self.tmp), verbose=False, context_lines=2)
+        tags = tc.get_tags(str(self.src), "a.py")
+        ranked = [(1.0, t) for t in tags]
+        self.assertTrue(ranked, "expected tags from the fixture file")
+
+        text = tc.to_tree(ranked, set())
+        buf = StringIO()
+        tc.to_tree(ranked, set(), writer=buf)
+        self.assertEqual(text, buf.getvalue())
+
+    def test_first_context_line_not_dropped(self):
+        """The opening docstring line must survive the non-streaming path."""
+        tc = Tricorder(root=str(self.tmp), verbose=False, context_lines=2)
+        tags = tc.get_tags(str(self.src), "a.py")
+        ranked = [(1.0, t) for t in tags]
+        text = tc.to_tree(ranked, set())
+        # TreeContext renders the docstring's first line with a │ marker;
+        # the old code discarded it as if it were a filename header.
+        self.assertIn('│"""', text)
+
+
 if __name__ == "__main__":
     unittest.main()
