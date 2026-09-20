@@ -382,15 +382,17 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 context_range
             )
 
-            if context:
-                results.append({
-                    "file": tag.rel_fname,
-                    "line": tag.line,
-                    "name": tag.name,
-                    "kind": tag.kind,
-                    "context": context,
-                    "quality": "fuzzy" if rescue_used else "exact"
-                })
+            # A match is a match even when context rendering yields nothing
+            # (e.g. the file became unreadable between tagging and render):
+            # never drop the symbol, ship it with empty context instead.
+            results.append({
+                "file": tag.rel_fname,
+                "line": tag.line,
+                "name": tag.name,
+                "kind": tag.kind,
+                "context": context or "",
+                "quality": "fuzzy" if rescue_used else "exact"
+            })
 
         return results, rescue_used
 

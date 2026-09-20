@@ -78,6 +78,18 @@ class TestCoreSearch(unittest.TestCase):
         results, _ = self.tc.search_identifiers("authentcate", max_results=-3)
         self.assertLessEqual(len(results), 1)
 
+    def test_search_identifiers_keeps_match_when_context_empty(self):
+        # A tag match must survive even when context rendering yields
+        # nothing (e.g. the file became unreadable between tagging and
+        # render): the symbol is reported with empty context instead of
+        # being silently dropped from the results.
+        import unittest.mock as _mock
+        with _mock.patch.object(self.tc, "render_tree", return_value=""):
+            results, _ = self.tc.search_identifiers("authenticate")
+        self.assertTrue(results)
+        self.assertIn("authenticate", {r["name"] for r in results})
+        self.assertTrue(all(r["context"] == "" for r in results))
+
     def test_search_symbols(self):
         results, rescue = self.tc.search_symbols("auth")
         self.assertFalse(rescue)
