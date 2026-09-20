@@ -51,6 +51,27 @@ class TestDiffAgainstIndex(unittest.TestCase):
         self.assertEqual(d["modified"], [])
         self.assertEqual(d["deleted"], [])
 
+    def test_index_db_inside_root_is_invisible(self):
+        # A hand-placed --db-path inside the root must not pollute the
+        # diff: the index file (and sqlite sidecars) are the thing being
+        # compared against, not working-tree content.
+        in_root_db = str(self.tmp / "idx.db")
+        db = DBStore(in_root_db)
+        for f in ("a.py", "b.py"):
+            st = os.stat(self.tmp / f)
+            db.set_file_state(f, st.st_size, int(st.st_mtime))
+        db.conn.commit()
+        db.conn.close()
+        # Touch sidecars the way a journal-mode sqlite DB would leave them.
+        for suffix in ("-wal", "-shm"):
+            (self.tmp / ("idx.db" + suffix)).write_text("x", encoding="utf-8")
+        d = Tricorder(root=str(self.tmp), db_path=in_root_db,
+                      verbose=False).diff_against_index()
+        self.assertTrue(d["indexed"])
+        self.assertEqual(d["added"], [])
+        self.assertEqual(d["modified"], [])
+        self.assertEqual(d["deleted"], [])
+
     def test_added_modified_deleted(self):
         self._index()
         time.sleep(0.02)

@@ -181,12 +181,26 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         (never scanned, or --no-db), every file reports as added and
         indexed=False.
         """
+        # The index DB itself (plus sqlite sidecars) is the thing being
+        # compared against, not working-tree content: invisible to the diff
+        # in both directions, so a hand-placed --db-path inside the root
+        # doesn't report db.idx/-wal/-shm as added/modified forever.
+        db_rels = set()
+        if self._db_path:
+            dbp = str(Path(self._db_path).resolve())
+            for p in (dbp, dbp + "-wal", dbp + "-shm", dbp + "-journal"):
+                try:
+                    db_rels.add(self.get_rel_fname(p))
+                except Exception:
+                    pass
+
         stored: Dict[str, Tuple[int, int]] = {}
         if self._db_store is not None:
             try:
                 stored = self._db_store.get_file_state()
             except Exception:
                 stored = {}
+        stored = {rel: v for rel, v in stored.items() if rel not in db_rels}
 
         current: Dict[str, Tuple[str, int, int]] = {}
         for fpath in discover_src_files(str(self.root), use_gitignore=True,
@@ -196,6 +210,8 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
             except OSError:
                 continue
             rel = self.get_rel_fname(fpath)
+            if rel in db_rels:
+                continue
             current[rel] = (fpath, st.st_size, int(st.st_mtime))
 
         added, modified, deleted = [], [], []
