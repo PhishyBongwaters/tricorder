@@ -664,9 +664,17 @@ Examples:
                 f"capping to {args.max_files}"
             )
             effective_other_files_unresolved = effective_other_files_unresolved[:args.max_files]
-        effective_other_files_unresolved = drop_mapped_files(
+        # Already-mapped files within the prefix are dropped so a resumed
+        # rising-cap run doesn't re-parse them — but when the drop empties
+        # a non-empty discovery (everything already mapped), fall back to
+        # the capped list: the DB-backed dirty diff skips clean files
+        # without re-parsing and re-parses dirty ones, so the scan still
+        # renders from the index instead of an empty "No files found" map.
+        _dropped = drop_mapped_files(
             effective_other_files_unresolved, root_path,
             scan_db_path)
+        effective_other_files_unresolved = (
+            _dropped if _dropped else effective_other_files_unresolved)
         other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
 
         # Auto-discover when no explicit/positional paths were provided
@@ -685,9 +693,17 @@ Examples:
                     f"capping to {args.max_files}"
                 )
                 effective_other_files_unresolved = effective_other_files_unresolved[:args.max_files]
-            effective_other_files_unresolved = drop_mapped_files(
+            # Already-mapped files within the prefix are dropped so a resumed
+            # rising-cap run doesn't re-parse them — but when the drop empties
+            # a non-empty discovery (everything already mapped), fall back to
+            # the capped list: the DB-backed dirty diff skips clean files
+            # without re-parsing and re-parses dirty ones, so the rescan still
+            # renders from the index instead of an empty "No files found" map.
+            _dropped = drop_mapped_files(
                 effective_other_files_unresolved, root_path,
                 scan_db_path)
+            effective_other_files_unresolved = (
+                _dropped if _dropped else effective_other_files_unresolved)
             other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
 
     mentioned_fnames = set(args.mentioned_files) if args.mentioned_files else None

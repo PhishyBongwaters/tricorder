@@ -872,6 +872,12 @@ class RankingMixin:
                 mentioned_fnames, mentioned_idents, output_writer=output_writer
             )
 
+        # Content fingerprint in the key: without it a rescan after editing
+        # a file served the previous render (the DB dirty-diff re-parsed,
+        # but the map came from cache). Stat-based like meta.signature —
+        # cheap, and size+mtime catch edits/adds/deletes.
+        content_sig = self._db_signature(
+            sorted(set(chat_fnames) | set(other_fnames)))
         cache_key = (
             tuple(sorted(chat_fnames)),
             tuple(sorted(other_fnames)),
@@ -879,6 +885,7 @@ class RankingMixin:
             tuple(sorted(mentioned_fnames or [])),
             tuple(sorted(mentioned_idents or [])),
             self.full_map,
+            content_sig,
         )
         
         if not force_refresh:
@@ -959,8 +966,11 @@ class RankingMixin:
             tokens = self.token_count(tree_output)
             return tree_output, tokens
         
-        # Binary search for optimal number of tags
-        left, right = 0, len(ranked_tags)
+        # Binary search for optimal number of tags. left starts at 1:
+        # probing num_tags=0 can never yield a tree, and starting at 0
+        # meant a single-tag map took mid=0 on the first probe and never
+        # rendered at all ("No map content generated" for one-def repos).
+        left, right = 1, len(ranked_tags)
         best_tree = None
         best_num = 0
         # Fallback: track the smallest tree even if it exceeds budget

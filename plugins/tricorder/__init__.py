@@ -472,14 +472,14 @@ def _tricorder_db_for(root: str) -> Optional[str]:
                 Path(os.path.abspath(str(db))).as_uri() + "?mode=ro&immutable=1",
                 uri=True)
             try:
-                # Coverage is file_state rows (tagless files own zero tag
-                # rows); tags-distinct is only a fallback for pre-file_state
-                # DBs that lack the table.
+                # Coverage is file_state rows (house rule: never
+                # tags-distinct — tagless files own zero tag rows). A DB
+                # without file_state (pre-Goal-3) has unknowable coverage:
+                # not a usable map for this repo; try the next candidate.
                 try:
                     n = con.execute("SELECT COUNT(*) FROM file_state").fetchone()[0]
                 except Exception:
-                    n = con.execute(
-                        "SELECT COUNT(DISTINCT rel_file) FROM tags").fetchone()[0]
+                    continue
                 m = con.execute(
                     "SELECT root FROM meta ORDER BY rowid DESC LIMIT 1").fetchone()
             finally:
@@ -502,13 +502,15 @@ def _db_coverage_line(db_path: str, root: str) -> str:
         Path(os.path.abspath(str(db_path))).as_uri() + "?mode=ro&immutable=1",
         uri=True)
     try:
-        # Coverage is file_state rows (tagless files own zero tag rows);
-        # tags-distinct is only a fallback for pre-file_state DBs.
+        # Coverage is file_state rows (house rule: never tags-distinct —
+        # tagless files own zero tag rows). A DB without file_state
+        # (pre-Goal-3) has unknowable coverage: raise so the caller falls
+        # back to the probe digest instead of misreporting tags-distinct.
         try:
             files = con.execute("SELECT COUNT(*) FROM file_state").fetchone()[0]
-        except Exception:
-            files = con.execute(
-                "SELECT COUNT(DISTINCT rel_file) FROM tags").fetchone()[0]
+        except Exception as e:
+            raise RuntimeError(
+                f"pre-file_state DB at {db_path}: coverage unknowable") from e
         tags = con.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
         meta = con.execute(
             "SELECT root, signature FROM meta ORDER BY rowid DESC LIMIT 1"

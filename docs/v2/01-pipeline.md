@@ -17,7 +17,11 @@ the first N files of the walk enter the run. `drop_mapped_files`
 (`database.py`) then removes files already in `file_state` within that
 prefix, so a resumed rising-cap run doesn't re-parse them. Fixed-cap
 reruns add zero — resume with a rising cap (`chunk_resume.py`
-enforces this).
+enforces this). If the drop empties a non-empty discovery (everything
+already mapped), the CLI/MCP fall back to the capped list and render
+from the index instead of an empty map: the DB dirty-diff skips clean
+files without re-parsing and re-parses dirty ones, so rescans stay
+fresh.
 
 ## 2. Parse (`parser.py:ParserMixin.get_tags_raw`, `cache.py:get_tags`)
 

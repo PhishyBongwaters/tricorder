@@ -2,7 +2,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-383%20passed%2C%201%20skipped-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-392%20passed%2C%201%20skipped-brightgreen.svg)](tests/)
 
 **Turn any codebase into a token-efficient map an LLM agent can actually navigate.**
 
@@ -117,12 +117,12 @@ Tricorder treats **repository content as untrusted input**. Every MCP response i
 .venv/Scripts/python -m pytest tests/ -q -p no:cacheprovider   # full suite
 ```
 
-383 tests passing, 1 skipped (Windows-only), 93 subtests. Bug reports and PRs welcome — please include a failing test where practical. See [AGENTS.md](AGENTS.md) for repo conventions.
+392 tests passing, 1 skipped (Windows-only), 93 subtests. Bug reports and PRs welcome — please include a failing test where practical. See [AGENTS.md](AGENTS.md) for repo conventions.
 
 ## Lineage
 
 1. **Gen 1 — Aider `RepoMap`** (Paul Gauthier): tree-sitter + PageRank.
 2. **Gen 2 — RepoMapper** (Paul Davis): standalone CLI + MCP server. Upstream: https://github.com/pdavis68/RepoMapper
-3. **Gen 3 — tricorder**: this fork — 383 tests, 93 validated languages, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, DB-backed ranking with extractor versioning.
+3. **Gen 3 — tricorder**: this fork — 392 tests, 93 validated languages, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, DB-backed ranking with extractor versioning.
 
 Lineage intentionally kept visible. MIT Licensed — see [LICENSE](LICENSE).

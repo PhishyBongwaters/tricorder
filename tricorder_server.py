@@ -748,8 +748,13 @@ async def tricorder_scan(
             _cand = _canonical_db_for(project_root)
             if _cand and not _db_writable(_cand):
                 _cand = None
-            effective_other_files = drop_mapped_files(
+            _dropped = drop_mapped_files(
                 effective_other_files, project_root, _cand)
+            # When the drop empties a non-empty discovery (everything
+            # already mapped), keep the capped list: the DB-backed dirty
+            # diff skips clean files without re-parsing, so the scan still
+            # renders from the index instead of "No files found".
+            effective_other_files = _dropped or effective_other_files
 
     # Add a print statement for debugging so you can see what the tool is working with.
     log.debug(f"Chat files: {chat_files_list}")
