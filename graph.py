@@ -310,12 +310,6 @@ class GraphMixin:
                         best_match = {"name": sym.name, "type": sym.type, "line": sym.line, "end_line": sym_end}
             return best_match
 
-        # Helper: get all symbols in a file for quick lookup
-        def get_file_symbols(filepath: str) -> List[Dict]:
-            rel = self.get_rel_fname(filepath)
-            symbols = self.get_symbols(filepath, rel)
-            return [{"name": s.name, "type": s.type, "line": s.line, "end_line": s.end_line} for s in symbols]
-
         # Track visited nodes and edges
         nodes = []  # List of {name, file, line, type}
         edges = []  # List of {from, to, from_file, to_file, from_line, to_line, type}
@@ -440,13 +434,10 @@ class GraphMixin:
                     # Use the per-file call graph
                     file_graph = file_graphs.get(file, {"definitions": {}, "references": []})
                     file_refs = file_graph.get("references", [])
-                    # Find references made BY this symbol (at or near its line)
-                    file_symbols = get_file_symbols(file)
-                    containing = None
-                    for sym in file_symbols:
-                        if sym["line"] <= line <= sym["end_line"]:
-                            containing = sym
-                            break
+                    # Innermost symbol containing this line (a method, not its
+                    # class): first-match in file order yields the outermost
+                    # scope, which leaks sibling methods' calls into the result.
+                    containing = find_containing_symbol(file, line)
                     if containing:
                         # Find references in this containing symbol's body
                         for ref in file_refs:

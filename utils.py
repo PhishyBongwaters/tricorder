@@ -973,10 +973,18 @@ def query_variants(query: str):
     core = re.sub(r"<[^<>]*>", "", q)      # strip template args <128,128>
     core = re.sub(r"[()]", "", core)       # strip parens (incl. std::map<int>)
     core = core.split("::")[-1]            # namespace -> basename
+    # Dot-qualified idiom (Python/JS: Model.save) -> stored :: form.
+    # Qualified tags are stored as Class::method, so a natural "Model.save"
+    # query could never hit the real tag and fell through to fuzzy junk.
+    # Seed the :: form (and lowercase) as top-ranked variants.
+    q_cc = q.replace(".", "::") if "." in q else None
     words = [w for part in _WORD_SPLIT.split(core) for w in _camel_split(part) if w]
     if not words:
         words = [core]
     variants = {q, q.lower()}
+    if q_cc:
+        variants.add(q_cc)
+        variants.add(q_cc.lower())
     for sep in ("_", "-", "", " "):
         variants.add(sep.join(words))
         variants.add(sep.join(words).lower())
@@ -1001,6 +1009,8 @@ def query_variants(query: str):
     # only win when nothing else did. ponytail: no stemming.
     def _rank(v):
         base_l = "".join(w.lower() for w in words)
+        if q_cc and v.lower() == q_cc.lower():
+            return -1  # dotted query's :: reading outranks the joined base
         if v.lower() == base_l:
             return 0
         if v.lower() == "".join(words).lower():

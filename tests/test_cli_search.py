@@ -74,6 +74,28 @@ class TestCoreSearch(unittest.TestCase):
         self.assertTrue(rescue)
         self.assertLessEqual(len(results), 1)
 
+    def test_search_identifiers_dot_qualified(self):
+        # F3: a natural "Model.save" query must resolve the stored
+        # "Model::save" tag instead of falling through to fuzzy junk.
+        tmp = Path(tempfile.mkdtemp(prefix="dot_qual_"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "m.py").write_text(
+            "class Model:\n    def save(self):\n        return True\n",
+            encoding="utf-8",
+        )
+        tc = Tricorder(root=str(tmp), use_db=False, verbose=False)
+        results, rescue = tc.search_identifiers("Model.save")
+        self.assertTrue(results, "dot-qualified query should hit the qualified tag")
+        names = [r["name"] for r in results]
+        self.assertIn("Model::save", names)
+        # The real qualified tag must outrank fuzzy lookalikes.
+        self.assertEqual(names[0], "Model::save")
+
+    def test_query_variants_dot_qualified_ranked_first(self):
+        from utils import query_variants
+        variants = query_variants("Model.save")
+        self.assertEqual(variants[0], "Model::save")
+
     def test_search_identifiers_negative_cap(self):
         # A negative cap must not turn into a [:-n] slice surprise.
         results, _ = self.tc.search_identifiers("authenticate", max_results=-3)

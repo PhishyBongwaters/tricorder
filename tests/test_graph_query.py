@@ -128,6 +128,29 @@ class TestGraphQueryIntegration(unittest.TestCase):
         node_names = [(n["name"], n["file"]) for n in result["nodes"]]
         self.assertTrue(any("authenticate" in name for name, _ in node_names))
 
+    def test_callees_uses_innermost_scope(self):
+        # F2: callees('A::m1') must contain m1's own calls (helper) but not
+        # sibling method m2's calls (other). The old code took the first
+        # (outermost) containing symbol — the class — leaking siblings in.
+        tmp = Path(tempfile.mkdtemp(prefix="callees_scope_"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "s.py").write_text(
+            "def helper():\n    return 1\n\n"
+            "def other():\n    return 2\n\n"
+            "class A:\n"
+            "    def m1(self):\n        return helper()\n"
+            "    def m2(self):\n        return other()\n",
+            encoding="utf-8",
+        )
+        t = Tricorder(root=str(tmp), verbose=False)
+        result = t.query_graph(parse_query_dsl("callees('A::m1')"))
+        self.assertTrue(result["nodes"], "fixture def must resolve (no vacuous pass)")
+        seen = {e["to"] for e in result["edges"]} | {n["name"] for n in result["nodes"]}
+        self.assertTrue(any("helper" in s for s in seen),
+                       f"expected helper among callees: {sorted(seen)}")
+        self.assertFalse(any("other" in s for s in seen),
+                        f"sibling method's call leaked into callees: {sorted(seen)}")
+
     def test_exclude_glob_filter(self):
         """Test exclude glob filtering.
 
