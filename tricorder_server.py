@@ -4,7 +4,6 @@ import os
 import logging
 import sys
 from collections import OrderedDict
-from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Set
 import dataclasses
@@ -87,7 +86,11 @@ settings.stateless_http = True
 # Create MCP server
 mcp = FastMCP("tricorder")
 
-@lru_cache(maxsize=32)
+# No cache: re-checked on every call. The lookup costs two exists() checks
+# plus one read-only meta open — trivial next to a scan — and a cached
+# "no DB" answer would hide a canonical DB created by `tricorder --init`
+# after the server started (scans would silently run in-memory, diffs
+# would report everything as added).
 def _canonical_db_for(project_root: str) -> Optional[str]:
     """First existing DB: <root>/.tricorder/db/<name>.db (--init canonical),
     else <cache>/db/<name>.db (pre_scan default). None if neither mapped.
@@ -106,7 +109,14 @@ def _canonical_db_for(project_root: str) -> Optional[str]:
     return None
 
 
-@lru_cache(maxsize=32)
+# Manual cache (was @lru_cache): the resolved DB path is re-checked on every
+# call, and the cached instance is rebuilt when it changes — e.g. a canonical
+# DB created by `tricorder --init` after the server started must take effect,
+# not stay invisible behind a stale in-memory instance.
+_tricorder_cache: "OrderedDict[str, tuple]" = OrderedDict()
+_TRICORDER_CACHE_MAX = 32
+
+
 def _get_tricorder(project_root: str) -> "Tricorder":
     """Reuse one Tricorder per root across tool calls (TC-011).
 
@@ -128,7 +138,12 @@ def _get_tricorder(project_root: str) -> "Tricorder":
                     "this MCP scan runs in-memory (no resumption).")
         db_path = None
 
-    return Tricorder(
+    cached = _tricorder_cache.get(project_root)
+    if cached is not None and cached[0] == db_path:
+        _tricorder_cache.move_to_end(project_root)
+        return cached[1]
+
+    instance = Tricorder(
         root=project_root,
         token_counter_func=lambda text: count_tokens(text, "gpt-4"),
         file_reader_func=read_text,
@@ -138,6 +153,11 @@ def _get_tricorder(project_root: str) -> "Tricorder":
         use_db=True,
         db_path=db_path,
     )
+    _tricorder_cache[project_root] = (db_path, instance)
+    _tricorder_cache.move_to_end(project_root)
+    while len(_tricorder_cache) > _TRICORDER_CACHE_MAX:
+        _tricorder_cache.popitem(last=False)
+    return instance
 
 # ponytail: advisory tier tracker — survives across calls within a server process.
 # Can't enforce agent behavior (MCP is stateless per call) but can warn in the response.

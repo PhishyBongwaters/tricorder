@@ -253,12 +253,12 @@ class TestCanonicalDbRootGuard(unittest.TestCase):
         self._srv = srv
         self._saved_pre_scan_dir = srv.PRE_SCAN_DB_DIR
         srv.PRE_SCAN_DB_DIR = utils.get_cache_root() / "db"
-        srv._canonical_db_for.cache_clear()
+        # _canonical_db_for is intentionally uncached (round 8): no
+        # cache_clear needed; results can't leak between tests.
         self.addCleanup(self._cleanup)
 
     def _cleanup(self):
         self._srv.PRE_SCAN_DB_DIR = self._saved_pre_scan_dir
-        self._srv._canonical_db_for.cache_clear()
         shutil.rmtree(self.tmp, ignore_errors=True)
         shutil.rmtree(self._tmp_cache, ignore_errors=True)
         if self._saved_cache_home is None:
@@ -318,13 +318,10 @@ class TestCanonicalDbRootGuard(unittest.TestCase):
         db.set_meta(str(self.repo_a), "sig")
         db.conn.commit()
         db.conn.close()
-        srv._canonical_db_for.cache_clear()
-        try:
-            self.assertEqual(srv._canonical_db_for(str(self.repo_a)),
-                             str(in_repo))
-            self.assertIsNone(srv._canonical_db_for(str(self.repo_b)))
-        finally:
-            srv._canonical_db_for.cache_clear()
+        # _canonical_db_for is uncached (round 8): no cache_clear needed.
+        self.assertEqual(srv._canonical_db_for(str(self.repo_a)),
+                         str(in_repo))
+        self.assertIsNone(srv._canonical_db_for(str(self.repo_b)))
 
 
 if __name__ == "__main__":

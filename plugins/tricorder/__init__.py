@@ -464,7 +464,13 @@ def _tricorder_db_for(root: str) -> Optional[str]:
         try:
             if not db.exists():
                 continue
-            con = _sq.connect(f"file:{db}?mode=ro", uri=True)
+            # Percent-encode into the URI (as_uri): '#'/'?' in the path must
+            # not truncate it. immutable=1 skips WAL sidecar access so
+            # read-only checkouts open (the plugin never imports tricorder
+            # in-process, hence the inline form instead of utils.read_only_connect).
+            con = _sq.connect(
+                Path(os.path.abspath(str(db))).as_uri() + "?mode=ro&immutable=1",
+                uri=True)
             try:
                 # Coverage is file_state rows (tagless files own zero tag
                 # rows); tags-distinct is only a fallback for pre-file_state
@@ -488,7 +494,13 @@ def _tricorder_db_for(root: str) -> Optional[str]:
 def _db_coverage_line(db_path: str, root: str) -> str:
     """One-line coverage + steering from the pre-scan DB. Read-only."""
     import sqlite3 as _sq
-    con = _sq.connect(f"file:{db_path}?mode=ro", uri=True)
+    # Percent-encode into the URI (as_uri): '#'/'?' in the path must not
+    # truncate it. immutable=1 skips WAL sidecar access so read-only
+    # checkouts open (inline form: the plugin never imports tricorder
+    # in-process, so utils.read_only_connect is unavailable here).
+    con = _sq.connect(
+        Path(os.path.abspath(str(db_path))).as_uri() + "?mode=ro&immutable=1",
+        uri=True)
     try:
         # Coverage is file_state rows (tagless files own zero tag rows);
         # tags-distinct is only a fallback for pre-file_state DBs.

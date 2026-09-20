@@ -73,9 +73,14 @@ def read_only_connect(db_path: str):
     sqlite to read the main file only, skipping sidecar access (the
     caller must not need uncheckpointed WAL rows, and must hold the
     connection only briefly — the file is assumed frozen meanwhile).
+
+    The path is percent-encoded into the URI (Path.as_uri) so DBs under
+    directories containing '#' or '?' (e.g. Windows `C:\\dev\\proj#2\\`)
+    open correctly instead of silently targeting a truncated path.
     """
     import sqlite3 as _sq
-    return _sq.connect(f"file:{db_path}?mode=ro&immutable=1", uri=True)
+    uri = Path(os.path.abspath(db_path)).as_uri() + "?mode=ro&immutable=1"
+    return _sq.connect(uri, uri=True)
 
 
 def _db_writable(db_path: str) -> bool:

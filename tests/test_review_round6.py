@@ -126,10 +126,8 @@ class TestMcpScanUnwritableGuard(unittest.TestCase):
         finally:
             store.close()
         import tricorder_server as _srv
-        _srv._get_tricorder.cache_clear()
-        _srv._canonical_db_for.cache_clear()
-        self.addCleanup(_srv._get_tricorder.cache_clear)
-        self.addCleanup(_srv._canonical_db_for.cache_clear)
+        _srv._tricorder_cache.clear()
+        self.addCleanup(_srv._tricorder_cache.clear)
 
     def test_scan_degrades_to_memory(self):
         import tricorder_server as srv
@@ -163,10 +161,8 @@ class TestMcpDiffReadOnly(unittest.TestCase):
             "def foo():\n    return 1\n\n\ndef bar():\n    return 2\n",
             encoding="utf-8")
         import tricorder_server as _srv
-        _srv._get_tricorder.cache_clear()
-        _srv._canonical_db_for.cache_clear()
-        self.addCleanup(_srv._get_tricorder.cache_clear)
-        self.addCleanup(_srv._canonical_db_for.cache_clear)
+        _srv._tricorder_cache.clear()
+        self.addCleanup(_srv._tricorder_cache.clear)
 
     def test_diff_opens_read_only(self):
         import tricorder_server as srv
@@ -235,7 +231,7 @@ class TestDiffCliHardening(unittest.TestCase):
         self.assertEqual(r.returncode, 2,
                          "--diff --db-path <directory> must be a usage error, not a traceback")
         self.assertNotIn("Traceback", r.stderr)
-        self.assertIn("no DB at", r.stderr)
+        self.assertIn("--db-path is not a file", r.stderr)
 
 
 if __name__ == "__main__":

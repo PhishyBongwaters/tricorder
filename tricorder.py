@@ -354,7 +354,8 @@ Examples:
         help="Cap on files during auto-discovery when no paths given (default: 0 = no cap)"
     )
 
-    parser.add_argument(
+    db_group = parser.add_mutually_exclusive_group()
+    db_group.add_argument(
         "--db-path",
         metavar="PATH",
         help="Persist per-file tags/refs to this sqlite file (flat-memory tree walk). "
@@ -362,7 +363,7 @@ Examples:
              "exists, else uses in-memory sqlite. --no-db forces in-memory."
     )
 
-    parser.add_argument(
+    db_group.add_argument(
         "--no-db",
         action="store_true",
         help="Opt OUT of the DB-backed flat-memory tree walk and use the legacy "
@@ -601,6 +602,13 @@ Examples:
     _warn = _unwritable_canonical_warning(args, root_path, scan_db_path)
     if _warn:
         output_handlers['warning'](_warn)
+
+    # --db-path must point at a file, on every path: a directory would die
+    # with a raw sqlite3 traceback from DBStore.__init__ (the scan path
+    # used to hit this; the --diff guard below only covered diff).
+    # A nonexistent path stays legal — a scan creates the DB there.
+    if args.db_path and os.path.exists(args.db_path) and not os.path.isfile(args.db_path):
+        parser.error(f"--db-path is not a file: {args.db_path}")
 
     # --diff is read-only: an explicit --db-path must already exist.
     # Letting Tricorder/DBStore connect would create + schema-initialize

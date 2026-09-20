@@ -43,8 +43,8 @@ class TestMcpUnwritableDbGuard(unittest.TestCase):
         finally:
             store.close()
         import tricorder_server as _srv
-        _srv._get_tricorder.cache_clear()
-        self.addCleanup(_srv._get_tricorder.cache_clear)
+        _srv._tricorder_cache.clear()
+        self.addCleanup(_srv._tricorder_cache.clear)
 
     def test_get_tricorder_degrades_to_memory(self):
         import tricorder_server as srv
