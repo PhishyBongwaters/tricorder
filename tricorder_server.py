@@ -321,12 +321,115 @@ def _final_budget_check(resp: dict, symbol: Optional[dict], max_tokens: int,
         resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))
 
 
+# Share of the call-list budget reserved for callers vs callees. References
+# to the symbol are more valuable than references it makes, so callers take
+# the larger share; callees are trimmed to their share first, then callers
+# take whatever room remains — a hot symbol keeps a useful head of each
+# instead of one list starving the other.
+_CALLER_SHARE = 2
+_CALLEE_SHARE = 1
+
+
+def _trim_call_lists_top_n(symbol: dict, max_tokens: int, _tokens) -> bool:
+    """Shorten callers/callees to weighted top-N heads that fit max_tokens.
+
+    Heads are the most valuable entries: get_symbol_detail orders in-file
+    references first and cross-file ones last. Callees (lower priority) are
+    trimmed to their weighted share first — the full room when there are no
+    callers to reserve for; an empty list reserves nothing — then callers
+    take the remaining room, so neither list starves the other. The
+    highest-priority non-empty list keeps at least one head while the body
+    still has tokens to give (the body is shaved as needed): one reference
+    beats a few more body lines. Records "<list>_total" / "<list>_omitted"
+    for each non-empty list that was shortened — nothing is dropped
+    silently, and counts survive even when a list is cut to zero.
+    Per-list binary search keeps the trim at O(log n) serializations
+    instead of O(n) pop-measure cycles for hot symbols. The final
+    (callers, callees) pair is a directly measured fitting state.
+    Returns True when either list was shortened.
+    """
+    callers = list(symbol.get("callers") or [])
+    callees = list(symbol.get("callees") or [])
+    n_callers, n_callees = len(callers), len(callees)
+    if (n_callers == 0 and n_callees == 0) or _tokens() <= max_tokens:
+        return False
+
+    wsum = _CALLER_SHARE + _CALLEE_SHARE
+    keyed = []
+    for key, n in (("callers", n_callers), ("callees", n_callees)):
+        if n:
+            # Reserve the count fields up front so every probe measures
+            # their real serialized cost.
+            symbol[f"{key}_total"] = n
+            symbol[f"{key}_omitted"] = n
+            keyed.append(key)
+    try:
+        # Even empty lists may not fit (metadata alone over budget).
+        symbol["callers"] = []
+        symbol["callees"] = []
+        if _tokens() > max_tokens:
+            return True
+        base = _tokens()  # both lists empty, count keys reserved
+        room = max_tokens - base  # > 0 here
+
+        def _fit_head(key, items, fits):
+            """Largest head of items for which fits() holds."""
+            lo, hi = 0, len(items)
+            while lo < hi:
+                mid = (lo + hi + 1) // 2
+                symbol[key] = items[:mid]
+                if fits():
+                    lo = mid
+                else:
+                    hi = mid - 1
+            symbol[key] = items[:lo]
+            return lo
+
+        # Lower-priority callees take their weighted share first — the full
+        # room when there are no callers to reserve for — ...
+        if n_callers:
+            callee_share = room * _CALLEE_SHARE // wsum
+        else:
+            callee_share = room
+        kept_callees = _fit_head(
+            "callees", callees, lambda: _tokens() - base <= callee_share)
+        # ...then callers take whatever room remains (their share plus any
+        # the callees did not use). This final state is measured directly,
+        # so the pair is guaranteed to fit.
+        kept_callers = _fit_head(
+            "callers", callers, lambda: _tokens() <= max_tokens)
+        # Minimal-head protection: zeroing the highest-priority non-empty
+        # list while the body still has tokens to give trades a reference
+        # for a few more body lines. Shave the body until one head fits,
+        # or the body is exhausted (counts then record the full cut).
+        if n_callers:
+            while not symbol["callers"] and _shave_body(symbol):
+                kept_callers = _fit_head(
+                    "callers", callers, lambda: _tokens() <= max_tokens)
+        elif n_callees:
+            while not symbol["callees"] and _shave_body(symbol):
+                kept_callees = _fit_head(
+                    "callees", callees, lambda: _tokens() <= max_tokens)
+        for key, n, kept in (("callers", n_callers, kept_callers),
+                             ("callees", n_callees, kept_callees)):
+            if n:
+                symbol[f"{key}_omitted"] = n - kept
+        return True
+    finally:
+        for key in keyed:
+            if symbol.get(f"{key}_omitted", 0) <= 0:
+                symbol.pop(f"{key}_total", None)
+                symbol.pop(f"{key}_omitted", None)
+
+
 def _enforce_detail_budget(symbol: dict, max_tokens: int) -> bool:
     """Trim a tricorder_detail symbol dict to fit max_tokens, in place.
 
-    Trim order: body first (head kept, cut marked), then callees dropped
-    (freeing room to re-expand the body), then callers shortened.
-    Name/file/line/signature metadata is never cut.
+    Trim order: body first (head kept, cut marked), then callers/callees
+    shortened to weighted top-N heads (freeing room to re-expand the body).
+    Shortened lists keep explicit "<list>_total" / "<list>_omitted" counts —
+    nothing is dropped silently. Name/file/line/signature metadata is never
+    cut.
     Returns True when anything was trimmed.
     """
     import json as _json
@@ -348,20 +451,15 @@ def _enforce_detail_budget(symbol: dict, max_tokens: int) -> bool:
         if _tokens() <= max_tokens:
             return True
 
-    # 2. Callees: drop the whole list (callers are more valuable), then give
-    # the body another chance at the freed space.
-    if symbol.get("callees"):
-        symbol["callees"] = []
-        if body:
-            symbol["body"] = _truncate_text_to_tokens(body, max_tokens - _tokens_without_body())
-        if _tokens() <= max_tokens:
-            return True
-
-    # 3. Callers: shorten from the tail until it fits (keep at least one).
-    callers = symbol.get("callers") or []
-    while len(callers) > 1 and _tokens() > max_tokens:
-        callers.pop()
-    symbol["callers"] = callers
+    # 2-3. Callers/callees: shrink both to weighted top-N heads (callers
+    # take priority) with explicit totals, then give the body another
+    # chance at the freed space. Counts survive even when a list is cut to
+    # zero, so the payload is never silently empty.
+    _trim_call_lists_top_n(symbol, max_tokens, _tokens)
+    if body:
+        symbol["body"] = _truncate_text_to_tokens(body, max_tokens - _tokens_without_body())
+    if _tokens() <= max_tokens:
+        return True
 
     # 4. Final clamp: the body above was budgeted in raw-text tokens, but
     # _tokens() measures the JSON-serialized form, where escaping
@@ -909,6 +1007,9 @@ async def tricorder_detail(
       - body: the actual code body (first 500 chars)
       - callers: list of {file, line, cross_file} dicts — references to this symbol
       - callees: list of {name, file, line, cross_file} dicts — symbols this symbol calls
+      - callers_total / callers_omitted, callees_total / callees_omitted:
+        present only when the corresponding list was shortened to fit
+        max_tokens, so a trimmed list never hides how much was dropped.
     Callers/callees are populated from tree-sitter reference captures:
       - In-file: references within the same file
       - Cross-file: full-repo scan matching references to definitions
@@ -922,8 +1023,10 @@ async def tricorder_detail(
         name: Symbol name to look up.
         line: Optional line number to disambiguate symbols with the same name.
         max_tokens: Optional token budget for the response. When set, the body
-            is truncated first (head kept, marked), then callees are dropped,
-            then callers are shortened — signature metadata is never cut.
+            is truncated first (head kept, marked), then callees and callers
+            are shortened to the largest top-N heads that fit, each keeping
+            explicit "<list>_total" / "<list>_omitted" counts — signature
+            metadata is never cut.
             Best-effort: name/file/line/signature and the response decorations
             always survive, so a budget below that floor can still be exceeded.
             The response gains "truncated": true when trimming occurred.
