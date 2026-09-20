@@ -63,6 +63,19 @@ def get_cache_root() -> Path:
     return base
 
 
+def resolve_or_none(path: str) -> Optional[str]:
+    """Resolve a path, returning None when it cannot be resolved.
+
+    Symlink loops raise RuntimeError from Path.resolve(); dangling
+    links and permission errors raise OSError. Per-file call sites must
+    skip such files with a warning instead of crashing the whole scan.
+    """
+    try:
+        return str(Path(path).resolve())
+    except (OSError, RuntimeError):
+        return None
+
+
 def read_only_connect(db_path: str):
     """Open a sqlite DB read-only; never creates the file.
 

@@ -172,6 +172,20 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
             return str(Path(fname).relative_to(self.root))
         except ValueError:
             return fname
+
+    def _within_root(self, resolved_path: str) -> bool:
+        """True when a resolved absolute path sits inside the repo root.
+
+        Symlinks (or explicit paths) that resolve outside the root must
+        never enter the DB: get_rel_fname() would return the absolute
+        path unchanged, leaking host paths into stored rels and served
+        maps. Callers skip such files with a warning instead.
+        """
+        try:
+            Path(resolved_path).relative_to(self.root)
+            return True
+        except ValueError:
+            return False
     
     def get_mtime(self, fname: str) -> Optional[float]:
         """Get file modification time."""
@@ -245,8 +259,17 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
             # Resolve symlinks before the rel computation: the scan path
             # stores resolved rels (Path.resolve()), so an unresolved
             # symlink would otherwise report as "Added" on every diff.
+            # Files resolving outside the root are skipped entirely (same
+            # rule as the scan path): they must never appear in the delta
+            # with absolute host paths.
             try:
-                rel = self.get_rel_fname(str(Path(fpath).resolve()))
+                resolved = str(Path(fpath).resolve())
+            except Exception:
+                resolved = fpath
+            if not self._within_root(resolved):
+                continue
+            try:
+                rel = self.get_rel_fname(resolved)
             except Exception:
                 rel = self.get_rel_fname(fpath)
             if rel in db_rels:

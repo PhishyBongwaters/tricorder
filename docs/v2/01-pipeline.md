@@ -21,7 +21,12 @@ enforces this). If the drop empties a non-empty discovery (everything
 already mapped), the CLI/MCP fall back to the capped list and render
 from the index instead of an empty map: the DB dirty-diff skips clean
 files without re-parsing and re-parses dirty ones, so rescans stay
-fresh.
+fresh. Files that resolve outside `--root` (symlinks pointing
+elsewhere) are skipped with a warning and never enter the DB: their
+"rel" would be an absolute host path, leaking into stored rels and
+every map served from the index. Unresolvable paths (symlink loops,
+dangling links) are likewise skipped with a warning instead of
+crashing the run.
 
 ## 2. Parse (`parser.py:ParserMixin.get_tags_raw`, `cache.py:get_tags`)
 

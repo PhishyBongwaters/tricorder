@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fastmcp import FastMCP, settings
 from core import Tricorder
 from database import drop_mapped_files
-from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write, db_root_matches, _db_writable
+from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write, db_root_matches, _db_writable, resolve_or_none
 from scm import get_scm_fname
 from importance import filter_important_files
 from ctags_probe import probe_and_narrow
@@ -765,10 +765,20 @@ async def tricorder_scan(
         log.info("No files to process.")
         return {"map": "No files found to generate a map."}
 
-    # 3. Resolve paths relative to project root
-    root_path = Path(project_root).resolve()
-    abs_chat_files = [str(Path(str(root_path / f)).resolve()) for f in chat_files_list]
-    abs_other_files = [str(Path(str(root_path / f)).resolve()) for f in effective_other_files]
+    # 3. Resolve paths relative to project root. Unresolvable files
+    # (symlink loops, dangling links) are skipped with a warning instead
+    # of crashing the tool.
+    def _resolve_or_skip(files):
+        out = []
+        for f in files:
+            r = resolve_or_none(str(root_path / f))
+            if r is None:
+                log.warning(f"Skipping {f}: cannot resolve path")
+            else:
+                out.append(r)
+        return out
+    abs_chat_files = _resolve_or_skip(chat_files_list)
+    abs_other_files = _resolve_or_skip(effective_other_files)
     
     # TC-006: reject any file paths that resolve outside the project root
     for f in abs_chat_files + abs_other_files:

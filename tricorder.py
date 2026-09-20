@@ -19,7 +19,7 @@ from typing import List, Optional
 # venv/site-packages (e.g. the Hermes agent's own utils.py when tricorder is
 # launched through an editable install that shares a process's sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES, safe_write, get_cache_root, db_root_matches, _db_writable, read_only_connect
+from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES, safe_write, get_cache_root, db_root_matches, _db_writable, read_only_connect, resolve_or_none
 from scm import get_scm_fname
 from importance import filter_important_files
 from core import Tricorder
@@ -602,6 +602,18 @@ Examples:
     if not root_path.is_dir():
         parser.error(f"--root is not an existing directory: {args.root}")
 
+    def _resolve_files(files):
+        """Resolve per-file paths, skipping unresolvable ones (symlink
+        loops, dangling links) with a warning instead of crashing."""
+        resolved = []
+        for f in files:
+            r = resolve_or_none(f)
+            if r is None:
+                output_handlers['warning'](f"Skipping {f}: cannot resolve path")
+            else:
+                resolved.append(r)
+        return resolved
+
     # Resolve once: explicit --db-path wins, else the canonical --init DB
     # when usable. Map scans write, so an existing-but-unwritable
     # canonical DB (read-only checkout, foreign owner) degrades to
@@ -629,7 +641,7 @@ Examples:
     # Pre-index probe runs FIRST, before any full-tree walk: the probe is
     # instant (rg-streamed) and gives the authoritative narrow set. Only if
     # --pre-index is absent OR the probe finds nothing do we walk the tree.
-    chat_files = [str(Path(f).resolve()) for f in chat_files_from_args]
+    chat_files = _resolve_files(chat_files_from_args)
     other_files = []
     if args.pre_index:
         output_handlers['info'](f"Probing symbol '{args.pre_index}' in {root_path}...")
@@ -641,7 +653,7 @@ Examples:
         )
         if probed_rel_files:
             output_handlers['info'](f"Probe matched {len(probed_rel_files)} files.")
-            other_files = [str((root_path / rel).resolve()) for rel in probed_rel_files]
+            other_files = _resolve_files([str(root_path / rel) for rel in probed_rel_files])
         else:
             output_handlers['warning'](f"Probe found no matches for '{args.pre_index}', falling back to discovered paths.")
 
@@ -675,7 +687,7 @@ Examples:
             scan_db_path)
         effective_other_files_unresolved = (
             _dropped if _dropped else effective_other_files_unresolved)
-        other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
+        other_files = _resolve_files(effective_other_files_unresolved)
 
         # Auto-discover when no explicit/positional paths were provided
         if not other_files:
@@ -704,7 +716,7 @@ Examples:
                 scan_db_path)
             effective_other_files_unresolved = (
                 _dropped if _dropped else effective_other_files_unresolved)
-            other_files = [str(Path(f).resolve()) for f in effective_other_files_unresolved]
+            other_files = _resolve_files(effective_other_files_unresolved)
 
     mentioned_fnames = set(args.mentioned_files) if args.mentioned_files else None
     mentioned_idents = set(args.mentioned_idents) if args.mentioned_idents else None

@@ -6,7 +6,7 @@ import networkx as nx
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Set, Tuple, Optional, Any
-from utils import Tag, SymbolRecord
+from utils import Tag, SymbolRecord, resolve_or_none
 from report import FileReport
 from parser import qualify_with_class_context
 _COVERAGE_WARN_THRESHOLD = 60.0
@@ -178,10 +178,12 @@ class RankingMixin:
         is Goal 6.
         """
         def normalize_path(path):
-            return str(Path(path).resolve())
+            # Symlink loops / dangling links resolve to None and are
+            # dropped below instead of crashing the scan.
+            return resolve_or_none(path)
 
-        chat_fnames = [normalize_path(f) for f in chat_fnames]
-        other_fnames = [normalize_path(f) for f in other_fnames]
+        chat_fnames = [f for f in (normalize_path(p) for p in chat_fnames) if f]
+        other_fnames = [f for f in (normalize_path(p) for p in other_fnames) if f]
         if mentioned_fnames is None:
             mentioned_fnames = set()
         if mentioned_idents is None:
@@ -194,6 +196,18 @@ class RankingMixin:
 
         db = self._db_store
         
+        # Files that resolve outside the repo root (symlinks pointing
+        # elsewhere, or explicit paths) must never enter the DB: their
+        # "rel" would be an absolute host path, leaking into stored rels
+        # and every map served from the index. Skip with a warning.
+        escaped = [f for f in all_fnames if not self._within_root(f)]
+        if escaped:
+            self.output_handlers['warning'](
+                f"Skipping {len(escaped)} file(s) that resolve outside the "
+                f"repo root: {', '.join(sorted(os.path.basename(f) for f in escaped)[:5])}")
+            excluded.update({f: "resolves outside repo root" for f in escaped})
+            all_fnames = [f for f in all_fnames if self._within_root(f)]
+
         # Check if DB already has valid data for the requested files
         # (Pre-scan case: db_path was provided and DB already populated)
         needed_rels = {self.get_rel_fname(f) for f in all_fnames}
@@ -623,10 +637,13 @@ class RankingMixin:
         
         # Normalize paths to absolute
         def normalize_path(path):
-            return str(Path(path).resolve())
-        
-        chat_fnames = [normalize_path(f) for f in chat_fnames]
-        other_fnames = [normalize_path(f) for f in other_fnames]
+            # Symlink loops / dangling links resolve to None and are
+            # dropped below instead of crashing the scan.
+            return resolve_or_none(path)
+
+        chat_fnames = [f for f in (normalize_path(p) for p in chat_fnames) if f]
+        other_fnames = [f for f in (normalize_path(p) for p in other_fnames) if f]
+
         
         # Initialize file report
         included: List[str] = []

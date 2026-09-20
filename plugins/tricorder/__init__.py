@@ -361,13 +361,20 @@ def build_map(project_root: str) -> Optional[dict]:
         cmd += ["--max-files", str(max_files)]
     try:
         # The CLI needs at least one paths positional; resolve against --root.
-        subprocess.run(
+        r = subprocess.run(
             cmd,
             capture_output=True, text=True, timeout=300,
             check=False,
         )
     except Exception as exc:
         logger.debug("tricorder: scan failed for %s: %s", project_root, exc)
+        return None
+    if r.returncode != 0:
+        # A failed scan must not serve a stale map file as fresh: the
+        # meta written below carries a fresh project signature, which
+        # would make the stale cache look valid.
+        logger.debug("tricorder: scan exited %s for %s: %s",
+                     r.returncode, project_root, (r.stderr or "")[-300:])
         return None
 
     if not out.exists() or out.stat().st_size == 0:
