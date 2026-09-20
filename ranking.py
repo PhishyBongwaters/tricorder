@@ -315,8 +315,15 @@ class RankingMixin:
                             dirty_rels.discard(self.get_rel_fname(fname))
 
                     if not dirty_rels:
+                        # Every needed rel is covered by file_state here
+                        # (anything missing, added, or changed would be
+                        # dirty). Keep ALL non-excluded files in `included`:
+                        # the old stored_rels filter kept only files owning
+                        # tag rows, silently dropping tagless files from
+                        # untagged_files and the map's "Other files" section
+                        # on every scan after the first.
                         for fname in all_fnames:
-                            if self.get_rel_fname(fname) in stored_rels:
+                            if fname not in excluded:
                                 included.append(fname)
                         self.output_handlers['info'](
                             f"Pre-scan DB hit: {len(needed_rels)} files covered, skipping parse")

@@ -232,7 +232,14 @@ class DBStore:
         multiplicity the MultiDiGraph used for ranking survives on disk.
         Uses rel_file (the graph's node identity).
         Idempotent: clears refs before repopulating (needed for incremental).
+        Takes the store lock: the DELETE+INSERT pair must be atomic against
+        concurrent readers/writers sharing the instance (MCP server threads).
         """
+        with self._lock:
+            self._populate_refs_locked()
+
+    def _populate_refs_locked(self):
+        """populate_refs body; caller holds self._lock."""
         self.conn.execute("DELETE FROM refs")
         # ponytail: skip stop-names (def in >50 files) — unresolvable by name,
         # and their cross product is the 30M-edge bloat. Ceiling: fixed 50.
