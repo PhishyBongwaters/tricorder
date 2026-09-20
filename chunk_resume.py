@@ -73,12 +73,20 @@ def main():
     # ponytail: fixed 50-iteration ceiling; bump if a repo ever legitimately
     # needs more than 50 cap steps (50 x 5000 = 250k files).
     for i in range(1, 51):
-        proc = subprocess.run(
-            [sys.executable, str(TRICORDER), str(repo),
-             "--db-path", str(db), "--full", "--output", str(out_map),
-             "--max-files", str(cap), "--quiet"],
-            capture_output=True, text=True, timeout=args.timeout,
-        )
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(TRICORDER), str(repo),
+                 "--db-path", str(db), "--full", "--output", str(out_map),
+                 "--max-files", str(cap), "--quiet"],
+                capture_output=True, text=True, timeout=args.timeout,
+            )
+        except subprocess.TimeoutExpired:
+            # Clean failure, not a traceback: completed chunks are already in
+            # the DB (sliding window skips them), so re-running resumes.
+            files, tag_files, tags, refs = db_counts(db)
+            print(f"TIMEOUT: chunk {i} exceeded --timeout={args.timeout}s "
+                  f"(mapped {files}/{total} so far). Re-run to resume.")
+            raise SystemExit(1)
         files, tag_files, tags, refs = db_counts(db)
         print(f"[chunk {i}] cap={cap} scanned={files}/{total} tag_files={tag_files} tags={tags} refs={refs} exit={proc.returncode}", flush=True)
         if files >= total:

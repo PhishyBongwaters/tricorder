@@ -68,6 +68,7 @@ class TestTC003CacheIsolation(unittest.TestCase):
         cache_dir = repo._cache_dir()
         # Must NOT be a repo-relative path.
         self.assertFalse(str(cache_dir).endswith(TAGS_CACHE_DIR))
+        self.assertNotIn("/tmp/does_not_matter_tc003", str(cache_dir))
         # Identity is content-derived, so distinct roots => distinct caches.
         other = Tricorder(root="/tmp/different_root_tc003")._cache_dir()
         self.assertNotEqual(cache_dir, other)

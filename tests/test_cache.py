@@ -4,7 +4,7 @@ import os
 import unittest
 sys.path.insert(0, '.')
 from pathlib import Path
-from core import Tricorder, FileReport, TAGS_CACHE_DIR
+from core import Tricorder, FileReport
 
 
 class TestTricorderRankedTags(unittest.TestCase):
@@ -43,13 +43,8 @@ class TestTricorderRankedTags(unittest.TestCase):
 
 
 class TestTricorderCache(unittest.TestCase):
-    def test_cache_dir_is_outside_repo(self):
-        # TC-003: cache must live outside the repository, not repo-relative.
-        repo = Tricorder(root='/tmp/test_root')
-        cache_dir = repo._cache_dir()
-        self.assertFalse(str(cache_dir).endswith(TAGS_CACHE_DIR))
-        self.assertNotIn('/tmp/test_root', str(cache_dir))
-
+    # NB: the "cache lives outside the repo" invariant is asserted once, in
+    # tests/test_security_hardening.py::TestTC003CacheIsolation (TC-003).
     def test_cache_identity_is_content_derived(self):
         a = Tricorder(root='/tmp/test_root')._cache_dir()
         b = Tricorder(root='/tmp/other_root')._cache_dir()
