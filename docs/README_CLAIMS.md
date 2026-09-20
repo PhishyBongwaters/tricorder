@@ -252,7 +252,7 @@ validation status starts as `pending` and is updated as checks run.
 - [pending] TC-005: Every MCP response stamped `source: scanned_repository`, `trust: untrusted_repository_content`
 - [pending] TC-001: Raw map wrapped in `BEGIN/END UNTRUSTED REPOSITORY CONTEXT` markers
 - [pending] TC-006: `chat_files` / `detail` file params rejected if they resolve outside `project_root`
-- [pending] TC-007: MCP `max_files` clamped to 10,000 server-side; discovery early-stops at 20,000
+- [pending] TC-007: MCP `max_files` clamped to 10,000 server-side; discovery early-stops at `TRICORDER_MAX_SCAN_FILES` only when set (0 = unlimited by default)
 - [pending] TC-008: `output_file`/`--output` writes contained: server output to `get_cache_root()/.tricorder/output/<basename>`
 - [pending] TC-008: Honors `TRICORDER_CACHE_HOME`
 - [pending] TC-008: `--output` is the sole sanctioned user-chosen path outside cache root
@@ -271,10 +271,10 @@ validation status starts as `pending` and is updated as checks run.
 
 ## 24. Environment Overrides
 
-- [pending] `TRICORDER_MAX_SCAN_FILES=20000`
-- [pending] `TRICORDER_MAX_TOTAL_BYTES=524288000`
+- [pending] `TRICORDER_MAX_SCAN_FILES=0` (0 = unlimited; the former 20000 default was relaxed when `--full` was added)
+- [pending] `TRICORDER_MAX_TOTAL_BYTES=0` (0 = unlimited; the former 524288000 default was relaxed when `--full` was added)
 - [pending] `TRICORDER_MAX_SCAN_DEPTH=25`
-- [pending] `TRICORDER_MAX_SCAN_TIME_S=300`
+- [pending] `TRICORDER_MAX_SCAN_TIME_S=0.0` (0 = unlimited; the former 300 default was relaxed when `--full` was added)
 - [pending] `TRICORDER_MAX_SOURCE_FILE_SIZE=1048576`
 - [pending] `TRICORDER_PARSER_TIMEOUT_S=5`
 - [pending] `TRICORDER_CACHE_HOME=<tricorder workspace>/.tricorder` (default; controls cache + output root)
