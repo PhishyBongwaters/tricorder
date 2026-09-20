@@ -25,9 +25,16 @@ from typing import List
 
 import diskcache
 
+from database import EXTRACTOR_VERSION
 from utils import get_cache_root, Tag
 
 CACHE_VERSION = 3  # bumped: #46 qualified names + Sep-14 query captures changed index contents
+# NOTE: the cache key below also carries EXTRACTOR_VERSION. Cached tag rows
+# hold post-_add_class_context_to_tags qualified names — the exact output the
+# extractor version gates. Without the extractor stamp, an EXTRACTOR_VERSION
+# bump would fire the DB staleness gate, the forced rescan would replay the
+# stale qualified tags from this cache (mtimes unchanged), and the DB would
+# be re-stamped — permanent, undetectable staleness. Keep both stamps.
 
 SQLITE_ERRORS = (sqlite3.OperationalError, sqlite3.DatabaseError)
 
@@ -55,7 +62,7 @@ class TagsCacheMixin:
                 "TRICORDER_CACHE_HOME",
                 str(Path.home() / ".tricorder" / "cache"),
             ))
-        key = f"{self.root.resolve()}|v{CACHE_VERSION}|{self.cache_size_limit}"
+        key = f"{self.root.resolve()}|v{CACHE_VERSION}|e{EXTRACTOR_VERSION}|{self.cache_size_limit}"
         h = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
         return base / h
 

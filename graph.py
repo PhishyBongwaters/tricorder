@@ -11,6 +11,7 @@ import json as _json
 from scm import get_scm_fname
 from collections import defaultdict
 from cache import CACHE_VERSION
+from database import EXTRACTOR_VERSION
 
 class GraphMixin:
     def _discover_files(self) -> List[str]:
@@ -38,8 +39,11 @@ class GraphMixin:
         entries.sort()
         # CACHE_VERSION: index format/logic changes must invalidate old
         # bundles (a matching fingerprint must mean valid for THIS code too).
+        # EXTRACTOR_VERSION: defs carry the same class-context qualification
+        # the DB extractor gate guards — an extractor bump must not keep
+        # serving the old bundle.
         return hashlib.sha256(
-            (repr(entries) + f"|cv{CACHE_VERSION}").encode("utf-8")).hexdigest()
+            (repr(entries) + f"|cv{CACHE_VERSION}|ev{EXTRACTOR_VERSION}").encode("utf-8")).hexdigest()
 
     def _load_cross_ref_disk(self) -> bool:
         """Restore the import+cross-file indexes from diskcache if valid.
