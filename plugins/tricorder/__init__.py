@@ -443,6 +443,11 @@ def _tricorder_db_for(root: str) -> Optional[str]:
     Cache root resolved without hardcoding: TRICORDER_CACHE_HOME env,
     else <cli-venv>/../.tricorder (derived from the discovered CLI path).
     Read-only use — never creates or writes.
+
+    The shared-cache lookup is by directory basename, so a same-named repo
+    elsewhere can collide; a candidate whose meta.root is not this root is
+    skipped (serving another repo's index would mislead the turn-0
+    steering into claiming this repo is mapped).
     """
     import sqlite3 as _sq
     name = Path(root).name + ".db"
@@ -454,14 +459,20 @@ def _tricorder_db_for(root: str) -> Optional[str]:
     cli = _get_tricorder_cli()
     if cli:
         candidates.append(Path(cli).resolve().parent.parent / ".tricorder" / "db" / name)
+    want = os.path.normcase(os.path.abspath(root))
     for db in candidates:
         try:
-            if db.exists():
-                con = _sq.connect(f"file:{db}?mode=ro", uri=True)
+            if not db.exists():
+                continue
+            con = _sq.connect(f"file:{db}?mode=ro", uri=True)
+            try:
                 n = con.execute("SELECT COUNT(DISTINCT rel_file) FROM tags").fetchone()[0]
+                m = con.execute(
+                    "SELECT root FROM meta ORDER BY rowid DESC LIMIT 1").fetchone()
+            finally:
                 con.close()
-                if n > 0:
-                    return str(db)
+            if n > 0 and m and m[0] and os.path.normcase(os.path.abspath(m[0])) == want:
+                return str(db)
         except Exception:
             continue
     return None
