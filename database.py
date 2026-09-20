@@ -10,7 +10,7 @@ Schema v1:
     tags(file, rel_file, line, name, kind)   -- one row per tag (kind in def/ref)
     refs(from_file, to_file, name)           -- one row per cross-file reference edge
     meta(schema_version, root, signature, extractor_version) -- identity + extractor stamp
-    file_state(rel_file, size, mtime)        -- per-file stat fingerprint
+    file_state(rel_file, size, mtime)        -- per-file stat fingerprint (size, mtime_ns)
     stop_names(name)                         -- def-names skipped by populate_refs (>50 files)
     file_flags(rel_file, reason)             -- why a scanned file owns zero tags
 

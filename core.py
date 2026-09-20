@@ -10,7 +10,7 @@ from pathlib import Path
 # Pin project dir ahead of sys.path (mirror tricorder.py) so utils/scm resolve to THIS repo.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Optional, Tuple, Callable, Any
-from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, query_variants, tokenize_identifier, levenshtein
+from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, query_variants, tokenize_identifier, levenshtein, stat_fingerprint
 from cache import TagsCacheMixin, CACHE_VERSION
 from parser import ParserMixin
 from graph import GraphMixin
@@ -274,7 +274,7 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 rel = self.get_rel_fname(fpath)
             if rel in db_rels:
                 continue
-            current[rel] = (fpath, st.st_size, int(st.st_mtime))
+            current[rel] = (fpath, *stat_fingerprint(st))
 
         added, modified, deleted = [], [], []
         for rel, (_fpath, size, mtime) in current.items():

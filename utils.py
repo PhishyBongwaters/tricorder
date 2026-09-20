@@ -76,6 +76,21 @@ def resolve_or_none(path: str) -> Optional[str]:
         return None
 
 
+def stat_fingerprint(st) -> tuple:
+    """(size, mtime_ns) stat fingerprint for change detection.
+
+    mtime is kept at nanosecond resolution on purpose: truncating to
+    whole seconds (int(st.st_mtime)) makes a same-second, same-size edit
+    invisible to the dirty-diff, so incremental rescans and --diff would
+    serve stale tags forever with no signal. SQLite INTEGER holds ns
+    values fine (~1.8e18 < 9.2e18 max).
+    DBs written by older versions store whole-second mtimes; those
+    compare unequal to ns values, so the first scan after upgrade
+    re-parses everything once (self-healing, no migration needed).
+    """
+    return (st.st_size, st.st_mtime_ns)
+
+
 def read_only_connect(db_path: str):
     """Open a sqlite DB read-only; never creates the file.
 

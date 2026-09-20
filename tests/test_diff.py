@@ -36,7 +36,7 @@ class TestDiffAgainstIndex(unittest.TestCase):
         db = DBStore(self.db_path)
         for f in ("a.py", "b.py"):
             st = os.stat(self.tmp / f)
-            db.set_file_state(f, st.st_size, int(st.st_mtime))
+            db.set_file_state(f, st.st_size, st.st_mtime_ns)
         db.conn.commit()
         db.conn.close()
 
@@ -59,7 +59,7 @@ class TestDiffAgainstIndex(unittest.TestCase):
         db = DBStore(in_root_db)
         for f in ("a.py", "b.py"):
             st = os.stat(self.tmp / f)
-            db.set_file_state(f, st.st_size, int(st.st_mtime))
+            db.set_file_state(f, st.st_size, st.st_mtime_ns)
         db.conn.commit()
         db.conn.close()
         # Touch sidecars the way a journal-mode sqlite DB would leave them.
@@ -128,7 +128,7 @@ class TestDiffAgainstIndex(unittest.TestCase):
         # _index() only covers a.py/b.py: record big.py too, then modify it.
         db = DBStore(self.db_path)
         st = os.stat(self.tmp / "big.py")
-        db.set_file_state("big.py", st.st_size, int(st.st_mtime))
+        db.set_file_state("big.py", st.st_size, st.st_mtime_ns)
         db.conn.commit()
         db.conn.close()
         time.sleep(0.02)
@@ -241,7 +241,7 @@ class TestCanonicalDbRootGuard(unittest.TestCase):
         db = DBStore(str(self.cache_db))
         db.set_meta(str(self.repo_a), "sig")
         st = os.stat(self.repo_a / "a.py")
-        db.set_file_state("a.py", st.st_size, int(st.st_mtime))
+        db.set_file_state("a.py", st.st_size, st.st_mtime_ns)
         db.conn.commit()
         db.conn.close()
         # tricorder_server binds PRE_SCAN_DB_DIR at import time; in the full

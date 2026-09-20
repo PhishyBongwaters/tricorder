@@ -6,7 +6,7 @@ import networkx as nx
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Set, Tuple, Optional, Any
-from utils import Tag, SymbolRecord, resolve_or_none
+from utils import Tag, SymbolRecord, resolve_or_none, stat_fingerprint
 from report import FileReport
 from parser import qualify_with_class_context
 _COVERAGE_WARN_THRESHOLD = 60.0
@@ -144,19 +144,15 @@ class RankingMixin:
     def _db_signature(self, included: List[str]) -> str:
         """Stat-based content signature from the walked files (meta.signature).
 
-        Matches incremental (Goal 6) needs cheaply: (rel, size, mtime). Exact
-        contents hashing is deferred; sizes+mtimes catch edited/added files.
-
-        Note: mtime is truncated to whole seconds (int(st.st_mtime)), so a
-        sub-second edit that preserves file size will not invalidate the
-        signature. Acceptable trade-off for a cheap signature; use content
-        hashing if this ever causes stale-cache misses.
+        Matches incremental (Goal 6) needs cheaply: (rel, size, mtime_ns).
+        Exact contents hashing is deferred; sizes+ns-mtimes catch edited
+        files, including same-second same-size edits (review round 16).
         """
         parts = []
         for fname in sorted(included):
             try:
                 st = os.stat(fname)
-                parts.append(f"{self.get_rel_fname(fname)}:{st.st_size}:{int(st.st_mtime)}")
+                parts.append(f"{self.get_rel_fname(fname)}:{st.st_size}:{st.st_mtime_ns}")
             except OSError:
                 parts.append(self.get_rel_fname(fname))
         return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()[:16]
@@ -243,7 +239,7 @@ class RankingMixin:
                                 rel = self.get_rel_fname(fname)
                                 try:
                                     st = os.stat(fname)
-                                    db.set_file_state(rel, st.st_size, int(st.st_mtime))
+                                    db.set_file_state(rel, *stat_fingerprint(st))
                                 except OSError:
                                     pass
                             db.commit()
@@ -266,7 +262,7 @@ class RankingMixin:
                                         (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
                                 try:
                                     st = os.stat(fname)
-                                    db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                                    db.set_file_state(rel_fname, *stat_fingerprint(st))
                                 except OSError:
                                     pass
                             db.commit()
@@ -289,7 +285,7 @@ class RankingMixin:
                                     (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
                             try:
                                 st = os.stat(fname)
-                                db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                                db.set_file_state(rel_fname, *stat_fingerprint(st))
                             except OSError:
                                 pass
                         db.commit()
@@ -303,7 +299,7 @@ class RankingMixin:
                         fname = rel_to_fname[rel]
                         try:
                             st = os.stat(fname)
-                            cur = (st.st_size, int(st.st_mtime))
+                            cur = stat_fingerprint(st)
                         except OSError:
                             # Deleted/missing -> treat as dirty (will be excluded)
                             dirty_rels.add(rel)
@@ -359,7 +355,7 @@ class RankingMixin:
                                         db.insert_tags(rows)
                                     try:
                                         st = os.stat(fname)
-                                        db.set_file_state(rel, st.st_size, int(st.st_mtime))
+                                        db.set_file_state(rel, *stat_fingerprint(st))
                                     except OSError:
                                         pass
                                     included.append(fname)
@@ -390,7 +386,7 @@ class RankingMixin:
                                             (fname, rel, t.line, t.name, t.kind) for t in tags)
                                     try:
                                         st = os.stat(fname)
-                                        db.set_file_state(rel, st.st_size, int(st.st_mtime))
+                                        db.set_file_state(rel, *stat_fingerprint(st))
                                     except OSError:
                                         pass
                                 else:
@@ -429,7 +425,7 @@ class RankingMixin:
                                 db.insert_tags(rows)
                             try:
                                 st = os.stat(fname)
-                                db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                                db.set_file_state(rel_fname, *stat_fingerprint(st))
                             except OSError:
                                 pass
                             batch += 1
@@ -452,7 +448,7 @@ class RankingMixin:
                                 (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
                         try:
                             st = os.stat(fname)
-                            db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                            db.set_file_state(rel_fname, *stat_fingerprint(st))
                         except OSError:
                             pass
                         batch += 1
@@ -490,7 +486,7 @@ class RankingMixin:
                             db.insert_tags(rows)
                         try:
                             st = os.stat(fname)
-                            db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                            db.set_file_state(rel_fname, *stat_fingerprint(st))
                         except OSError:
                             pass
                         batch += 1
@@ -512,7 +508,7 @@ class RankingMixin:
                             (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
                     try:
                         st = os.stat(fname)
-                        db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                        db.set_file_state(rel_fname, *stat_fingerprint(st))
                     except OSError:
                         pass
                     batch += 1

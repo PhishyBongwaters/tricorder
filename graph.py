@@ -23,16 +23,19 @@ class GraphMixin:
     _CROSS_REF_DISK_KEY = "__cross_ref_index_v1__"
 
     def _cross_ref_fingerprint(self) -> str:
-        """Fingerprint of every discovered file's (rel path, mtime).
+        """Fingerprint of every discovered file's (rel path, mtime_ns).
 
         One stat per file, no tree-sitter parse. Any add/edit/delete changes
         the fingerprint, so a matching fingerprint means the persisted
         cross-file/import indexes are still valid for THIS repo snapshot.
+        mtime_ns (not float getmtime): float seconds lose sub-microsecond
+        precision, re-creating the same-second-blindness the DB dirty-diff
+        had before review round 16.
         """
         entries = []
         for fpath in self._discover_files():
             try:
-                m = os.path.getmtime(fpath)
+                m = os.stat(fpath).st_mtime_ns
             except OSError:
                 continue
             entries.append((self.get_rel_fname(fpath).replace("\\", "/"), m))

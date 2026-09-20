@@ -48,7 +48,7 @@ def _make_canonical_db(tmp, files):
         store.set_meta(str(tmp), "", 0)
         for name in files:
             st = os.stat(tmp / name)
-            store.set_file_state(name, st.st_size, int(st.st_mtime))
+            store.set_file_state(name, st.st_size, st.st_mtime_ns)
         store.commit()
     finally:
         store.close()

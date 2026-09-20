@@ -19,7 +19,7 @@ from typing import List, Optional
 # venv/site-packages (e.g. the Hermes agent's own utils.py when tricorder is
 # launched through an editable install that shares a process's sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES, safe_write, get_cache_root, db_root_matches, _db_writable, read_only_connect, resolve_or_none
+from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES, safe_write, get_cache_root, db_root_matches, _db_writable, read_only_connect, resolve_or_none, stat_fingerprint
 from scm import get_scm_fname
 from importance import filter_important_files
 from core import Tricorder
@@ -63,11 +63,12 @@ def find_src_files(directory: str, exclude_globs: Optional[List[str]] = None) ->
 
 
 def compute_signature(root: str, exclude_globs: Optional[List[str]] = None) -> str:
-    """Stat-based signature: path + size + mtime per source file, sha256'd.
+    """Stat-based signature: path + size + mtime_ns per source file, sha256'd.
 
     ponytail: stat-based (path+size+mtime), not content hash.
-    Misses: content changed but size+mtime unchanged (practically never
-    on real filesystems). Upgrade path: content hash if this ever bites.
+    Misses: content changed but size+mtime_ns unchanged (practically never
+    on real filesystems — ns resolution since review round 16).
+    Upgrade path: content hash if this ever bites.
     """
     h = hashlib.sha256()
     files = sorted(discover_src_files(root, use_gitignore=True,
@@ -75,7 +76,7 @@ def compute_signature(root: str, exclude_globs: Optional[List[str]] = None) -> s
     for fpath in files:
         try:
             st = os.stat(fpath)
-            h.update(f"{fpath}:{st.st_size}:{int(st.st_mtime)}".encode())
+            h.update(f"{fpath}:{st.st_size}:{st.st_mtime_ns}".encode())
         except OSError:
             continue
     return h.hexdigest()[:16]

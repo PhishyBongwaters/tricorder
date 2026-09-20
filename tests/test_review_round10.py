@@ -67,7 +67,7 @@ def test_incremental_scan_visible_to_immutable_reader():
             "SELECT mtime FROM file_state WHERE rel_file='f1.py'").fetchone()[0]
     finally:
         con.close()
-    assert mtime == 2000000000
+    assert mtime == 2000000000000000000  # ns resolution since review round 16
 
 
 def test_diff_sees_incremental_additions():
