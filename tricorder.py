@@ -366,14 +366,14 @@ Examples:
     parser.add_argument(
         "--pre-index",
         metavar="SYMBOL",
-        help="Enable ctags probe: build/use ctags index, look up SYMBOL, narrow scan to matching files"
+        help="Enable pre-index probe: ripgrep-first (ctags index fallback), look up SYMBOL, narrow scan to matching files"
     )
 
     parser.add_argument(
         "--pre-index-max-files",
         type=int,
         default=100,
-        help="Max files to include from ctags probe results (default: 100)"
+        help="Max files to include from pre-index probe results (default: 100)"
     )
 
     parser.add_argument(

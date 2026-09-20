@@ -2,7 +2,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-226%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-286%20passed%2C%203%20skipped-brightgreen.svg)](tests/)
 
 **Turn any codebase into a token-efficient map an LLM agent can actually navigate.**
 
@@ -11,15 +11,16 @@ Tricorder scans a repository with tree-sitter, ranks every symbol by importance 
 ```
 $ tricorder /path/to/repo --map-tokens 2048
 
-src/database.py:
-  class Database:
-    def getConnection(self) -> Connection: ...
-    def execute(self, query: str) -> Result: ...
-  def create_pool(size: int) -> Pool: ...
+src/database.py (24 lines)
 
-src/server.py:
-  class Server:
-    def handle_request(self, req: Request) -> Response: ...
+  1: class Database:
+  7:     def get_connection(self) -> Connection:
+ 11:     def execute(self, query: str) -> Result:
+
+src/server.py (18 lines)
+
+  1: class Server:
+  5:     def handle_request(self, req: Request) -> Response:
 ```
 
 Three interfaces, one engine: a **CLI** for humans and scripts, an **MCP server** for any MCP client (Hermes, Cline, Claude Code), and **lifecycle plugins** that inject a navigation digest at session start.
@@ -74,7 +75,7 @@ That's it. No config files, no model keys, no network calls — everything runs 
 |---|---|
 | [User Guide](docs/user-guide.md) | Installation, workflows, tiers, pre-index, caching, troubleshooting, FAQ |
 | [CLI Reference](docs/cli-reference.md) | Every flag, with examples |
-| [MCP Reference](docs/mcp-reference.md) | All 5 tools, parameters, response shapes |
+| [MCP Reference](docs/mcp-reference.md) | All 7 tools, parameters, response shapes |
 | [Architecture](docs/architecture.md) | Pipeline, DB design, ranking, graph, caching, security |
 | [Class-Context Qualification](docs/class-context-qualification.md) | Deep dive on `Class::method` scoping |
 | [Benchmarks](docs/benchmarks.md) | Methodology, full results, reproduce steps |
@@ -116,12 +117,12 @@ Tricorder treats **repository content as untrusted input**. Every MCP response i
 .venv/Scripts/python -m pytest tests/ -q -p no:cacheprovider   # full suite
 ```
 
-226 tests, 93 subtests. Bug reports and PRs welcome — please include a failing test where practical. See [AGENTS.md](AGENTS.md) for repo conventions.
+286 tests passing, 3 skipped (ctags/Windows-only), 93 subtests. Bug reports and PRs welcome — please include a failing test where practical. See [AGENTS.md](AGENTS.md) for repo conventions.
 
 ## Lineage
 
 1. **Gen 1 — Aider `RepoMap`** (Paul Gauthier): tree-sitter + PageRank.
 2. **Gen 2 — RepoMapper** (Paul Davis): standalone CLI + MCP server. Upstream: https://github.com/pdavis68/RepoMapper
-3. **Gen 3 — tricorder**: this fork — 226+ tests, 11-language signature extraction, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, DB-backed ranking with extractor versioning.
+3. **Gen 3 — tricorder**: this fork — 286+ tests, 11-language signature extraction, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, DB-backed ranking with extractor versioning.
 
 Lineage intentionally kept visible. MIT Licensed — see [LICENSE](LICENSE).
