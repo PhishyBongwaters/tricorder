@@ -466,7 +466,14 @@ def _tricorder_db_for(root: str) -> Optional[str]:
                 continue
             con = _sq.connect(f"file:{db}?mode=ro", uri=True)
             try:
-                n = con.execute("SELECT COUNT(DISTINCT rel_file) FROM tags").fetchone()[0]
+                # Coverage is file_state rows (tagless files own zero tag
+                # rows); tags-distinct is only a fallback for pre-file_state
+                # DBs that lack the table.
+                try:
+                    n = con.execute("SELECT COUNT(*) FROM file_state").fetchone()[0]
+                except Exception:
+                    n = con.execute(
+                        "SELECT COUNT(DISTINCT rel_file) FROM tags").fetchone()[0]
                 m = con.execute(
                     "SELECT root FROM meta ORDER BY rowid DESC LIMIT 1").fetchone()
             finally:
@@ -483,7 +490,13 @@ def _db_coverage_line(db_path: str, root: str) -> str:
     import sqlite3 as _sq
     con = _sq.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        files = con.execute("SELECT COUNT(DISTINCT rel_file) FROM tags").fetchone()[0]
+        # Coverage is file_state rows (tagless files own zero tag rows);
+        # tags-distinct is only a fallback for pre-file_state DBs.
+        try:
+            files = con.execute("SELECT COUNT(*) FROM file_state").fetchone()[0]
+        except Exception:
+            files = con.execute(
+                "SELECT COUNT(DISTINCT rel_file) FROM tags").fetchone()[0]
         tags = con.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
         meta = con.execute(
             "SELECT root, signature FROM meta ORDER BY rowid DESC LIMIT 1"

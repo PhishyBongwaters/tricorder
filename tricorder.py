@@ -429,29 +429,40 @@ Examples:
         import sqlite3 as _sq
         _cov_root = Path(args.root).resolve()
         _cov_name = _cov_root.name + ".db"
-        _cov_cands = [_cov_root / ".tricorder" / "db" / _cov_name]
+        # (candidate, repo_local): the repo-local DB needs no ownership check —
+        # its location inside the root already proves it belongs to this root.
+        # A shared-cache candidate is keyed by directory basename, so a
+        # same-named repo elsewhere collides; only a DB whose meta.root is
+        # this root may report coverage (otherwise repo B would inherit
+        # repo A's "mapped" claim and turn-0 steering would skip a rescan).
+        _cov_cands = [(_cov_root / ".tricorder" / "db" / _cov_name, True)]
         try:
-            _cov_cands.append(get_cache_root() / "db" / _cov_name)
+            _cov_cands.append((get_cache_root() / "db" / _cov_name, False))
         except Exception:
             pass
-        for _cand in _cov_cands:
+        for _cand, _cov_local in _cov_cands:
             try:
                 if not _cand.exists():
                     continue
+                if not _cov_local and not db_root_matches(str(_cand), str(_cov_root)):
+                    continue
                 _con = _sq.connect(f"file:{_cand}?mode=ro", uri=True)
                 try:
-                    _n = _con.execute(
-                        "SELECT COUNT(DISTINCT rel_file) FROM tags").fetchone()[0]
+                    # Coverage is file_state rows (house rule: never
+                    # tags-distinct — tagless files own zero tag rows).
+                    try:
+                        _n = _con.execute(
+                            "SELECT COUNT(*) FROM file_state").fetchone()[0]
+                    except Exception:
+                        _n = _con.execute(
+                            "SELECT COUNT(DISTINCT rel_file) FROM tags"
+                        ).fetchone()[0]
                     if _n > 0:
                         _t = _con.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
                         _m = _con.execute(
-                            "SELECT root, signature FROM meta ORDER BY rowid DESC LIMIT 1"
+                            "SELECT signature FROM meta ORDER BY rowid DESC LIMIT 1"
                         ).fetchone()
-                        # Basename collision in the shared cache: only report a
-                        # DB whose recorded root is this root.
-                        if _m and _m[0] and not db_root_matches(str(_cand), str(_cov_root)):
-                            continue
-                        _sig = (_m[1][:8] if _m and _m[1] else "?")
+                        _sig = (_m[0][:8] if _m and _m[0] else "?")
                         print(
                             f"mapped: {_n} files, {_t} tags (db sig {_sig}). "
                             "Retrieve, don't rescan: mcp_tricorder_detect to locate, "

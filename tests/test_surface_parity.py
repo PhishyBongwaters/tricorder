@@ -157,6 +157,7 @@ class TestPluginDbCollisionGuard(unittest.TestCase):
         db_path.parent.mkdir(parents=True, exist_ok=True)
         db = DBStore(str(db_path))
         db.set_meta(str(repo_a), "sig")
+        db.set_file_state("a.py", 100, 1234567890)
         db.insert_tags([("a.py", "a.py", 1, "alpha", "def")])
         db.conn.commit()
         db.conn.close()
@@ -170,6 +171,33 @@ class TestPluginDbCollisionGuard(unittest.TestCase):
         self.assertIsNone(plugin._tricorder_db_for(str(repo_b)))
         # ... while repo A still resolves to its own DB.
         self.assertEqual(plugin._tricorder_db_for(str(repo_a)), str(db_path))
+
+    def test_plugin_db_for_counts_file_state_not_tags(self):
+        # A mapped repo whose files are all tagless (data-only) must still
+        # resolve — coverage is file_state rows, never tags-distinct.
+        from database import DBStore
+        tmp = Path(tempfile.mkdtemp(prefix="plugdb_tagless_"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
+        repo = (tmp / "proj").resolve()
+        repo.mkdir(parents=True)
+        cache = Path(tempfile.mkdtemp(prefix="plugcache_tagless_"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(cache, ignore_errors=True))
+        db_path = cache / "db" / "proj.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        db = DBStore(str(db_path))
+        db.set_meta(str(repo), "sig")
+        db.set_file_state("data.json", 42, 1234567890)
+        db.conn.commit()
+        db.conn.close()
+        old_env = os.environ.get("TRICORDER_CACHE_HOME")
+        os.environ["TRICORDER_CACHE_HOME"] = str(cache)
+        self.addCleanup(lambda: (os.environ.pop("TRICORDER_CACHE_HOME", None)
+                                 if old_env is None
+                                 else os.environ.update({"TRICORDER_CACHE_HOME": old_env})))
+        plugin = self._plugin()
+        self.assertEqual(plugin._tricorder_db_for(str(repo)), str(db_path))
+        line = plugin._db_coverage_line(str(db_path), str(repo))
+        self.assertIn("1 files, 0 tags", line)
 
 
 if __name__ == "__main__":
