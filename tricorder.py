@@ -451,10 +451,14 @@ Examples:
         # never see it until a scan wrote meta. extractor_version=0 marks
         # it "not yet indexed" (staleness unknown), so the first scan does
         # a full rescan and re-stamps with the real signature.
+        # Idempotent: only stamp a fresh/empty DB. Re-stamping an indexed
+        # DB with extractor_version=0 would mark it "not yet indexed" and
+        # force a pointless full rescan of already-mapped files.
         _init_store = DBStore(str(init_db))
         try:
-            _init_store.set_meta(str(init_root), "", 0)
-            _init_store.commit()
+            if _init_store.get_meta() is None:
+                _init_store.set_meta(str(init_root), "", 0)
+                _init_store.commit()
         finally:
             _init_store.close()
         print(str(init_db))

@@ -141,6 +141,36 @@ class TestCliCanonicalResume(unittest.TestCase):
         self.assertEqual(self._file_state_count(), 0,
                          "--no-db must not write the canonical DB")
 
+    def test_init_rerun_preserves_indexed_stamp(self):
+        # --init is documented as idempotent; re-running it on an indexed
+        # DB must not downgrade the extractor stamp to 0 (which would force
+        # a pointless full rescan) or touch the signature/file_state.
+        from database import EXTRACTOR_VERSION
+        self._run("--init")
+        db_path = self._canonical()
+        store = DBStore(str(db_path))
+        try:
+            store.set_meta(str(self.tmp), "sig", EXTRACTOR_VERSION)
+            store.set_file_state("f0.py", 10, 123)
+            store.commit()
+        finally:
+            store.close()
+        p = self._run("--init")
+        self.assertEqual(p.returncode, 0, p.stderr[-500:])
+        con = sqlite3.connect(str(db_path))
+        try:
+            meta = con.execute(
+                "SELECT root, signature, extractor_version FROM meta "
+                "ORDER BY rowid DESC LIMIT 1").fetchone()
+            n = con.execute("SELECT COUNT(*) FROM file_state").fetchone()[0]
+        finally:
+            con.close()
+        self.assertEqual(meta[2], EXTRACTOR_VERSION,
+                         "--init re-run must not reset the extractor stamp")
+        self.assertEqual(meta[1], "sig",
+                         "--init re-run must not blank the signature")
+        self.assertEqual(n, 1, "--init re-run must not touch file_state")
+
 
 class TestUnwritableCanonical(unittest.TestCase):
     """A canonical DB that exists but isn't writable must degrade the map
