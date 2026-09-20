@@ -50,7 +50,10 @@ Verilog, Solidity, and more. Full tiers + how to add one:
 
 Tree-sitter parse per file → tags into sqlite → name-resolved ref
 edges → SQL PageRank → token-budgeted map. Incremental via per-file
-size+mtime; resume is just re-running. Full pipeline:
+size+mtime; resume is just re-running. Query-time warmth is layered:
+detect/detail/symbols/query hit the mtime-keyed disk caches (and the
+reused in-process instance), not sqlite — only the ranked map,
+`--diff`, and scan resume read the DB. Full pipeline:
 `01-pipeline.md`, machinery: `04-internals.md`, operations:
 `03-operations.md`.
 

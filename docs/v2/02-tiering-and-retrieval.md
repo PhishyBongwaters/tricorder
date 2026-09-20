@@ -1,7 +1,15 @@
 # Tiering and retrieval — spending tokens on purpose
 
-Principle: retrieve, don't rescan. A fresh DB answers everything below;
-a full re-scan at query time is never the right move.
+Principle: retrieve, don't rescan. Repeat lookups stay fast through
+warmth layers that are *not* the sqlite DB: the reused in-process
+`Tricorder` instance (`tree_cache`, cross-file index) and the
+mtime-keyed on-disk caches (per-file tags, file text, cross-reference
+bundle). The DB's query-time jobs are narrower — the ranked map
+(`_get_ranked_tags_db`, SQL PageRank over `refs`), `--diff` deltas
+(`file_state`), and the persisted stop-name set. Benchmarked on
+Django: `--no-db` detect/detail timings match DB timings, so the DB
+never accelerates those tools. A full re-parse at query time is never
+the right move.
 
 ## Tiers (unchanged on dev-db)
 

@@ -1,9 +1,14 @@
 # Scan first — the mandatory prereq
 
-Every tricorder workflow starts with a populated DB. Nothing else works
-without it: retrieval flags query it, and the planned turn-0 injection
-and MCP tools (both TBD — not ported) attach to it. An unmapped repo
-only gets the cheap probe digest.
+Every tricorder workflow starts with a populated DB. The ranked map
+(`--tier`, `--stats-only`, map rendering) and `--diff` query it, and
+the planned turn-0 injection and MCP tools (both TBD — not ported)
+attach to it. Note the warmth split: detect/detail/symbols/query do
+*not* read sqlite at query time — they ride the mtime-keyed disk
+caches (per-file tags, file text, cross-reference bundle) plus the
+reused in-process instance, which is why `--no-db` timings match DB
+timings on those tools. An unmapped repo only gets the cheap probe
+digest.
 
 ## The three commands
 
