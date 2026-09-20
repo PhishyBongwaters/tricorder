@@ -138,10 +138,14 @@ tricorder . --exclude-globs 'vendor/**' 'third_party/**' 'node_modules/**'
 Globs are POSIX, relative to `--root`, and applied *before* ranking so
 first-party code dominates the map.
 
-**Resource envelope.** Every scan is bounded: 20,000 files, 500MB total,
-depth 25, 300 seconds, 1MB per file. Hitting a limit yields a partial map
-plus a `scan_warning` — never a silent truncation. Tune via `TRICORDER_MAX_*`
-env vars (see [Configuration](#configuration-reference)).
+**Resource envelope.** Every scan is bounded by depth 25 and 1MB per file;
+file count, total bytes, and scan time are unlimited by default so full-repo
+maps (including `--full`) are never silently truncated. Set
+`TRICORDER_MAX_SCAN_FILES`, `TRICORDER_MAX_TOTAL_BYTES`, or
+`TRICORDER_MAX_SCAN_TIME_S` to impose caps; hitting a cap yields a partial map
+plus a warning — on MCP responses a `scan_warning` field, on the CLI via
+stderr — never a silent truncation. Tune via `TRICORDER_MAX_*` env vars
+(see [Configuration](#configuration-reference)).
 
 **Huge single scan to disk:**
 
@@ -183,8 +187,11 @@ Full tool reference: [MCP Reference](mcp-reference.md).
 
 ## Lifecycle plugins
 
-The plugins inject a **turn-0 probe digest** (language tally, file count,
-line estimate, MCP pointer) at session start — never a full map.
+The plugins inject a **turn-0 steering line** at session start — never a full map.
+If a pre-scan DB covers the project, it reports coverage plus tool steering
+from sqlite (no filesystem walk); otherwise it falls back to a cheap probe
+digest (language tally, file count, line estimate, MCP pointer) marked
+"(not pre-mapped; probe only)".
 
 **Hermes** (`plugins/tricorder/`):
 
@@ -235,10 +242,10 @@ All optional env vars:
 | Var | Default | Purpose |
 |---|---|---|
 | `TRICORDER_CACHE_HOME` | `<workspace>/.tricorder` | Cache + output root |
-| `TRICORDER_MAX_SCAN_FILES` | `20000` | Max files per scan |
-| `TRICORDER_MAX_TOTAL_BYTES` | `524288000` | Max total bytes (500MB) |
+| `TRICORDER_MAX_SCAN_FILES` | `0` (unlimited) | Max files per scan; set to cap |
+| `TRICORDER_MAX_TOTAL_BYTES` | `0` (unlimited) | Max total bytes; set to cap (e.g. `524288000` for 500MB) |
 | `TRICORDER_MAX_SCAN_DEPTH` | `25` | Max walk depth |
-| `TRICORDER_MAX_SCAN_TIME_S` | `300` | Max scan seconds |
+| `TRICORDER_MAX_SCAN_TIME_S` | `0` (unlimited) | Max scan seconds; set to cap |
 | `TRICORDER_MAX_SOURCE_FILE_SIZE` | `1048576` | Max bytes per file (1MB) |
 | `TRICORDER_MAX_ALLOWED_FILES` | `10000` | MCP `max_files` clamp |
 | `TRICORDER_PARSER_TIMEOUT_S` | `5` | Per-file tree-sitter timeout |
@@ -247,7 +254,7 @@ All optional env vars:
 ## Troubleshooting
 
 **"No symbols found" / empty map.** Check the language is supported
-(`utils.EXTENSIONS`, 34 languages) and the files aren't excluded by
+(`utils.CODE_EXTENSIONS`, 34 languages with tree-sitter queries) and the files aren't excluded by
 `--exclude-globs`. Umbrella headers with no symbols correctly yield zero tags.
 
 **Scan is slow on a huge repo.** Use `--pre-index SYMBOL` to narrow first;

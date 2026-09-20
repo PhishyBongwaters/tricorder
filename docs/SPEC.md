@@ -27,8 +27,8 @@ Repo: https://github.com/pdavis68/RepoMapper
 We forked RepoMapper and went deep on language coverage, correctness, and code intelligence:
 
 - **8 critical bug fixes** — NameError, TypeError, cache path, duplicate definitions, dead variables, redundant checks, dedup edge cases, relative_to crash
-- **199 tests** — zero existed in the original
-- **10-language signature extraction** with return types — Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby
+- **301 tests** — zero existed in the original
+- **11-language signature extraction** with return types — Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby
 - **Cross-file call graph** — callers/callees with import resolution across files
 - **Reference captures** — C `call_expression`/type refs, Swift `call_expression`/`navigation_expression`/`user_type` refs
 - **Windows path normalization** — cross-file caller/callee false positives fixed (path separator mismatch)
@@ -80,7 +80,7 @@ tricorder/
 │   └── tricorder/              # bundled usage skill (SKILL.md)
 ├── plugins/
 │   └── tricorder/              # Hermes lifecycle plugin (hooks + /tricorder slash cmd)
-├── tests/                      # 199 tests (ported from RepoMapper fork)
+├── tests/                      # 301 tests (ported from RepoMapper fork)
 ├── README.md
 ├── SPEC.md
 ├── LICENSE                     # MIT
@@ -98,12 +98,14 @@ verified, working surfaces are:
 - **Native MCP client (primary, required):** Hermes launches `tricorder-mcp.exe` (from the
   tricorder venv) via `config.yaml` → `mcp_servers:` and exposes the 7 tools as
   `mcp_tricorder_scan`, `mcp_tricorder_detect`, `mcp_tricorder_symbols`,
-  `mcp_tricorder_detail`, `mcp_tricorder_query`. Confirmed against the real Hermes host (v0.20.0). Requires the
+  `mcp_tricorder_diff`, `mcp_tricorder_detail`, `mcp_tricorder_locate`,
+  `mcp_tricorder_query`. Confirmed against the real Hermes host (v0.20.0). Requires the
   `mcp` Python package in the host and a Hermes restart after config change (no hot-reload).
   The tricorder venv (`D:/Projects/tricorder/.venv`, Python 3.11) already has `mcp`+`fastmcp`.
 - **Lifecycle plugin (primary proactive surface) — BUILT:** `plugins/tricorder/` is a
   real Hermes plugin (manifest + `__init__.py` with `register(ctx)`). It wires the
-  `on_session_start` + `pre_llm_call` hooks so the active project's T0 map is built once
+  `on_session_start` + `pre_llm_call` hooks so the active project gets a turn-0 steering
+  line (coverage from a pre-scan DB, or a probe digest when unmapped) — it never builds a map itself.
   and a compact digest is injected into the first turn's user message — the agent gets
   the codebase skeleton *before* it acts. It also registers `/tricorder` slash commands
   (`root`, `scan`, `status`) and the `tricorder:tricorder` skill. See
@@ -118,7 +120,7 @@ verified, working surfaces are:
 
 ---
 
-## MCP Tools (5)
+## MCP Tools (7)
 
 ### `tricorder_scan` (was `repo_map`)
 Generate a ranked code map for a project directory. Writes to `output_file` to avoid context bloat.
@@ -130,8 +132,7 @@ Generate a ranked code map for a project directory. Writes to `output_file` to a
   "tier": 0,
   "output_file": "/path/to/map.txt",
   "output_format": "text|mermaid",
-  "chat_files": ["file.py"],
-  "exclude_untagged": false
+  "chat_files": ["file.py"]
 }
 ```
 
@@ -177,6 +178,31 @@ Full details for a symbol: body, signature, docstring, callers, callees.
 ```
 
 Returns callers (in-file + cross-file with import resolution) and callees.
+
+---
+
+### `tricorder_diff` (NEW)
+Read-only delta map: compares current file fingerprints against the last scan's recorded `file_state` and returns added/modified/deleted files plus parsed tags for the added/modified files. Never updates the index. When the project was never scanned, every file reports as added with `indexed: false`.
+
+```json
+{
+  "project_root": "/absolute/path/to/project"
+}
+```
+
+---
+
+### `tricorder_locate`
+Locate a symbol in one call: runs detect, then details the best match (exact-name definition preferred; fuzzy rescue otherwise). Auto-escalation collapsing find-the-symbol → show-it into a single round trip.
+
+```json
+{
+  "project_root": "/absolute/path/to/project",
+  "query": "authenticate",
+  "max_tokens": 2048,
+  "max_alternatives": 5
+}
+```
 
 ---
 
@@ -362,14 +388,14 @@ tricorder builds on the work of:
 
 3. **The Hermes Agent community** — for the plugin system, MCP client, and tool framework that tricorder plugs into.
 
-The code in this repository is a rebrand and repackaging of the RepoMapper fork maintained at `http://127.0.0.1:3001/projects/repomapper.git`. The fork added 8 bug fixes, 199 tests, 10-language coverage, cross-file call graph analysis, and Windows compatibility — all of which carry forward to tricorder.
+The code in this repository is a rebrand and repackaging of the RepoMapper fork maintained at `http://127.0.0.1:3001/projects/repomapper.git`. The fork added 8 bug fixes, 301 tests, 11-language coverage, cross-file call graph analysis, and Windows compatibility — all of which carry forward to tricorder.
 
 ---
 
 ## Status
 
 **Phase 1 (rebrand) complete** — RepoMapper fork imported and fully rebranded to tricorder
-(see git log). 199 tests green (incl. `exclude_globs`, language-matrix, graph-query); CLI and MCP server verified.
+(see git log). 301 tests green (incl. `exclude_globs`, language-matrix, graph-query); CLI and MCP server verified.
 **Phase 2 (Hermes integration) complete** — bundled skill (`skills/tricorder/`) added and
 installed; the MCP server is registered under Hermes' `mcp_servers:` (command points at the
 venv's `tricorder-mcp.exe`) and the `mcp` client SDK is present, so after a Hermes restart the

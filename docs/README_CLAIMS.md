@@ -71,7 +71,7 @@ validation status starts as `pending` and is updated as checks run.
 - [pending] `tricorder . --exclude-untagged` drops files with no symbols
 - [pending] `tricorder . --quiet` works
 - [pending] `tricorder . --dry-run --map-tokens 2048` works
-- [pending] `tricorder . --max-files 5000` raises auto-discovery cap (default 1000)
+- [pending] `tricorder . --max-files 5000` raises auto-discovery cap (default 0 = no cap)
 - [pending] `tricorder . --exclude-globs vendor/** third_party/**` works
 - [pending] `tricorder . --top 10` selects top N ranked files
 - [pending] `tricorder . --mermaid --mermaid-top 30` produces Mermaid flowchart
@@ -116,7 +116,7 @@ validation status starts as `pending` and is updated as checks run.
 
 - [pending] `tricorder_scan` generates repo map; `output_format`: `text` or `mermaid`
 - [pending] `tricorder_scan` `tier`: `0` or `1`
-- [pending] `tricorder_scan` params: `token_limit`, `chat_files`, `other_files`, `mentioned_files/idents`, `exclude_unranked`, `exclude_untagged`, `force_refresh`, `max_context_window`, `output_file`, `dry_run`, `exclude_globs`, `pre_index`/`pre_index_max_files`/`pre_index_include_parents`, `full`
+- [verified 2026-09-20] `tricorder_scan` params match `tricorder_server.py` exactly (21 params): `project_root`, `chat_files`, `other_files`, `token_limit`, `exclude_unranked`, `force_refresh`, `mentioned_files`, `mentioned_idents`, `verbose`, `max_context_window`, `tier`, `context_lines`, `output_format`, `max_files`, `output_file`, `dry_run`, `exclude_globs`, `pre_index`, `pre_index_max_files`, `pre_index_include_parents`, `full` (no `exclude_untagged`)
 - [pending] `tricorder_scan` returns `token_estimate`, `full_repo_estimate`, `savings_pct`, `tier_hint`
 - [pending] `tricorder_detect` searches identifiers by name; case-insensitive
 - [pending] `tricorder_detect` params: `query`, `max_results`, `context_lines`, `include_definitions`, `include_references`, `pre_index`/`pre_index_max_files`/`pre_index_include_parents`
@@ -124,7 +124,7 @@ validation status starts as `pending` and is updated as checks run.
 - [pending] `tricorder_symbols` returns name, type, file, line range, signature, docstring, language, ts-kind
 - [pending] `tricorder_symbols` params: `query`, `type`, `file`, `limit` (default 50, cap 200)
 - [pending] `tricorder_detail` deep-dive: body, callers, callees
-- [pending] `tricorder_detail` params: `name`, `file`, `line`
+- [verified 2026-09-20] `tricorder_detail` params match `tricorder_server.py` exactly: `project_root`, `file`, `name`, `line`, `max_tokens`
 - [pending] `tricorder_query` graph traversal DSL
 - [pending] `tricorder_query` DSL: `callers('sym') depth=2 exclude=tests/** | callees('other') type=class`
 - [pending] `tricorder_query` returns `{nodes, edges, token_estimate, savings_pct}`
@@ -258,7 +258,7 @@ validation status starts as `pending` and is updated as checks run.
 - [pending] TC-008: `--output` is the sole sanctioned user-chosen path outside cache root
 - [pending] TC-008: `--output` still fails gracefully (honest error + stdout fallback) if path is unwritable
 - [pending] TC-008: All in-process writes route through `utils.safe_write()`, which raises `ValueError` on any target escaping cache root
-- [pending] TC-002: Global budget — max 20k files, 500 MB, depth 25, 300s, 1 MB/file
+- [verified 2026-09-20] TC-002: Resource envelope — depth 25, 1MB/file bounded by default; file count, total bytes, scan time unlimited (0) by default, settable via `TRICORDER_MAX_SCAN_FILES` / `TRICORDER_MAX_TOTAL_BYTES` / `TRICORDER_MAX_SCAN_TIME_S`. Docs corrected 2026-09-20 (previously claimed enforced 20k/500MB/300s defaults).
 - [pending] TC-002: Resource envelope limits → partial result + `scan_warning`
 - [pending] TC-002: Tunable via `TRICORDER_MAX_*` env vars
 - [pending] TC-003: Tags cache lives outside the repo
@@ -283,10 +283,8 @@ validation status starts as `pending` and is updated as checks run.
 
 - [pending] Signature extraction + return types for: Python, JavaScript, TypeScript, C, C++, Java, Go, Rust, Swift, C#, Ruby (11 grammars)
 - [pending] Enforced by `tests/test_language_matrix.py` (`test_claimed_languages_extract_defined_signature`)
-- [pending] Wider parse support for 28 total languages via `tree-sitter-language-pack` (29 grammars listed)
-- [pending] `tree-sitter-languages` (22 grammars) adds: kotlin, php, ql, scala, typescript
-- [pending] Union = 28 distinct languages
-- [pending] Canonical list in `utils.py` `EXTENSIONS`
+- [verified 2026-09-20] 34 languages with tree-sitter query files under `queries/` (verified: 34 of 38 `CODE_EXTENSIONS` languages have a `*-tags.scm`; css, html, objc, systemverilog map extensions but have no query file)
+- [pending] Canonical extension table in `utils.py` `CODE_EXTENSIONS` (53 extensions → 38 languages)
 - [pending] `.h` files mapped to `cpp` (cpp grammar is strict superset of C)
 - [pending] Language registry (ctags_probe.py): Single source of truth for 24 languages
 - [pending] Shared by ctags pre-index probe and tree-sitter extraction
@@ -310,7 +308,7 @@ validation status starts as `pending` and is updated as checks run.
 
 - [pending] Gen 1 — Aider `RepoMap` (Paul Gauthier): tree-sitter + PageRank
 - [pending] Gen 2 — RepoMapper (Paul Davis / pdavis68): standalone CLI + MCP server
-- [pending] Gen 3 — tricorder: fork — 8 bug fixes, 123 tests, 10-language signature extraction, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, full rebrand
+- [pending] Gen 3 — tricorder: fork — 301+ tests, 11-language signature extraction, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, DB-backed ranking with extractor versioning
 - [pending] MIT Licensed
 - [pending] Based on the RepoMap design from the Aider project
 
@@ -328,3 +326,9 @@ Track progress here as claims are verified:
 ```
 [date] [claim-section] [status: pass|fail|partial|pending] [notes]
 ```
+
+[2026-09-20] [§14 MCP Tools] [pass] All 7 tool signatures in `tricorder_server.py` match `docs/mcp-reference.md` param tables exactly (scan 21, detect 10, symbols 5, diff 1, detail 5, locate 4, query 3). Claims §14 updated: scan has no `exclude_untagged`; detail has `max_tokens`.
+[2026-09-20] [§6/§9 CLI] [pass] All 39 `--help` flags appear in `docs/cli-reference.md`; `--since` alias documented in README + cli-reference.
+[2026-09-20] [§25 Languages] [pass] 34 languages have tree-sitter query files under `queries/` (CODE_EXTENSIONS maps 53 extensions → 38 languages; css/html/objc/systemverilog have no query file). 11 signature-extraction languages enforced by `tests/test_language_matrix.py`. Claims §25 updated (was stale: 28 languages, `utils.EXTENSIONS`).
+[2026-09-20] [README counts] [pass] Badge + contributing + lineage all say 301, matching `pytest tests/ --ignore=tests/test_e2e_mcp.py` (301 passed, 3 skipped, 93 subtests).
+[2026-09-20] [Prose audit] [pass-with-fixes] Deep audit of user-guide/SPEC/architecture/cli-reference/benchmarks found 8 issues, all fixed: (1) resource-envelope defaults were documented as enforced 20k/500MB/300s but code defaults are 0=unlimited since the --full feature commit (docs corrected; duplicate `_MAX_SCAN_DEPTH` line removed; stale comments in utils.py + tricorder_server.py fixed); (2) SPEC "MCP Tools (5)" → 7 with diff/locate sections added; (3) SPEC "199 tests" ×4 → 301; (4) SPEC "10-language" ×2 → 11; (6) turn-0 plugin described as probe-only, actually DB-first with probe fallback (user-guide + cli-reference + SPEC corrected); (7) `scan_warning` is MCP-only, CLI uses stderr; (8) >100MB tag files are skipped, not "treated as corrupt". (5) was a false positive: "34 languages with tree-sitter queries" is correct (css/html/objc/systemverilog are ext-mapped but "no-query").

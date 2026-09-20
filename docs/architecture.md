@@ -11,8 +11,11 @@ discover → parse → qualify → store → rank → render
 ```
 
 1. **Discover** (`utils.discover_src_files`): walk `--root`, filter by
-   extension (`utils.EXTENSIONS`, 34 languages), apply `--exclude-globs`,
-   enforce the resource envelope (20k files / 500MB / depth 25 / 300s).
+   extension (`utils.CODE_EXTENSIONS`, 34 languages with tree-sitter queries), apply `--exclude-globs`,
+   enforce the resource envelope (depth 25 / 1MB per file by default; file
+   count, total bytes, and scan time unlimited unless capped via
+   `TRICORDER_MAX_SCAN_FILES` / `TRICORDER_MAX_TOTAL_BYTES` /
+   `TRICORDER_MAX_SCAN_TIME_S`).
    `--pre-index SYMBOL` short-circuits this: rg-first file narrowing, no walk.
 2. **Parse** (`ParserMixin.get_tags_raw`): tree-sitter per file (5s hard timeout
    each, `TRICORDER_PARSER_TIMEOUT_S`), one cached parser per language.
@@ -111,7 +114,7 @@ Repository content is **untrusted input**. Controls:
 | ID | Control | Behavior |
 |---|---|---|
 | TC-001 | Content boundary | Raw maps wrapped in `BEGIN/END UNTRUSTED REPOSITORY CONTEXT`. |
-| TC-002 | Resource envelope | 20k files, 500MB, depth 25, 300s, 1MB/file → partial result + `scan_warning`. Tunable via `TRICORDER_MAX_*`. |
+| TC-002 | Resource envelope | depth 25, 1MB/file by default; file count, total bytes, scan time unlimited unless capped via `TRICORDER_MAX_*` → partial result + warning. |
 | TC-003 | Cache isolation | Automatic caches outside the repo; the opt-in `--init` DB lives at `<root>/.tricorder/db/` by design. |
 | TC-004 | Parser timeout | 5s hard timeout per file (`TRICORDER_PARSER_TIMEOUT_S`); hangs are skipped. |
 | TC-005 | Trust metadata | Every MCP response stamped `source: scanned_repository`, `trust: untrusted_repository_content`. |

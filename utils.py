@@ -232,8 +232,8 @@ _MAX_SOURCE_FILE_SIZE = 1024 * 1024
 _MAX_SCAN_FILES = 0  # 0 = unlimited; env TRICORDER_MAX_SCAN_FILES to cap
 # TC-002: missing envelope pieces — directory-depth, total-byte, and scan-time
 # budgets so a hostile repo can't drive unbounded CPU/memory/disk. All
-# overridable via env; discovery already early-stops at _MAX_SCAN_FILES.
-_MAX_SCAN_DEPTH = 25
+# overridable via env; discovery early-stops at _MAX_SCAN_FILES only when set
+# (0 = unlimited by default so full-repo maps are never truncated).
 _MAX_SCAN_DEPTH = 25
 _MAX_TOTAL_BYTES = 0  # 0 = unlimited; env TRICORDER_MAX_TOTAL_BYTES to cap
 _MAX_SCAN_TIME_S = 0.0  # 0 = unlimited; env TRICORDER_MAX_SCAN_TIME_S to cap

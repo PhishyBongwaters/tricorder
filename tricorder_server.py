@@ -479,8 +479,9 @@ async def tricorder_scan(
     
     # TC-007: clamp max_files server-side — prevents callers from requesting
     # absurd scan sizes (e.g. 999999999) that could exhaust resources.
-    # Discovery already early-stops at 20_000 (MAX_SCAN_FILES in utils.py),
-    # but clamp the param itself so downstream code never sees an absurd value.
+    # Discovery early-stops at MAX_SCAN_FILES (utils.py) only when that env cap
+    # is set (0 = unlimited by default), but clamp the param itself so
+    # downstream code never sees an absurd value.
     MAX_ALLOWED_FILES_ENV = os.environ.get("TRICORDER_MAX_ALLOWED_FILES")
     MAX_ALLOWED_FILES = 999999999 if (MAX_ALLOWED_FILES_ENV is not None and MAX_ALLOWED_FILES_ENV == "0") else (int(MAX_ALLOWED_FILES_ENV) if MAX_ALLOWED_FILES_ENV else 10000)
     max_files = min(max_files, MAX_ALLOWED_FILES)

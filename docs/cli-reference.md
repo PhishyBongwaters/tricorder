@@ -71,7 +71,7 @@ authoritative.
 
 | Flag | Default | Description |
 |---|---|---|
-| `--pre-index SYMBOL` | — | Narrow the scan to files containing SYMBOL. rg-first (`rg -l -w` with multi-language globs); ctags fallback only if rg finds nothing. Ctags index builds are refused on >20,000 source files; >100MB tag files are treated as corrupt. |
+| `--pre-index SYMBOL` | — | Narrow the scan to files containing SYMBOL. rg-first (`rg -l -w` with multi-language globs); ctags fallback only if rg finds nothing. Ctags index builds are refused on >20,000 source files; >100MB existing tag files are skipped (rg-only fallback), not treated as corrupt. |
 | `--pre-index-max-files N` | `100` | Cap on files pulled in from probe results. |
 | `--pre-index-include-parents N` | `0` | Also include N parent directories of matched files. |
 
@@ -105,7 +105,7 @@ being held in RAM. See [Architecture](architecture.md#scan-pipeline).
 | `--dry-run` | Estimate the token budget without generating the map. |
 | `--signature-only` | Print the 16-char stat-based content signature and exit. No map is built. Used by the lifecycle plugin for cache validation. |
 | `--stats-only [MAP_FILE]` | Print token-budget JSON for `--root` and exit: `{token_estimate, full_repo_estimate, savings_pct}`. No map is built. |
-| `--probe-digest` | Print the turn-0 probe digest (language tally + sizes + navigation hint) for `--root` and exit. No map build, no token budget — cheap even on huge repos. This is the exact text the Hermes/DSH plugins inject at session start. |
+| `--probe-digest` | Print the turn-0 probe digest (language tally + sizes + navigation hint) for `--root` and exit. No map build, no token budget — cheap even on huge repos. This is the digest the Hermes/DSH plugins fall back to when the project isn't pre-mapped (a pre-mapped project instead gets a coverage/steering line from its DB). |
 | `--force-refresh` | Force refresh of caches. |
 
 ## Examples
@@ -126,6 +126,8 @@ tricorder . --top 10 --format json             # Top 10 tags as JSON
 
 - On success the map (or requested diagnostic) goes to stdout; `--output` writes to a file instead.
 - `--quiet` guarantees stdout contains *only* the map — safe for piping.
-- Resource limits (20k files, 500MB, depth 25, 300s, 1MB/file — see
+- Resource limits (depth 25, 1MB per file by default; file count, total
+  bytes, scan time unlimited unless capped via `TRICORDER_MAX_*` — see
   [Architecture](architecture.md#security-model)) produce a partial result plus
-  a `scan_warning`, never a silent truncation.
+  a warning on stderr (MCP responses carry a `scan_warning` field),
+  never a silent truncation.
