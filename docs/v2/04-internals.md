@@ -47,7 +47,8 @@ How the moving parts work under the flow in `01-pipeline.md`.
    tree ctags run once produced a 1.4GB artifact.
 
 Probe hits become the file list; misses fall back to the normal walk
-with a warning. Requires the `rg` binary on PATH.
+with a warning. Neither `rg` nor `ctags` is required — the probe
+degrades gracefully when both are absent.
 
 ## Import resolution (`import_parser.py`, `name_resolver.py`)
 

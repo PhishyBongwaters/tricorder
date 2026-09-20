@@ -2,11 +2,11 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-339%20passed%2C%201%20skipped-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-351%20passed%2C%201%20skipped-brightgreen.svg)](tests/)
 
 **Turn any codebase into a token-efficient map an LLM agent can actually navigate.**
 
-Tricorder scans a repository with tree-sitter, ranks every symbol by importance (PageRank over the call graph), and emits a compact map — definitions, signatures, and cross-file references — sized to fit your context window. A 50M-token Linux kernel becomes a 40K-token map pointing straight at `kernel/sched/fair.c:pick_next_task`.
+Tricorder scans a repository with tree-sitter, ranks every symbol by importance (PageRank over the call graph), and emits a compact map — definitions, signatures, and cross-file references — sized to fit your context window. A 50M-token Linux kernel becomes a 40K-token map pointing straight at `pick_next_task` (`kernel/sched/`).
 
 ```
 $ tricorder /path/to/repo --map-tokens 2048
@@ -34,7 +34,7 @@ Three interfaces, one engine: a **CLI** for humans and scripts, an **MCP server*
 | Manual dependency tracing | Automatic call graph + PageRank |
 | Context window overflow | Token-budgeted output (~1.5% of the full repo) |
 
-**Measured:** 15/15 benchmarks pass across C++, Rust, TypeScript, Go, and the Linux kernel — 86.7–100% token savings. See [Benchmarks](docs/benchmarks.md).
+**Measured (pre-db-map pipeline, Gen 2):** 15/15 benchmarks pass across C++, Rust, TypeScript, Go, and the Linux kernel — 86.7–100% token savings. See [Benchmarks](docs/benchmarks.md). Re-measurement on the db-map branch is pending.
 
 ## Quick Start
 
@@ -65,7 +65,7 @@ That's it. No config files, no model keys, no network calls — everything runs 
 - **Delta maps** — `tricorder_diff` / `--diff` (alias `--since`) shows what changed since the last scan (read-only)
 - **Budget-aware detail** — `tricorder_detail(max_tokens=…)` trims body → callees → callers, never identity
 - **Cross-file call graph** — import-resolved callers/callees, persisted across processes
-- **DB-backed scanning (default)** — tags stream into sqlite; extractor versioning forces rescan when the parser changes
+- **DB-backed scanning** (after `--init`; a fresh repo with no index scans in-memory) — tags stream into sqlite; extractor versioning forces rescan when the parser changes
 - **Content-aware caching** — cache lives outside the repo; stat-based signatures invalidate on change
 - **Security model** — repo content treated as untrusted input (path containment, output containment, resource envelopes)
 
@@ -117,12 +117,12 @@ Tricorder treats **repository content as untrusted input**. Every MCP response i
 .venv/Scripts/python -m pytest tests/ -q -p no:cacheprovider   # full suite
 ```
 
-339 tests passing, 1 skipped (Windows-only), 93 subtests. Bug reports and PRs welcome — please include a failing test where practical. See [AGENTS.md](AGENTS.md) for repo conventions.
+351 tests passing, 1 skipped (Windows-only), 93 subtests. Bug reports and PRs welcome — please include a failing test where practical. See [AGENTS.md](AGENTS.md) for repo conventions.
 
 ## Lineage
 
 1. **Gen 1 — Aider `RepoMap`** (Paul Gauthier): tree-sitter + PageRank.
 2. **Gen 2 — RepoMapper** (Paul Davis): standalone CLI + MCP server. Upstream: https://github.com/pdavis68/RepoMapper
-3. **Gen 3 — tricorder**: this fork — 301+ tests, 11-language signature extraction, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, DB-backed ranking with extractor versioning.
+3. **Gen 3 — tricorder**: this fork — 351 tests, 93 validated languages, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, DB-backed ranking with extractor versioning.
 
 Lineage intentionally kept visible. MIT Licensed — see [LICENSE](LICENSE).

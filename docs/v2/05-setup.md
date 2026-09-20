@@ -2,8 +2,10 @@
 
 ## 1. Prereqs
 
-- Python ≥3.11, `rg` (ripgrep) on PATH — required for `--pre-index`
-  narrowing. `ctags` optional (index fallback only).
+- Python ≥3.11, `rg` (ripgrep) on PATH — recommended for the
+  `--pre-index` fast path. `ctags` is the index fallback when `rg`
+  is absent; with neither, the probe degrades to a full walk with
+  a warning. Neither binary is required.
 - Node ≥22 + pnpm — only for the DSH plugin build.
 
 ## 2. Install
@@ -15,7 +17,9 @@ python -m venv .venv && .venv/Scripts/pip install -e .   # Windows
 ```
 
 `pip install -e .` is authoritative (pyproject). `requirements.txt`
-pins the same set for CI. No scipy/numpy — ranking is SQL, not scipy.
+pins the last-known-good set; it may lag pyproject (it currently
+omits `mcp` and pins `fastmcp` below pyproject's floor). No
+scipy/numpy — ranking is SQL, not scipy.
 
 ## 3. Verify (no config, no repos)
 

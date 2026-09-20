@@ -39,6 +39,7 @@
 - `<repo>/.tricorder/db/<repo>.db` — per-repo sqlite (canonical).
 - `<repo>.map` beside it — rendered output. Both gitignored
   (`.tricorder/`).
-- `.tricorder.tags.cache.v1/` — per-file parse cache.
+- `<cache root>/cache/<sha1(repo|version|config)[:16]>/` — per-file parse
+  cache, mtime-keyed (see `cache.py:_cache_dir`).
 - `TRICORDER_CACHE_HOME` relocates the shared cache root.
 - Full suite: `pytest tests/` from repo root (repo `.venv`).
