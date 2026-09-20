@@ -52,6 +52,9 @@ class TestCoreSearch(unittest.TestCase):
     def test_search_identifiers_exact_mode(self):
         results, _ = self.tc.search_identifiers(
             "authenticate", search_mode="exact")
+        # all([]) is True — assert non-empty first or exact-mode silently
+        # returning nothing passes.
+        self.assertTrue(results)
         self.assertTrue(all(r["name"] == "authenticate" for r in results))
 
     def test_search_identifiers_bad_regex(self):

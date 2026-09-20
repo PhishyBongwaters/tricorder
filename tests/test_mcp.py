@@ -59,14 +59,23 @@ class TestMCPTokenLimit(unittest.TestCase):
 
     def test_max_files_cap(self):
         """Auto-scan respects max_files limit."""
-        from tricorder_server import find_src_files
+        import asyncio
+        from tricorder_server import find_src_files, tricorder_scan
         all_files = find_src_files(self.project_root)
         max_files = 10
-        if len(all_files) > max_files:
-            capped = all_files[:max_files]
-            self.assertEqual(len(capped), max_files)
-        else:
-            self.assertLessEqual(len(all_files), max_files)
+        self.assertGreater(len(all_files), max_files,
+                           "fixture must exceed the cap for the test to mean anything")
+        result = asyncio.run(tricorder_scan(
+            project_root=self.project_root,
+            token_limit=2048,
+            tier=0,
+            max_files=max_files,
+            output_format="text",
+        ))
+        self.assertNotIn("error", result)
+        self.assertLessEqual(
+            result["report"]["total_files_considered"], max_files,
+            "auto-scan must honor the max_files prefix cap")
 
 
 class TestMCPTierContext(unittest.TestCase):
@@ -80,6 +89,8 @@ class TestMCPTierContext(unittest.TestCase):
         rm_small = Tricorder(root=self.project_root, context_lines=2)
         rm_large = Tricorder(root=self.project_root, context_lines=5)
         ranked_tags, _ = rm_small.get_ranked_tags([class_path], [])
+        # Guarded assertions below would pass silently on empty results.
+        self.assertTrue(ranked_tags, "fixture must yield tags for the comparison")
         if ranked_tags:
             tree_small = rm_small.to_tree(ranked_tags[:3], set())
             tree_large = rm_large.to_tree(ranked_tags[:3], set())
@@ -191,6 +202,7 @@ class TestMCPOutputFile(unittest.TestCase):
 
         self.assertIn("map", result, "Without output_file, 'map' key should be present")
         self.assertNotIn("map_file", result)
+        self.assertNotIn("error", result, "dry_run=False stdout scan must succeed")
         if "error" not in result:
             self.assertIsInstance(result["map"], str)
         # TC-005: trust metadata on stdout success responses
@@ -257,8 +269,19 @@ class TestMCPMaxFilesClamp(unittest.TestCase):
     def test_max_files_clamped_to_server_limit(self):
         """A caller passing max_files=999999999 is clamped to MAX_ALLOWED_FILES."""
         import asyncio
-        from tricorder_server import tricorder_scan
-        # Request absurd size — should be clamped, not honored
+        from tricorder_server import tricorder_scan, _clamp_max_files
+        # Unit-level: the TC-007 clamp itself (a full scan can't observe it —
+        # no test repo has 10000+ files, so the server limit is unreachable
+        # end-to-end). Pin the env so the default is exercised.
+        import os
+        saved = os.environ.pop("TRICORDER_MAX_ALLOWED_FILES", None)
+        try:
+            self.assertEqual(_clamp_max_files(999999999), 10000)
+            self.assertEqual(_clamp_max_files(10), 10)
+        finally:
+            if saved is not None:
+                os.environ["TRICORDER_MAX_ALLOWED_FILES"] = saved
+        # End-to-end: an absurd max_files still completes a valid scan.
         result = asyncio.run(tricorder_scan(
             project_root=self.project_root,
             token_limit=2048,
@@ -267,8 +290,6 @@ class TestMCPMaxFilesClamp(unittest.TestCase):
             output_format="text",
         ))
         self.assertNotIn("error", result)
-        # If there are files, the result should still be bounded (not crash)
-        # The clamp guarantees the scan never processes more than MAX_ALLOWED_FILES
         if "tags" in result:
             self.assertIsInstance(result["tags"], int)
 
@@ -331,6 +352,7 @@ class TestMCPTrustMetadata(unittest.TestCase):
             query="Tricorder",
             max_results=5,
         ))
+        self.assertNotIn("error", result, "tool call must succeed for trust-metadata assertions")
         if "error" not in result:
             self.assertEqual(result.get("source"), "scanned_repository")
             self.assertEqual(result.get("trust"), "untrusted_repository_content")
@@ -344,6 +366,7 @@ class TestMCPTrustMetadata(unittest.TestCase):
             query="Tricorder",
             limit=5,
         ))
+        self.assertNotIn("error", result, "tool call must succeed for trust-metadata assertions")
         if "error" not in result:
             self.assertEqual(result.get("source"), "scanned_repository")
             self.assertEqual(result.get("trust"), "untrusted_repository_content")
@@ -388,6 +411,7 @@ class TestMCPTrustMetadata(unittest.TestCase):
             query='defs("Tricorder") depth=1 limit=10',
             token_limit=2048,
         ))
+        self.assertNotIn("error", result, "tool call must succeed for trust-metadata assertions")
         if "error" not in result:
             self.assertEqual(result.get("source"), "scanned_repository")
             self.assertEqual(result.get("trust"), "untrusted_repository_content")

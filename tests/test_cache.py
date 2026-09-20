@@ -65,6 +65,7 @@ class TestTricorderT1Context(unittest.TestCase):
         self.assertEqual(repo_map.context_lines, 0)
         class_path = str(Path(self.project_root) / 'core.py')
         ranked_tags, _ = repo_map.get_ranked_tags([class_path], [])
+        self.assertTrue(ranked_tags, "fixture must yield tags for the assertions below")
         if ranked_tags:
             tree = repo_map.to_tree(ranked_tags[:5], set())
             # T0 should only show definition lines, no surrounding context
@@ -88,6 +89,7 @@ class TestTricorderT1Context(unittest.TestCase):
         self.assertEqual(repo_map.context_lines, 100)
         class_path = str(Path(self.project_root) / 'core.py')
         ranked_tags, _ = repo_map.get_ranked_tags([class_path], [])
+        self.assertTrue(ranked_tags, "fixture must yield tags for the assertions below")
         if ranked_tags:
             tree = repo_map.to_tree(ranked_tags[:5], set())
             # Should not crash even with large context_lines (clamped to file boundaries)
@@ -98,6 +100,7 @@ class TestTricorderT1Context(unittest.TestCase):
         repo_map = Tricorder(root=self.project_root, context_lines=0)
         class_path = str(Path(self.project_root) / 'core.py')
         ranked_tags, _ = repo_map.get_ranked_tags([class_path], [])
+        self.assertTrue(ranked_tags, "fixture must yield tags for the assertions below")
         if ranked_tags:
             tree = repo_map.to_tree(ranked_tags[:5], set())
             self.assertNotIn('(Rank value:', tree)

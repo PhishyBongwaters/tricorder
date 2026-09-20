@@ -99,5 +99,8 @@ def test_probe_and_narrow_happy_path(repo):
         pytest.skip("ctags not installed")
     rel = probe_and_narrow(str(repo), "add")
     assert isinstance(rel, list)
+    # The happy path must actually narrow to files — a broken probe
+    # returning [] passes the guarded assertion below silently.
+    assert rel, "probe must narrow to files when ctags is present"
     if rel:
         assert any("lib.c" in f or "lib.h" in f for f in rel), rel

@@ -53,7 +53,7 @@ docs until the plugin port lands and is verified live.
 
 ## MCP + turn-0 plugin — TBD (not ported)
 
-`tricorder_server.py` (tools: scan, detect, symbols, detail, query)
+`tricorder_server.py` (tools: scan, detect, symbols, detail, query, locate, diff)
 and the Hermes/DSH turn-0 injectors (`tricorder_inject.py`,
 `tricorder_client.py`, `plugins/`) exist in tree but are **not
 revalidated on this branch**. Intended flow once ported: fresh session

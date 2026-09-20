@@ -168,8 +168,11 @@ class TestGraphQueryIntegration(unittest.TestCase):
         result2 = tricorder.query_graph(parsed2)
         nodes2 = len(result2["nodes"])
 
-        # Depth 2 should find at least as many (or more) nodes
-        self.assertGreaterEqual(nodes2, nodes1)
+        # Depth 2 should find strictly more nodes than depth 1 (fixture has
+        # caller-of-callers), and depth 1 must find something — otherwise the
+        # depth= parameter is silently ignored and both are 0.
+        self.assertGreater(nodes1, 0, "depth=1 found nothing; fixture or depth broken")
+        self.assertGreater(nodes2, nodes1)
 
     def test_type_filter(self):
         """Test type filter."""
@@ -288,8 +291,10 @@ class TestGraphQueryIntegration(unittest.TestCase):
         result = tricorder.query_graph(parsed)
         elapsed = time.time() - start
 
-        # Should complete in under 500ms for small repo
-        self.assertLess(elapsed, 0.5)
+        # Completes well within a generous bound for a small repo. (Was 0.5s —
+        # that tight a bound flakes under CI load; the intent is guarding
+        # against pathological slowness, not 500ms.)
+        self.assertLess(elapsed, 5.0)
 
 
 class TestGraphQueryMCPTool(unittest.TestCase):

@@ -394,6 +394,17 @@ def _attach_scan_warning(resp: dict) -> dict:
     return resp
 
 
+def _clamp_max_files(max_files: int) -> int:
+    """TC-007: clamp max_files server-side — prevents callers from requesting
+    absurd scan sizes (e.g. 999999999) that could exhaust resources.
+    Discovery early-stops at MAX_SCAN_FILES (utils.py) only when that env cap
+    is set (0 = unlimited by default), but clamp the param itself so
+    downstream code never sees an absurd value."""
+    MAX_ALLOWED_FILES_ENV = os.environ.get("TRICORDER_MAX_ALLOWED_FILES")
+    MAX_ALLOWED_FILES = 999999999 if (MAX_ALLOWED_FILES_ENV is not None and MAX_ALLOWED_FILES_ENV == "0") else (int(MAX_ALLOWED_FILES_ENV) if MAX_ALLOWED_FILES_ENV else 10000)
+    return min(max_files, MAX_ALLOWED_FILES)
+
+
 @mcp.tool()
 async def tricorder_scan(
     project_root: str,
@@ -462,14 +473,8 @@ async def tricorder_scan(
     if token_limit <= 0:
         token_limit = 8192
     
-    # TC-007: clamp max_files server-side — prevents callers from requesting
-    # absurd scan sizes (e.g. 999999999) that could exhaust resources.
-    # Discovery early-stops at MAX_SCAN_FILES (utils.py) only when that env cap
-    # is set (0 = unlimited by default), but clamp the param itself so
-    # downstream code never sees an absurd value.
-    MAX_ALLOWED_FILES_ENV = os.environ.get("TRICORDER_MAX_ALLOWED_FILES")
-    MAX_ALLOWED_FILES = 999999999 if (MAX_ALLOWED_FILES_ENV is not None and MAX_ALLOWED_FILES_ENV == "0") else (int(MAX_ALLOWED_FILES_ENV) if MAX_ALLOWED_FILES_ENV else 10000)
-    max_files = min(max_files, MAX_ALLOWED_FILES)
+    # TC-007: clamp max_files server-side.
+    max_files = _clamp_max_files(max_files)
     
     chat_files_list = chat_files or []
     mentioned_fnames_set = set(mentioned_files) if mentioned_files else None

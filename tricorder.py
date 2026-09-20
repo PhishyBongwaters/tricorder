@@ -231,7 +231,7 @@ Examples:
         metavar="QUERY",
         default=None,
         help="Search identifier definitions/references for QUERY and exit "
-             "(MCP tricorder_detect equivalent). Honors --format."
+             "(MCP tricorder_detect equivalent, subset of its options). Honors --format."
     )
 
     parser.add_argument(
@@ -239,7 +239,7 @@ Examples:
         metavar="QUERY",
         default=None,
         help="Search code symbols for QUERY and exit "
-             "(MCP tricorder_symbols equivalent). Honors --format."
+             "(MCP tricorder_symbols equivalent, subset of its options). Honors --format."
     )
 
     parser.add_argument(

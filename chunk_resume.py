@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Serial rising-cap chunk loop: one command to full coverage.
 
-Usage: chunk_resume.py <repo-path> [--start-cap N] [--step N] [--timeout S]
+Usage: chunk_resume.py <repo-path> [--start-cap N] [--step N] [--timeout S] [--db-path PATH]
 
 Loops `tricorder.py --db-path <canonical> --max-files <cap>` with a rising
 cap. Each run parses up to <cap> UNMAPPED files (drop_mapped_files slides
