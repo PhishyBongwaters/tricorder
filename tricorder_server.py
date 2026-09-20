@@ -617,9 +617,16 @@ def wrap_untrusted_content(text: str) -> str:
     return f"{_TRUST_BEGIN}\n{text}\n{_TRUST_END}"
 
 
-def _attach_scan_warning(resp: dict) -> dict:
-    """TC-002: attach the resource-envelope partial-scan warning if any."""
-    warn = _last_scan_report.get("warning")
+def _attach_scan_warning(resp: dict, warning: Optional[str] = None) -> dict:
+    """TC-002: attach the resource-envelope partial-scan warning if any.
+
+    Callers pass the warning snapshotted synchronously right after
+    find_src_files: _last_scan_report is a process-global dict, and an
+    interleaved scan for another root can overwrite it across the awaits
+    between discovery and response time. Falls back to the global when no
+    snapshot is given (backward compat).
+    """
+    warn = warning if warning is not None else _last_scan_report.get("warning")
     if warn:
         resp["scan_warning"] = warn
     return resp
@@ -714,6 +721,11 @@ async def tricorder_scan(
     # 2. If a specific list of other_files isn't provided, scan the whole root directory.
     # This should happen regardless of whether chat_files are present.
     effective_other_files = []
+    # Snapshot of this call's discovery warning (TC-002): _last_scan_report
+    # is process-global, so capture it synchronously right after
+    # find_src_files — before any await — or an interleaved scan for
+    # another root would overwrite it and we'd attach their warning.
+    scan_warning: Optional[str] = None
     if other_files:
         effective_other_files = other_files
     else:
@@ -735,6 +747,8 @@ async def tricorder_scan(
         if not effective_other_files:
             log.info("No other_files provided, scanning root directory for context...")
             effective_other_files = find_src_files(project_root, exclude_globs=exclude_globs)
+            # Snapshot before any await: see the scan_warning declaration above.
+            scan_warning = _last_scan_report.get("warning")
             # Prefix cap (house rule): max_files caps the discovery prefix
             # FIRST, then already-mapped files within the prefix are dropped
             # so a resumed rising-cap run doesn't re-parse them. Fixed-cap
@@ -873,7 +887,7 @@ async def tricorder_scan(
                     file_report.total_files_considered)
                 if advisory:
                     result["scan_advisory"] = advisory
-                return _attach_scan_warning(_mark_untrusted(result))
+                return _attach_scan_warning(_mark_untrusted(result), warning=scan_warning)
 
             # output_file path — generate the actual map, write to disk, return metadata
             if output_format == "mermaid":
@@ -949,7 +963,7 @@ async def tricorder_scan(
                         f"only escalate tiers if the previous tier genuinely failed to answer your question."
                     )
             _tier_history_set(project_root, {"last_tier": tier, "last_format": output_format, "map_file": str(out_path)})
-            return _attach_scan_warning(_mark_untrusted(result))
+            return _attach_scan_warning(_mark_untrusted(result), warning=scan_warning)
 
         # Stdout path (backward compat — no output_file, no dry_run)
         if output_format == "mermaid":
@@ -994,7 +1008,7 @@ async def tricorder_scan(
                 "token_estimate": _tok,
                 "full_repo_estimate": _full,
                 "savings_pct": _savings_pct(_tok, _full),
-                "coverage_pct": file_report.coverage_pct}))
+                "coverage_pct": file_report.coverage_pct}), warning=scan_warning)
 
     except Exception as e:
         log.exception(f"Error generating repository map for project '{project_root}': {e}")

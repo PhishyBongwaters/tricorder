@@ -843,23 +843,30 @@ class RankingMixin:
             # Filter graph to top nodes only
             G = nx.MultiDiGraph(G.subgraph(top_nodes))
         
-        # Build Mermaid output
+        # Build Mermaid output.
+        # Node IDs are positional (n0, n1, ...) rather than sanitized
+        # paths: the old path.replace(".","_").replace("/","_") scheme
+        # collided ('a.b/c.py' and 'a/b.c.py' both became 'a_b_c_py'),
+        # merging two nodes into one and collapsing their edges. The real
+        # path lives only in the quoted label, with quotes/newlines
+        # escaped so a hostile filename can't break out of the label
+        # (mermaid renders #34; / #124; as " and |).
+        def _label(text):
+            return (str(text).replace('"', '#34;')
+                    .replace('\r', ' ').replace('\n', ' '))
         lines = ["graph TD"]
-        # Node definitions with styling — use relative paths for readability
-        for node in sorted(G.nodes()):
-            rank = ranks.get(node, 0.0)
-            # Chat files get highlighted
+        node_ids = {}
+        for i, node in enumerate(sorted(G.nodes())):
+            node_ids[node] = f"n{i}"
             if node in chat_rel_fnames:
-                lines.append(f'    {node.replace(".", "_").replace("/", "_")}["{node}"] :::chat')
+                lines.append(f'    n{i}["{_label(node)}"] :::chat')
             else:
-                lines.append(f'    {node.replace(".", "_").replace("/", "_")}["{node}"]')
-        
+                lines.append(f'    n{i}["{_label(node)}"]')
+
         # Edges
         for src, dst, data in G.edges(data=True):
-            src_id = src.replace(".", "_").replace("/", "_")
-            dst_id = dst.replace(".", "_").replace("/", "_")
-            edge_name = data.get("name", "")
-            lines.append(f'    {src_id} -->|{edge_name}| {dst_id}')
+            edge_name = _label(data.get("name", "")).replace("|", "#124;")
+            lines.append(f'    {node_ids[src]} -->|{edge_name}| {node_ids[dst]}')
         
         # Styling
         lines.append("")
