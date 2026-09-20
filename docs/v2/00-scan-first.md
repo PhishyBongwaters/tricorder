@@ -1,8 +1,9 @@
 # Scan first — the mandatory prereq
 
 Every tricorder workflow starts with a populated DB. Nothing else works
-without it: turn-0 injection reads the DB, MCP tools attach it, retrieval
-flags query it. An unmapped repo only gets the cheap probe digest.
+without it: retrieval flags query it, and the planned turn-0 injection
+and MCP tools (both TBD — not ported) attach to it. An unmapped repo
+only gets the cheap probe digest.
 
 ## The three commands
 

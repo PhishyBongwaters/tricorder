@@ -34,13 +34,7 @@ file is truth.
 3. `--tier 1` on the files that matter — read context.
 4. Open the real files. Edit. Re-run: only dirty files reparse.
 
-## Slash commands (Hermes plugin)
-
-`/tricorder root|scan|status|help`. `scan` shells the CLI with
-`--db-path` pointed at the canonical in-repo DB — so a slash scan
-populates the same sqlite turn-0, MCP, and `chunk_resume.py` read.
-Default cap 1000 files (`max_files` config); full coverage still goes
-through `chunk_resume.py`.
+## Retrieval flags (CLI)
 
 - `tricorder <path> --db-path <db> --tier 0` — definitions fast path.
 - `--pre-index SYMBOL` — narrow giant trees before walking.
@@ -49,6 +43,13 @@ through `chunk_resume.py`.
 - `--stats-only [MAP]` / `--signature-only` — inspect budget and
   freshness without mapping.
 - `--dry-run` — token/budget estimate for a planned map.
+
+## Hermes slash commands — TBD (not ported)
+
+The `/tricorder root|scan|status|help` slash commands and turn-0
+injection live in the unported Hermes/DSH plugin surface (see
+`02-tiering-and-retrieval.md`, "MCP + turn-0 plugin — TBD"). No usage
+docs until the plugin port lands and is verified live.
 
 ## MCP + turn-0 plugin — TBD (not ported)
 

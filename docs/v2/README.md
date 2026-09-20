@@ -56,10 +56,10 @@ size+mtime; resume is just re-running. Full pipeline:
 
 ## Status
 
-`dev/db-map` branch. CLI is the stable surface; MCP server and both
-turn-0 plugins (Hermes, DSH) are ported to the DB but live-session
-verification is pending. No benchmark numbers are claimed on this
-branch until re-measured.
+`dev/db-map` branch. CLI is the stable surface; the MCP server and
+both turn-0 plugins (Hermes, DSH) are unported — TBD. No usage docs
+for them until the port lands and is verified live. No benchmark
+numbers are claimed on this branch until re-measured.
 
 ## License
 

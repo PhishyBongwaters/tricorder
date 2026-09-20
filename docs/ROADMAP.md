@@ -2,7 +2,7 @@
 
 **Mission**: Context guarding for 16GB VRAM home users — deterministic tooling only (tree-sitter, PageRank, token counting, git diff, file I/O). No model calls inside tricorder.
 
-**Current State**: RC1 — 5 MCP tools (incl. `tricorder_query` graph traversal), lifecycle plugin, skill, 10-language coverage, content-aware caching, slash commands. All verified working.
+**Current State**: RC1 — 7 MCP tools (incl. `tricorder_query` graph traversal), lifecycle plugin, skill, 11-language signature coverage (34 languages with tree-sitter queries), content-aware caching, slash commands. All verified working.
 
 ---
 

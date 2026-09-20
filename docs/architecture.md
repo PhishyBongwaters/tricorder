@@ -119,7 +119,7 @@ Repository content is **untrusted input**. Controls:
 | TC-004 | Parser timeout | 5s hard timeout per file (`TRICORDER_PARSER_TIMEOUT_S`); hangs are skipped. |
 | TC-005 | Trust metadata | Every MCP response stamped `source: scanned_repository`, `trust: untrusted_repository_content`. |
 | TC-006 | Path containment | `chat_files`/`detail` file params rejected outside `project_root`. |
-| TC-007 | `max_files` clamp | MCP `max_files` clamped to 10,000 server-side; discovery early-stops at 20k. |
+| TC-007 | `max_files` clamp | MCP `max_files` clamped to 10,000 server-side; discovery early-stops at `TRICORDER_MAX_SCAN_FILES` only when set (0 = unlimited by default). |
 | TC-008 | Output containment | Server output under `get_cache_root()/.tricorder/output`; **all** in-process writes route through `utils.safe_write()`, which raises on any target escaping the cache root. `--output` is the sole sanctioned user-chosen path. |
 | TC-009 | Dependency pinning | `requirements.txt` fully pinned; `scripts/depscan.py` emits inventory + `pip-audit`. |
 | TC-010 | Parser fuzzing | `tests/security/` adversarial fixtures (deep nesting, huge lines, malformed, unicode, giant strings) assert no crash/hang. |

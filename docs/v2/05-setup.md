@@ -34,49 +34,20 @@ python chunk_resume.py /path/to/repo       # to DONE
 
 Details: `00-scan-first.md`.
 
-## 5a. Hermes harness
+## 5. Agent harnesses — TBD (not ported)
 
-Enable the `tricorder` plugin and set the active project:
-
-```yaml
-# config.yaml
-plugins:
-  enabled: [tricorder]
-  entries:
-    tricorder:
-      active_project: /path/to/repo
-```
-
-Or `/tricorder root /path/to/repo` in-session (persisted to config).
-Turn-0 behavior: mapped repo → one-line DB coverage + steering, no
-walk; unmapped → cheap probe digest marked not-pre-mapped; later
-turns silent. MCP tools (`tricorder-mcp` server over stdio: scan,
-detect, symbols, detail, query) attach the same DB automatically.
-
-## 5b. DSH harness
-
-```bash
-pnpm add @deepseek-ai/dsh-tricorder-inject   # from the dsh workspace
-```
-
-```yaml
-# cordis.patch.yml
-- insert:
-    - id: tricorder-inject
-      name: '@deepseek-ai/dsh-tricorder-inject'
-      config:
-        tricorderExe: 'C:/path/to/.venv/Scripts/tricorder.exe'
-        verbose: false
-```
-
-Same turn-0 contract as Hermes, same bytes: `--db-coverage` when
-mapped (DB-first), `--probe-digest` fallback when not. If
-`tricorderExe` is omitted the plugin tries the checkout default,
-then `tricorder` on PATH.
+The MCP server (`tricorder-mcp`) and the Hermes/DSH turn-0 plugins
+(`tricorder_inject.py`, `tricorder_client.py`, `plugins/`) are
+**unported on this branch**. Intended flow once ported: mapped repo →
+one-line DB coverage + steering with no walk; unmapped → cheap probe
+digest marked not-pre-mapped; MCP tools attach the same DB over
+stdio. No usage docs for this section until the port lands and is
+verified live.
 
 ## 6. One surface or both
 
-CLI covers everything alone (scan, retrieve, verify). Add MCP on
-interactive agents for cheaper per-query tokens (capped record sets
-vs full-map dumps); keep CI/bench on CLI (no daemon). Both read the
-same sqlite — switching surfaces changes nothing about the data.
+CLI covers everything alone (scan, retrieve, verify). MCP is TBD on
+this branch — once ported, it serves interactive agents with cheaper
+per-query tokens (capped record sets vs full-map dumps); keep
+CI/bench on CLI (no daemon). Both read the same sqlite — switching
+surfaces changes nothing about the data.
