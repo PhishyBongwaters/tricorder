@@ -182,9 +182,21 @@ class TestCanonicalDbRootGuard(unittest.TestCase):
         db.set_file_state("a.py", st.st_size, int(st.st_mtime))
         db.conn.commit()
         db.conn.close()
+        # tricorder_server binds PRE_SCAN_DB_DIR at import time; in the full
+        # suite it may already be imported (bound to the default cache root).
+        # Rebind it to this test's temp cache so the server lookup sees the
+        # same colliding DB the CLI lookup sees, and clear the lookup's
+        # lru_cache so results can't leak between tests.
+        import tricorder_server as srv
+        self._srv = srv
+        self._saved_pre_scan_dir = srv.PRE_SCAN_DB_DIR
+        srv.PRE_SCAN_DB_DIR = utils.get_cache_root() / "db"
+        srv._canonical_db_for.cache_clear()
         self.addCleanup(self._cleanup)
 
     def _cleanup(self):
+        self._srv.PRE_SCAN_DB_DIR = self._saved_pre_scan_dir
+        self._srv._canonical_db_for.cache_clear()
         shutil.rmtree(self.tmp, ignore_errors=True)
         shutil.rmtree(self._tmp_cache, ignore_errors=True)
         if self._saved_cache_home is None:
