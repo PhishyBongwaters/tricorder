@@ -242,7 +242,13 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 st = os.stat(fpath)
             except OSError:
                 continue
-            rel = self.get_rel_fname(fpath)
+            # Resolve symlinks before the rel computation: the scan path
+            # stores resolved rels (Path.resolve()), so an unresolved
+            # symlink would otherwise report as "Added" on every diff.
+            try:
+                rel = self.get_rel_fname(str(Path(fpath).resolve()))
+            except Exception:
+                rel = self.get_rel_fname(fpath)
             if rel in db_rels:
                 continue
             current[rel] = (fpath, st.st_size, int(st.st_mtime))

@@ -346,3 +346,7 @@ Track progress here as claims are verified:
 
 [2026-09-20] [README counts] [pass-with-fixes] Round 10: 372→380 (8 new tests in tests/test_review_round10.py: WAL-checkpoint visibility, diff-after-incremental, LRU-eviction close, diff/scan handle close, KeyboardInterrupt exit 130, --db-coverage house-rule). Full suite: 380 passed, 1 skipped (Windows-only), 93 subtests. Supersedes the 372-count entry.
 [2026-09-20] [README counts] [pass-with-fixes] Round 11: 380→383 (3 new tests in tests/test_review_round11.py: extractor-version staleness vs per-file tag disk cache and cross-ref disk bundle — both now keyed/fingerprinted with EXTRACTOR_VERSION). Also fixed an inverted Quick Start parenthetical: the --pre-index fast path is ripgrep-first with ctags as fallback, not the reverse. Full suite: 383 passed, 1 skipped (Windows-only), 93 subtests. Supersedes the 380-count entry.
+
+[2026-09-20] [README counts] [pass-with-fixes] Round 12: 383→392 (9 new tests in tests/test_review_round12.py: plugin coverage house-rule, rescan empty-map fallback, single-tag binary-search fix, render-cache content fingerprint, delete-resume). Full suite: 392 passed, 1 skipped (Windows-only), 93 subtests. Supersedes the 383-count entry.
+
+[2026-09-20] [README counts] [pass-with-fixes] Round 13: 392→393 (1 new test in tests/test_review_round13.py: --diff symlink phantom-added — diff_against_index now resolves symlinks before the rel computation, matching the scan path). Full suite: 393 passed, 1 skipped (Windows-only), 93 subtests. Supersedes the 392-count entry.
