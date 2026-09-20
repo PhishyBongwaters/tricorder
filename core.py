@@ -258,10 +258,16 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         {file, line, name, kind, context, quality}. Raises ValueError on an
         invalid regex pattern.
         """
-        # Honor the caller's cap: the rescue pool below intentionally
+        # Empty query would substring-match every identifier; return no
+        # matches instead of shipping arbitrary tags as "exact" hits.
+        if not query:
+            return [], False
+
+        # Honor the caller's cap (and a 200 hard cap mirroring
+        # search_symbols): the rescue pool below intentionally
         # over-collects (2x) for re-ranking headroom, so clamp here and
         # trim again after the rescue re-sort.
-        max_results = max(1, max_results)
+        max_results = min(max(max_results, 1), 200)
         if search_mode not in ("exact", "substring", "regex"):
             raise ValueError(
                 f"Invalid search_mode: {search_mode}. Must be 'exact', 'substring', or 'regex'.")

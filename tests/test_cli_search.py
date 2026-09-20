@@ -78,6 +78,20 @@ class TestCoreSearch(unittest.TestCase):
         results, _ = self.tc.search_identifiers("authentcate", max_results=-3)
         self.assertLessEqual(len(results), 1)
 
+    def test_search_identifiers_empty_query_returns_nothing(self):
+        # An empty query substring-matches every identifier; it must not
+        # ship arbitrary tags labeled "exact".
+        results, rescue = self.tc.search_identifiers("")
+        self.assertEqual(results, [])
+        self.assertFalse(rescue)
+
+    def test_search_identifiers_cap_has_upper_bound(self):
+        # search_identifiers honors the same 200 hard cap as search_symbols —
+        # an absurd cap cannot produce an unbounded payload.
+        results, _ = self.tc.search_identifiers(
+            "authenticate", max_results=999999999)
+        self.assertLessEqual(len(results), 200)
+
     def test_search_identifiers_keeps_match_when_context_empty(self):
         # A tag match must survive even when context rendering yields
         # nothing (e.g. the file became unreadable between tagging and
