@@ -25,7 +25,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
-from typing import Iterable, Iterator, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 from utils import read_only_connect
 

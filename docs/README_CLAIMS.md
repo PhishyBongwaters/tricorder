@@ -343,3 +343,5 @@ Track progress here as claims are verified:
 
 [2026-09-20] [README counts] [pass-with-fixes] ctags built from source (universal-ctags 6.2.1, ~/workspace/bin/ctags) — the 2 rg/ctags env skips now run and pass. Counts updated 365→367, skips 3→1 (the remaining skip is genuinely Windows-only: tests/test_mcp.py backslash normalization). Full suite: 367 passed, 1 skipped, 93 subtests. Supersedes the 365-count entry.
 [2026-09-20] [README counts] [pass-with-fixes] Round 9 added 5 tests (tests/test_review_round9.py): MCP cache thread-safety, wipe/replace rebuild, locked-wipe error, plugin URI special chars. Counts updated 367→372, still 1 Windows-only skip. Full suite: 372 passed, 1 skipped, 93 subtests. Supersedes the 367-count entry.
+
+[2026-09-20] [README counts] [pass-with-fixes] Round 10: 372→380 (8 new tests in tests/test_review_round10.py: WAL-checkpoint visibility, diff-after-incremental, LRU-eviction close, diff/scan handle close, KeyboardInterrupt exit 130, --db-coverage house-rule). Full suite: 380 passed, 1 skipped (Windows-only), 93 subtests. Supersedes the 372-count entry.

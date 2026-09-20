@@ -512,6 +512,12 @@ class RankingMixin:
         # Cross defs x refs into the refs edge table (on disk, not RAM).
         db.populate_refs()
         db.commit()
+        # Checkpoint the WAL: frozen readers (CLI --diff, --db-coverage,
+        # tricorder_diff, turn-0 injectors) open the DB with immutable=1 and
+        # can only see checkpointed rows. Without this, a completed scan was
+        # invisible to the very next --diff (which then reported every file
+        # as added). Cheap relative to the parse; idempotent.
+        db.checkpoint()
 
         # file_flags sync — single point for all scan branches (no per-loop
         # edits): tagless scanned files record their reason (no-grammar,

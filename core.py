@@ -129,6 +129,17 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         
         # Load persistent tags cache
         self.load_tags_cache()
+
+    def close(self):
+        """Checkpoint and close the DB store, releasing the sqlite handle.
+
+        Idempotent. After close, scan/query methods that need the DB will
+        fail — this instance is done. The CLI calls it on every exit path
+        (so a later --diff sees this scan); the MCP server calls it for
+        per-call instances and evicted cache entries."""
+        store, self._db_store = self._db_store, None
+        if store is not None:
+            store.close()
     
     def token_count(self, text: str) -> int:
         """Count tokens in text with sampling optimization for long texts."""

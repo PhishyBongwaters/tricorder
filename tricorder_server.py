@@ -145,7 +145,15 @@ def _db_file_ident(db_path: Optional[str]) -> Optional[tuple]:
 
 def _close_cached_tricorder(instance: "Tricorder") -> None:
     """Best-effort close of a discarded cached instance's DB handle."""
+    if instance is None:
+        return
     try:
+        # Prefer Tricorder.close() (checkpoint + release + disarm); fall
+        # back to closing the store directly for foreign shapes.
+        close = getattr(instance, "close", None)
+        if callable(close):
+            close()
+            return
         store = getattr(instance, "_db_store", None)
         if store is not None:
             store.close()
@@ -199,7 +207,10 @@ def _get_tricorder(project_root: str) -> "Tricorder":
         _tricorder_cache[project_root] = (db_path, ident, instance)
         _tricorder_cache.move_to_end(project_root)
         while len(_tricorder_cache) > _TRICORDER_CACHE_MAX:
-            _tricorder_cache.popitem(last=False)
+            _evicted_root, _evicted = _tricorder_cache.popitem(last=False)
+            # Don't leak the evicted instance's sqlite handle (long-running
+            # server, many roots): close it now that nothing references it.
+            _close_cached_tricorder(_evicted[2])
         return instance
 
 # ponytail: advisory tier tracker — survives across calls within a server process.
@@ -973,6 +984,10 @@ async def tricorder_scan(
     except Exception as e:
         log.exception(f"Error generating repository map for project '{project_root}': {e}")
         return {"error": f"Error generating repository map: {str(e)}"}
+    finally:
+        # Per-call instance (not via _get_tricorder): release its sqlite
+        # handle — otherwise every scan leaks a connection on the server.
+        _close_cached_tricorder(repo_mapper)
     
 @mcp.tool()
 async def tricorder_detect(
@@ -1133,12 +1148,15 @@ async def tricorder_diff(
 
     project_root = str(root_path)
 
+    # Diff is a reader: open the index frozen read-only (never via
+    # _get_tricorder — that instance is shared with the write path and
+    # a cached read-only connection would go stale while scans rewrite
+    # the DB, violating read_only_connect's hold-briefly contract).
+    # Dedicated instance per call: closed in the finally below so repeated
+    # diffs don't leak sqlite handles on the long-running server.
+    _db_path = _canonical_db_for(project_root)
+    repo_map = None
     try:
-        # Diff is a reader: open the index frozen read-only (never via
-        # _get_tricorder — that instance is shared with the write path and
-        # a cached read-only connection would go stale while scans rewrite
-        # the DB, violating read_only_connect's hold-briefly contract).
-        _db_path = _canonical_db_for(project_root)
         repo_map = Tricorder(
             root=project_root,
             token_counter_func=lambda text: count_tokens(text, "gpt-4"),
@@ -1159,6 +1177,8 @@ async def tricorder_diff(
     except Exception as e:
         log.exception(f"Error computing diff for project '{project_root}': {e}")
         return {"error": f"Error computing diff: {str(e)}"}
+    finally:
+        _close_cached_tricorder(repo_map)
 
 @mcp.tool()
 async def tricorder_detail(

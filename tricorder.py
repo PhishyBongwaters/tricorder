@@ -498,14 +498,14 @@ Examples:
                 _con = read_only_connect(str(_cand))
                 try:
                     # Coverage is file_state rows (house rule: never
-                    # tags-distinct — tagless files own zero tag rows).
+                    # tags-distinct — tagless files own zero tag rows). A DB
+                    # without file_state (pre-Goal-3) has unknowable coverage:
+                    # treat as unmapped rather than misreporting tags-distinct.
                     try:
                         _n = _con.execute(
                             "SELECT COUNT(*) FROM file_state").fetchone()[0]
                     except Exception:
-                        _n = _con.execute(
-                            "SELECT COUNT(DISTINCT rel_file) FROM tags"
-                        ).fetchone()[0]
+                        continue
                     if _n > 0:
                         _t = _con.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
                         _m = _con.execute(
@@ -713,169 +713,189 @@ Examples:
         db_read_only=bool(args.diff and scan_db_path),
     )
 
-    if args.diff:
-        # Delta-map mode: report working-tree changes vs the index and exit.
-        diff = repo_map.diff_against_index()
-        if args.format == "json":
-            import json as _json
-            print(_json.dumps(diff, indent=2))
-        else:
-            if not diff["indexed"]:
-                print("No scan index found — every file is reported as added.")
-            for label in ("added", "modified", "deleted"):
-                files = diff[label]
-                print(f"{label.capitalize()} ({len(files)}):")
-                for f in files:
-                    # Exact counts survive tag-head capping (tag_counts);
-                    # fall back to the head length for old-shaped dicts.
-                    ntags = diff["tag_counts"].get(f, len(diff["tags"].get(f, [])))
-                    extra = f" [{ntags} tags]" if f in diff["tag_counts"] or f in diff["tags"] else ""
-                    print(f"  {f}{extra}")
-            if diff["tags_truncated"]:
-                omitted = sum(diff["tags_omitted"].values())
-                print(f"(tag lists capped per file; {omitted} tags omitted, counts exact)")
-        return
-
-    if args.detect is not None or args.symbols is not None:
-        # Search modes: identifier/symbol lookup without a map build.
-        import json as _json
-        if args.detect is not None:
-            results, _rescue = repo_map.search_identifiers(
-                args.detect, max_results=args.max_results)
-            if args.format == "json":
-                print(_json.dumps({"results": results}, indent=2))
-            else:
-                if not results:
-                    print(f"No matches for '{args.detect}'.")
-                for r in results:
-                    q = f" ({r['quality']})" if r.get("quality") == "fuzzy" else ""
-                    print(f"{r['file']}:{r['line']}  {r['name']}  [{r['kind']}]{q}")
-                    for cl in r["context"].splitlines():
-                        print(f"    {cl}")
-        else:
-            results, _rescue = repo_map.search_symbols(
-                args.symbols, limit=args.max_results)
-            if args.format == "json":
-                print(_json.dumps({"symbols": results}, indent=2))
-            else:
-                if not results:
-                    print(f"No matches for '{args.symbols}'.")
-                for s in results:
-                    q = f" ({s['quality']})" if s.get("quality") == "fuzzy" else ""
-                    print(f"{s['type']:10} {s['name']}  {s['file']}:{s['line']}{q}")
-        return
-
     try:
-        ranked_tags, file_report = repo_map.get_ranked_tags(chat_files, other_files)
-
-        if not ranked_tags:
-            if not other_files:
-                repo_map.output_handlers['warning'](
-                    "No files found. Relative paths are resolved against --root, "
-                    "not the current directory. Check that the path exists under your repo root."
-                )
+        if args.diff:
+            # Delta-map mode: report working-tree changes vs the index and exit.
+            diff = repo_map.diff_against_index()
+            if args.format == "json":
+                import json as _json
+                print(_json.dumps(diff, indent=2))
             else:
-                repo_map.output_handlers['warning'](
-                    "No tags extracted -- tree-sitter may lack parsers for this language. "
-                    "Install missing parsers (e.g. pip install tree-sitter-language-pack)."
-                )
+                if not diff["indexed"]:
+                    print("No scan index found — every file is reported as added.")
+                for label in ("added", "modified", "deleted"):
+                    files = diff[label]
+                    print(f"{label.capitalize()} ({len(files)}):")
+                    for f in files:
+                        # Exact counts survive tag-head capping (tag_counts);
+                        # fall back to the head length for old-shaped dicts.
+                        ntags = diff["tag_counts"].get(f, len(diff["tags"].get(f, [])))
+                        extra = f" [{ntags} tags]" if f in diff["tag_counts"] or f in diff["tags"] else ""
+                        print(f"  {f}{extra}")
+                if diff["tags_truncated"]:
+                    omitted = sum(diff["tags_omitted"].values())
+                    print(f"(tag lists capped per file; {omitted} tags omitted, counts exact)")
+            return
 
-        if args.dry_run:
-            if ranked_tags:
-                chat_rel = set(repo_map.get_rel_fname(f) for f in chat_files)
-                sample = ranked_tags[:10]
-                sample_tree = repo_map.to_tree(sample, chat_rel, [])
-                sample_tokens = repo_map.token_count(sample_tree)
-                tokens_per_tag = sample_tokens / len(sample)
-                tags_at_budget = int(args.map_tokens / tokens_per_tag) if tokens_per_tag > 0 else 0
-                full_est = repo_budget(args.root, args.map_tokens, args.model,
-                                       args.exclude_globs)["full_repo_estimate"]
-                planned = min(args.map_tokens, full_est)
-                savings = repo_budget(args.root, planned, args.model,
-                                      args.exclude_globs)["savings_pct"]
-                repo_map.output_handlers['info'](
-                    f"Tags: {len(ranked_tags)} | Tokens per tag: ~{tokens_per_tag:.0f} | "
-                    f"Tags at --map-tokens {args.map_tokens}: ~{tags_at_budget} | "
-                    f"Full repo estimate: ~{full_est} tokens | "
-                    f"Estimated savings: {savings}%"
-                )
+        if args.detect is not None or args.symbols is not None:
+            # Search modes: identifier/symbol lookup without a map build.
+            import json as _json
+            if args.detect is not None:
+                results, _rescue = repo_map.search_identifiers(
+                    args.detect, max_results=args.max_results)
+                if args.format == "json":
+                    print(_json.dumps({"results": results}, indent=2))
+                else:
+                    if not results:
+                        print(f"No matches for '{args.detect}'.")
+                    for r in results:
+                        q = f" ({r['quality']})" if r.get("quality") == "fuzzy" else ""
+                        print(f"{r['file']}:{r['line']}  {r['name']}  [{r['kind']}]{q}")
+                        for cl in r["context"].splitlines():
+                            print(f"    {cl}")
             else:
-                repo_map.output_handlers['info']("No tags to estimate.")
-            sys.exit(0)
+                results, _rescue = repo_map.search_symbols(
+                    args.symbols, limit=args.max_results)
+                if args.format == "json":
+                    print(_json.dumps({"symbols": results}, indent=2))
+                else:
+                    if not results:
+                        print(f"No matches for '{args.symbols}'.")
+                    for s in results:
+                        q = f" ({s['quality']})" if s.get("quality") == "fuzzy" else ""
+                        print(f"{s['type']:10} {s['name']}  {s['file']}:{s['line']}{q}")
+            return
 
-        # ponytail: when --full + --output, stream directly to file
-        output_writer = None
-        if args.full and args.output:
-            output_writer = open(args.output, 'w', encoding='utf-8')
+        try:
+            ranked_tags, file_report = repo_map.get_ranked_tags(chat_files, other_files)
 
-        map_content, file_report = repo_map.get_repo_map(
-            chat_files=chat_files,
-            other_files=other_files,
-            mentioned_fnames=mentioned_fnames,
-            mentioned_idents=mentioned_idents,
-            force_refresh=args.force_refresh,
-            output_writer=output_writer,
-        )
+            if not ranked_tags:
+                if not other_files:
+                    repo_map.output_handlers['warning'](
+                        "No files found. Relative paths are resolved against --root, "
+                        "not the current directory. Check that the path exists under your repo root."
+                    )
+                else:
+                    repo_map.output_handlers['warning'](
+                        "No tags extracted -- tree-sitter may lack parsers for this language. "
+                        "Install missing parsers (e.g. pip install tree-sitter-language-pack)."
+                    )
 
-        if output_writer is not None:
-            # Streaming mode: content is already written to the file
-            output_writer.close()
-            if not args.quiet:
-                tool_output(f"Map written to {args.output}")
-        elif map_content:
-            if args.verbose and not args.quiet:
-                tokens = repo_map.token_count(map_content)
-                tool_output(f"Generated map: {len(map_content)} chars, ~{tokens} tokens")
+            if args.dry_run:
+                if ranked_tags:
+                    chat_rel = set(repo_map.get_rel_fname(f) for f in chat_files)
+                    sample = ranked_tags[:10]
+                    sample_tree = repo_map.to_tree(sample, chat_rel, [])
+                    sample_tokens = repo_map.token_count(sample_tree)
+                    tokens_per_tag = sample_tokens / len(sample)
+                    tags_at_budget = int(args.map_tokens / tokens_per_tag) if tokens_per_tag > 0 else 0
+                    full_est = repo_budget(args.root, args.map_tokens, args.model,
+                                           args.exclude_globs)["full_repo_estimate"]
+                    planned = min(args.map_tokens, full_est)
+                    savings = repo_budget(args.root, planned, args.model,
+                                          args.exclude_globs)["savings_pct"]
+                    repo_map.output_handlers['info'](
+                        f"Tags: {len(ranked_tags)} | Tokens per tag: ~{tokens_per_tag:.0f} | "
+                        f"Tags at --map-tokens {args.map_tokens}: ~{tags_at_budget} | "
+                        f"Full repo estimate: ~{full_est} tokens | "
+                        f"Estimated savings: {savings}%"
+                    )
+                else:
+                    repo_map.output_handlers['info']("No tags to estimate.")
+                sys.exit(0)
 
-            if args.mermaid:
-                if args.top is not None:
-                    ranked_tags = ranked_tags[:args.top]
-                mermaid_output = repo_map.to_mermaid(
-                    chat_files, other_files, ranked_tags=ranked_tags,
-                    max_nodes=args.mermaid_top
-                )
-                output_text = mermaid_output
-            elif args.format == "json":
-                import json
-                if args.top is not None:
-                    ranked_tags = ranked_tags[:args.top]
-                json_output = {
-                    "tags": [
-                        {
-                            "name": tag.name,
-                            "file": tag.rel_fname,
-                            "line": tag.line,
-                            "kind": tag.kind,
-                            "rank": rank
-                        }
-                        for rank, tag in ranked_tags
-                    ]
-                }
-                map_tokens = repo_map.token_count(map_content)
-                json_output["budget"] = repo_budget(
-                    args.root, map_tokens, args.model, args.exclude_globs
-                )
-                output_text = json.dumps(json_output, indent=2)
+            # ponytail: when --full + --output, stream directly to file
+            output_writer = None
+            if args.full and args.output:
+                output_writer = open(args.output, 'w', encoding='utf-8')
+
+            map_content, file_report = repo_map.get_repo_map(
+                chat_files=chat_files,
+                other_files=other_files,
+                mentioned_fnames=mentioned_fnames,
+                mentioned_idents=mentioned_idents,
+                force_refresh=args.force_refresh,
+                output_writer=output_writer,
+            )
+
+            if output_writer is not None:
+                # Streaming mode: content is already written to the file
+                output_writer.close()
+                if not args.quiet:
+                    tool_output(f"Map written to {args.output}")
+            elif map_content:
+                if args.verbose and not args.quiet:
+                    tokens = repo_map.token_count(map_content)
+                    tool_output(f"Generated map: {len(map_content)} chars, ~{tokens} tokens")
+
+                if args.mermaid:
+                    if args.top is not None:
+                        ranked_tags = ranked_tags[:args.top]
+                    mermaid_output = repo_map.to_mermaid(
+                        chat_files, other_files, ranked_tags=ranked_tags,
+                        max_nodes=args.mermaid_top
+                    )
+                    output_text = mermaid_output
+                elif args.format == "json":
+                    import json
+                    if args.top is not None:
+                        ranked_tags = ranked_tags[:args.top]
+                    json_output = {
+                        "tags": [
+                            {
+                                "name": tag.name,
+                                "file": tag.rel_fname,
+                                "line": tag.line,
+                                "kind": tag.kind,
+                                "rank": rank
+                            }
+                            for rank, tag in ranked_tags
+                        ]
+                    }
+                    map_tokens = repo_map.token_count(map_content)
+                    json_output["budget"] = repo_budget(
+                        args.root, map_tokens, args.model, args.exclude_globs
+                    )
+                    output_text = json.dumps(json_output, indent=2)
+                else:
+                    output_text = map_content
+
+                if args.output:
+                    try:
+                        safe_write(args.output, output_text, allow_escape=True)
+                    except Exception as e:
+                        tool_error(f"Failed to write output: {e}")
+                        sys.exit(1)
+                else:
+                    print(output_text)
             else:
-                output_text = map_content
+                if not args.quiet:
+                    tool_warning("No map content generated.")
+        except Exception as e:
+            repo_map.output_handlers['error'](f"Error generating map: {e}")
+            if args.verbose:
+                import traceback
+                traceback.print_exc()
+            sys.exit(1)
 
-            if args.output:
-                try:
-                    safe_write(args.output, output_text, allow_escape=True)
-                except Exception as e:
-                    tool_error(f"Failed to write output: {e}")
-                    sys.exit(1)
-            else:
-                print(output_text)
-        else:
-            if not args.quiet:
-                tool_warning("No map content generated.")
-    except Exception as e:
-        repo_map.output_handlers['error'](f"Error generating map: {e}")
-        if args.verbose:
-            import traceback
-            traceback.print_exc()
-        sys.exit(1)
+    except KeyboardInterrupt:
+        # Ctrl+C mid-run (usually mid-scan): leave the DB checkpointed and
+        # closed instead of a traceback — a later --diff then sees the
+        # partial index rather than a torn WAL. Conventional exit code 130.
+        try:
+            repo_map.close()
+        except Exception:
+            pass
+        print("Interrupted.", file=sys.stderr)
+        sys.exit(130)
+    finally:
+        # Every exit path (diff/detect/map, success or error) releases the
+        # sqlite handle; the scan already checkpointed, so immutable readers
+        # see it.
+        try:
+            repo_map.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
