@@ -11,9 +11,20 @@ from pathlib import Path
 REPOS_DIR = Path(os.environ.get("TRICORDER_TESTBED", r"D:\Projects\Tricorder-Testing-Repos"))
 # DBs belong in tricorder's canonical cache root (get_cache_root()), NOT a
 # throwaway dir under the testing-repos folder.
-from utils import get_cache_root
+from utils import get_cache_root, db_root_matches
 DB_DIR = get_cache_root() / "db"
 TRICORDER = Path(os.environ.get("TRICORDER_SCRIPT", r"D:\Projects\tricorder\tricorder.py"))
+
+
+def _db_free_for(db_path: Path, repo: Path) -> bool:
+    """True when db_path may be (over)written for repo.
+
+    The shared cache dir is keyed by directory basename, so a same-named
+    repo elsewhere collides: pre_scan must not silently clobber another
+    repo's index. Absent DBs are always writable; an existing DB is only
+    writable when its meta.root is this repo.
+    """
+    return not db_path.exists() or db_root_matches(str(db_path), str(repo))
 
 
 def scan_repo(repo_path: Path, db_path: Path, tricorder: Path = TRICORDER) -> dict:
@@ -80,6 +91,13 @@ def main():
     results = []
     for repo in repos:
         db_path = db_dir / f"{repo.name}.db"
+        if not _db_free_for(db_path, repo):
+            print(f"[{repo.name}] SKIP: {db_path} belongs to another repo "
+                  f"(shared-cache basename collision) — refusing to overwrite")
+            results.append({"repo": repo.name, "elapsed_s": 0, "db_bytes": 0,
+                            "map_bytes": 0, "ok": False,
+                            "stderr": "basename collision: db owned by another repo"})
+            continue
         print(f"[{repo.name}] scanning...", end=" ", flush=True)
         try:
             res = scan_repo(repo, db_path, tricorder)

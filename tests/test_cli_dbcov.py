@@ -68,3 +68,18 @@ def test_db_coverage_unmapped_prints_nothing(tmp_path):
     r = _run(root)
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == ""
+
+
+def test_prescan_refuses_collision_overwrite(tmp_path):
+    import pre_scan
+    repo_a = (tmp_path / "a" / "proj").resolve()
+    repo_b = (tmp_path / "b" / "proj").resolve()
+    repo_a.mkdir(parents=True)
+    repo_b.mkdir(parents=True)
+    db = tmp_path / "proj.db"
+    _make_db(db, repo_a, ["a.py"])
+    # same repo may refresh its own DB; a same-named other repo may not
+    # clobber it; an absent path is always writable
+    assert pre_scan._db_free_for(db, repo_a) is True
+    assert pre_scan._db_free_for(db, repo_b) is False
+    assert pre_scan._db_free_for(tmp_path / "missing.db", repo_b) is True
