@@ -73,8 +73,13 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         full_map: bool = False,
         use_db: bool = True,
         db_path: Optional[str] = None,
+        db_read_only: bool = False,
     ):
-        """Initialize Tricorder instance."""
+        """Initialize Tricorder instance.
+
+        db_read_only: open an existing db_path frozen read-only (diff
+        readers). Never combine with scan/write paths; requires a real
+        path, raises ValueError through DBStore otherwise."""
         self.map_tokens = map_tokens
         self.max_map_tokens = map_tokens
         self.root = Path(root or os.getcwd()).resolve()
@@ -100,7 +105,7 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         self._db_path = db_path
         self._db_store: Optional[DBStore] = None
         if self._db_active:
-            self._db_store = DBStore(db_path)
+            self._db_store = DBStore(db_path, read_only=db_read_only)
         
         # Set up output handlers
         if output_handler_funcs is None:

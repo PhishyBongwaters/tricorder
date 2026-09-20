@@ -606,7 +606,7 @@ Examples:
     # Letting Tricorder/DBStore connect would create + schema-initialize
     # a fresh file (sqlite3.connect creates 0-byte stubs), silently
     # turning "diff against my index" into "diff against nothing".
-    if args.diff and args.db_path and not os.path.exists(args.db_path):
+    if args.diff and args.db_path and not os.path.isfile(args.db_path):
         parser.error(f"--diff needs an existing index DB; no DB at: {args.db_path}")
 
     # Pre-index probe runs FIRST, before any full-tree walk: the probe is
@@ -690,6 +690,10 @@ Examples:
         full_map=args.full,
         use_db=not args.no_db,
         db_path=scan_db_path,
+        # --diff is a reader: open the index frozen read-only so a
+        # read-only checkout diffs against the baseline instead of
+        # crashing on the first write (OperationalError on DDL/commit).
+        db_read_only=bool(args.diff and scan_db_path),
     )
 
     if args.diff:

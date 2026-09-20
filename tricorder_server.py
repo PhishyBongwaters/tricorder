@@ -702,6 +702,15 @@ async def tricorder_scan(
     # scanned without its index. Previously _prescan_db_for saw only the
     # shared cache and missed in-repo DBs.
     db_path2 = _canonical_db_for(project_root)
+    # Same unwritable-canonical guard as _get_tricorder: the scan path
+    # below constructs its own Tricorder (not via _get_tricorder), so
+    # without this an existing-but-read-only DB crashes the scan at
+    # DBStore init (DDL+commit) while the drop window above already
+    # treated the DB as absent. Degrade to in-memory like the CLI.
+    if db_path2 and not _db_writable(db_path2):
+        log.warning(f"Canonical DB {db_path2} is not writable; "
+                    "this MCP scan runs in-memory (no resumption).")
+        db_path2 = None
 
     try:
         repo_mapper = Tricorder(
@@ -1056,7 +1065,22 @@ async def tricorder_diff(
     project_root = str(root_path)
 
     try:
-        repo_map = _get_tricorder(project_root)
+        # Diff is a reader: open the index frozen read-only (never via
+        # _get_tricorder — that instance is shared with the write path and
+        # a cached read-only connection would go stale while scans rewrite
+        # the DB, violating read_only_connect's hold-briefly contract).
+        _db_path = _canonical_db_for(project_root)
+        repo_map = Tricorder(
+            root=project_root,
+            token_counter_func=lambda text: count_tokens(text, "gpt-4"),
+            file_reader_func=read_text,
+            output_handler_funcs={'info': log.info, 'warning': log.warning, 'error': log.error},
+            verbose=False,
+            exclude_unranked=True,
+            use_db=True,
+            db_path=_db_path,
+            db_read_only=bool(_db_path),
+        )
 
         diff = repo_map.diff_against_index()
         resp = dict(diff)

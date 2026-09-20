@@ -25,6 +25,8 @@ import sqlite3
 import threading
 from typing import Iterable, Iterator, List, Optional, Sequence, Tuple
 
+from utils import read_only_connect
+
 SCHEMA_VERSION = 1
 
 # Version of the tag-extraction logic (tree-sitter queries/captures in
@@ -58,14 +60,30 @@ _TagRow = Tuple[str, str, int, str, str]  # file, rel_file, line, name, kind
 
 
 class DBStore:
-    """Thin sqlite wrapper. Search/rank reads happen here; callers stay flat."""
+    """Thin sqlite wrapper. Search/rank reads happen here; callers stay flat.
 
-    def __init__(self, path: Optional[str] = None):
+    read_only=True opens a frozen read-only view of an existing DB (used by
+    --diff and tricorder_diff, which never update the index): no DDL, no
+    migration, no commit — the connection itself rejects writes. Requires
+    an existing path; the schema must already exist (readers fall back at
+    query time for pre-version DBs, as get_meta does). A read-only open
+    skips WAL sidecars (immutable=1), so uncheckpointed WAL rows are
+    invisible — callers must point it at a closed/checkpointed DB."""
+
+    def __init__(self, path: Optional[str] = None, *, read_only: bool = False):
+        if read_only and not path:
+            raise ValueError("read_only=True requires an existing DB path")
         self.path = path
+        self.read_only = read_only
         # check_same_thread=False: the scan runs via asyncio.to_thread (MCP
         # server) in a different thread than __init__; all access serialized
         # by self._lock.
         self._lock = threading.RLock()
+        if read_only:
+            # Frozen open: mode=ro&immutable=1 never creates the file or its
+            # sidecars, so a read-only checkout can't crash on first DDL.
+            self.conn = read_only_connect(path)
+            return
         self.conn = sqlite3.connect(path if path else ":memory:", check_same_thread=False)
         # WAL keeps reads from blocking the walk's insert bursts on disk builds.
         # ponytail: DELETE for large existing DBs (>500MB) to avoid WAL loop;
