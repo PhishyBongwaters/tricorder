@@ -8,7 +8,7 @@ ranked map. Flat-memory walk; the DB is the memory.
 ```bash
 .venv/Scripts/python.exe tricorder.py --init --root <repo>   # canonical DB, prints path
 .venv/Scripts/python.exe chunk_resume.py <repo>              # serial rising-cap loop to DONE
-.venv/Scripts/python.exe -m pytest tests/ -q -p no:cacheprovider   # 398 passed, 1 skipped (Windows-only), 93 subtests
+.venv/Scripts/python.exe -m pytest tests/ -q -p no:cacheprovider   # 404 passed, 1 skipped (Windows-only), 93 subtests
 ```
 
 Use the repo `.venv` (pytest + grammars). No DB = no map, no tools.

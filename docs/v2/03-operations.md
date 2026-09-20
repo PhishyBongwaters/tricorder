@@ -33,6 +33,10 @@
   --wipe` and rescan; never hand-edit.
 - Empty map, files present → tree-sitter lacks the grammar. Install
   the language pack; the warning names it.
+- `Not a SQLite database: <path>` → the --db-path (or canonical index
+  DB) is corrupt or not a DB at all. Fails clean with exit 1 — never a
+  traceback, and --diff no longer misreports it as "no index". Delete
+  (or `--init --wipe`) and rescan; never hand-edit.
 
 ## Layout
 

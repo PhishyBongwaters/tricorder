@@ -61,6 +61,26 @@ _DDL = [
 _TagRow = Tuple[str, str, int, str, str]  # file, rel_file, line, name, kind
 
 
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+
+
+def _looks_like_sqlite(path: str) -> bool:
+    """True when path is missing/empty (sqlite can init it) or starts with
+    the SQLite magic header.
+
+    Guards DBStore against corrupt --db-path files: without it, sqlite
+    raises a raw DatabaseError mid-init (scan path) or readers silently
+    degrade to "no index" (diff path) — both dishonest about a file that
+    exists but is unreadable.
+    """
+    try:
+        with open(path, "rb") as f:
+            head = f.read(len(_SQLITE_MAGIC))
+    except OSError:
+        return True  # missing/unreadable: let sqlite report it its own way
+    return not head or head == _SQLITE_MAGIC
+
+
 class DBStore:
     """Thin sqlite wrapper. Search/rank reads happen here; callers stay flat.
 
@@ -75,13 +95,38 @@ class DBStore:
     def __init__(self, path: Optional[str] = None, *, read_only: bool = False):
         if read_only and not path:
             raise ValueError("read_only=True requires an existing DB path")
+        if path and not _looks_like_sqlite(path):
+            raise ValueError(
+                f"Not a SQLite database: {path} "
+                "(corrupt file, or the wrong --db-path?)")
         self.path = path
         self.read_only = read_only
         # check_same_thread=False: the scan runs via asyncio.to_thread (MCP
         # server) in a different thread than __init__; all access serialized
         # by self._lock.
         self._lock = threading.RLock()
-        if read_only:
+        try:
+            self._open_locked()
+        except sqlite3.OperationalError:
+            # Missing/unopenable file (e.g. read-only open of a nonexistent
+            # DB): keep the original error contract — callers distinguish
+            # "absent" from "corrupt".
+            raise
+        except sqlite3.DatabaseError as e:
+            # Truncated/corrupt-but-magic-ok files slip past the header
+            # check; sqlite only complains on first touch. Still a clean
+            # error, never a raw traceback: callers (CLI/MCP) surface the
+            # message as-is.
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+            raise ValueError(
+                f"Not a SQLite database: {path or ':memory:'} ({e})") from e
+
+    def _open_locked(self) -> None:
+        path = self.path
+        if self.read_only:
             # Frozen open: mode=ro&immutable=1 never creates the file or its
             # sidecars, so a read-only checkout can't crash on first DDL.
             self.conn = read_only_connect(path)

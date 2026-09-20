@@ -462,13 +462,18 @@ Examples:
         # Idempotent: only stamp a fresh/empty DB. Re-stamping an indexed
         # DB with extractor_version=0 would mark it "not yet indexed" and
         # force a pointless full rescan of already-mapped files.
-        _init_store = DBStore(str(init_db))
+        _init_store = None
         try:
+            _init_store = DBStore(str(init_db))
             if _init_store.get_meta() is None:
                 _init_store.set_meta(str(init_root), "", 0)
                 _init_store.commit()
+        except ValueError as e:
+            # Corrupt canonical DB (and no --wipe): message, not traceback.
+            parser.error(str(e))
         finally:
-            _init_store.close()
+            if _init_store is not None:
+                _init_store.close()
         print(str(init_db))
         sys.exit(0)
 
@@ -721,25 +726,30 @@ Examples:
     mentioned_fnames = set(args.mentioned_files) if args.mentioned_files else None
     mentioned_idents = set(args.mentioned_idents) if args.mentioned_idents else None
 
-    repo_map = Tricorder(
-        map_tokens=args.map_tokens,
-        root=str(root_path),
-        token_counter_func=token_counter,
-        file_reader_func=read_text,
-        output_handler_funcs=output_handlers,
-        verbose=args.verbose,
-        max_context_window=args.max_context_window,
-        exclude_unranked=args.exclude_unranked,
-        context_lines=int(args.tier) * args.context_lines,
-        exclude_untagged=args.exclude_untagged,
-        full_map=args.full,
-        use_db=not args.no_db,
-        db_path=scan_db_path,
-        # --diff is a reader: open the index frozen read-only so a
-        # read-only checkout diffs against the baseline instead of
-        # crashing on the first write (OperationalError on DDL/commit).
-        db_read_only=bool(args.diff and scan_db_path),
-    )
+    try:
+        repo_map = Tricorder(
+            map_tokens=args.map_tokens,
+            root=str(root_path),
+            token_counter_func=token_counter,
+            file_reader_func=read_text,
+            output_handler_funcs=output_handlers,
+            verbose=args.verbose,
+            max_context_window=args.max_context_window,
+            exclude_unranked=args.exclude_unranked,
+            context_lines=int(args.tier) * args.context_lines,
+            exclude_untagged=args.exclude_untagged,
+            full_map=args.full,
+            use_db=not args.no_db,
+            db_path=scan_db_path,
+            # --diff is a reader: open the index frozen read-only so a
+            # read-only checkout diffs against the baseline instead of
+            # crashing on the first write (OperationalError on DDL/commit).
+            db_read_only=bool(args.diff and scan_db_path),
+        )
+    except ValueError as e:
+        # Clean failures (corrupt --db-path, etc.): message, not traceback.
+        tool_error(str(e))
+        sys.exit(1)
 
     try:
         if args.diff:
