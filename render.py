@@ -21,7 +21,10 @@ def _cached_tree_context(self, abs_fname: str, rel_fname: str, code: str,
 
     The MCP server reuses one Tricorder per root across tool calls, so a
     cache keyed by filename alone would render stale code after the file
-    is edited between calls. Rebuild when the mtime moved.
+    is edited between calls. Rebuild when the mtime moved (nanosecond
+    resolution: float st_mtime has ~238ns granularity at this epoch, so a
+    same-second same-size edit could map to the same float and serve a
+    stale TreeContext built from old code).
 
     Pinned grep-ast==0.9.0 API: LOIs are 0-based, registered with
     add_lines_of_interest, expanded with add_context, rendered with
@@ -30,7 +33,7 @@ def _cached_tree_context(self, abs_fname: str, rel_fname: str, code: str,
     renders' LOIs.
     """
     try:
-        mtime = os.stat(abs_fname).st_mtime
+        mtime = os.stat(abs_fname).st_mtime_ns
     except OSError:
         mtime = None
     entry = self.tree_context_cache.get(rel_fname)

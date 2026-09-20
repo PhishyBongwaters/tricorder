@@ -171,6 +171,9 @@ class ParserMixin:
             from grep_ast.tsl import get_language, get_parser
             from tree_sitter import Query, QueryCursor
         except ImportError:
+            # Lazy: core imports ParserMixin from this module, so a
+            # top-level import would be circular.
+            from core import GrepAstNotAvailableError
             raise GrepAstNotAvailableError("grep-ast is required. Install with: pip install grep-ast")
             
         lang = detect_lang(fname)
