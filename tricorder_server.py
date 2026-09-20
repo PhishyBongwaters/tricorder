@@ -2,7 +2,6 @@ import asyncio
 import json
 import os
 import logging
-import re
 import sys
 from collections import OrderedDict
 from functools import lru_cache
@@ -18,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fastmcp import FastMCP, settings
 from core import Tricorder
 from database import drop_mapped_files
-from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write, query_variants, tokenize_identifier, levenshtein, db_root_matches
+from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write, db_root_matches
 from scm import get_scm_fname
 from importance import filter_important_files
 from ctags_probe import probe_and_narrow
