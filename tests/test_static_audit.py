@@ -68,3 +68,79 @@ def test_grep_ast_import_error_raises_named_error():
         except NameError as e:
             raise AssertionError(f"latent NameError in ImportError branch: {e}")
     raise AssertionError("expected GrepAstNotAvailableError, nothing raised")
+
+
+def test_discover_src_files_clears_stale_warning(tmp_path):
+    """A clean scan must not inherit a previous scan's limit warning.
+
+    _last_scan_report is process-global and write-once; without clearing,
+    scan B's response would wrongly claim a partial scan after scan A hit
+    a limit. Threaded path already clears; serial path did not.
+    """
+    import os as _os
+    from unittest.mock import patch
+    from utils import discover_src_files
+
+    (tmp_path / "a.py").write_text("x = 1\n")
+    for workers in ("1", "2"):
+        report = {"warning": "stale warning from previous scan"}
+        with patch.dict(_os.environ, {"TRICORDER_WALK_WORKERS": workers}):
+            discover_src_files(str(tmp_path), report=report)
+        assert "warning" not in report, (
+            f"stale warning survived a clean scan (workers={workers})"
+        )
+
+
+def test_clean_snapshot_wins_over_clobbered_global():
+    """A clean-scan snapshot (None) must beat the process-global fallback.
+
+    Otherwise an interleaved scan for another root that hit a limit would
+    have its warning attached to this clean scan's response — the race
+    round 17's snapshot was meant to close, re-entering via the fallback.
+    """
+    import tricorder_server as srv
+
+    srv._last_scan_report.clear()
+    srv._last_scan_report["warning"] = "stale warning from another root's scan"
+    try:
+        resp = srv._attach_scan_warning({}, warning=None)
+        assert "scan_warning" not in resp, (
+            f"stale global warning leaked into a clean scan: {resp.get('scan_warning')!r}"
+        )
+    finally:
+        srv._last_scan_report.clear()
+
+
+def test_no_discovery_means_no_warning():
+    """other_files path: no discovery ran, so no warning may attach."""
+    import tricorder_server as srv
+
+    srv._last_scan_report.clear()
+    srv._last_scan_report["warning"] = "stale warning from another root's scan"
+    try:
+        # tricorder_scan sets scan_warning=None explicitly when other_files
+        # are supplied (no discovery runs for that call).
+        resp = srv._attach_scan_warning({}, warning=None)
+        assert "scan_warning" not in resp
+    finally:
+        srv._last_scan_report.clear()
+
+
+def test_legacy_global_fallback_preserved():
+    """Omitting `warning` keeps the legacy global fallback (backward compat)."""
+    import tricorder_server as srv
+
+    srv._last_scan_report.clear()
+    srv._last_scan_report["warning"] = "limit hit"
+    try:
+        resp = srv._attach_scan_warning({})
+        assert resp.get("scan_warning") == "limit hit"
+    finally:
+        srv._last_scan_report.clear()
+
+
+def test_explicit_warning_attaches():
+    import tricorder_server as srv
+
+    resp = srv._attach_scan_warning({}, warning="limit hit")
+    assert resp.get("scan_warning") == "limit hit"

@@ -61,6 +61,10 @@ def find_src_files(directory: str, exclude_globs: Optional[List[str]] = None) ->
 # attached to the response when the walk hit a resource budget.
 _last_scan_report: dict = {}
 
+# Sentinel for _attach_scan_warning: "no snapshot was taken" (legacy global
+# fallback) vs an explicit None snapshot (clean scan / no discovery ran).
+_UNSET = object()
+
 # Configure logging - only show errors
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.ERROR)
@@ -617,16 +621,19 @@ def wrap_untrusted_content(text: str) -> str:
     return f"{_TRUST_BEGIN}\n{text}\n{_TRUST_END}"
 
 
-def _attach_scan_warning(resp: dict, warning: Optional[str] = None) -> dict:
+def _attach_scan_warning(resp: dict, warning=_UNSET) -> dict:
     """TC-002: attach the resource-envelope partial-scan warning if any.
 
     Callers pass the warning snapshotted synchronously right after
     find_src_files: _last_scan_report is a process-global dict, and an
     interleaved scan for another root can overwrite it across the awaits
-    between discovery and response time. Falls back to the global when no
-    snapshot is given (backward compat).
+    between discovery and response time. A snapshot of None (clean scan)
+    wins over the global — otherwise the pre-round-17 race returns through
+    the fallback. Omitting `warning` entirely keeps the legacy global
+    fallback (backward compat). Pass None explicitly when no discovery ran
+    (e.g. the caller supplied other_files) so nothing attaches.
     """
-    warn = warning if warning is not None else _last_scan_report.get("warning")
+    warn = _last_scan_report.get("warning") if warning is _UNSET else warning
     if warn:
         resp["scan_warning"] = warn
     return resp
@@ -725,9 +732,13 @@ async def tricorder_scan(
     # is process-global, so capture it synchronously right after
     # find_src_files — before any await — or an interleaved scan for
     # another root would overwrite it and we'd attach their warning.
-    scan_warning: Optional[str] = None
+    scan_warning = _UNSET  # replaced below: snapshot, or explicit None
     if other_files:
         effective_other_files = other_files
+        # No discovery ran for this call: an explicit None means "no
+        # warning", so the legacy global fallback (possibly another
+        # root's warning) can never attach here.
+        scan_warning = None
     else:
         # Pre-index probe: if pre_index is given and no other_files provided, run ctags probe
         if pre_index:
@@ -741,6 +752,9 @@ async def tricorder_scan(
             if probed_rel_files:
                 log.info(f"Ctags probe matched {len(probed_rel_files)} files.")
                 effective_other_files = probed_rel_files
+                # Probe path runs no directory discovery: explicit None so
+                # the global fallback can't attach another scan's warning.
+                scan_warning = None
             else:
                 log.warning(f"Ctags probe found no matches for '{pre_index}', falling back to auto-scan.")
         
