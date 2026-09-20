@@ -3,6 +3,7 @@ import json
 import os
 import logging
 import sys
+import threading
 from collections import OrderedDict
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Set
@@ -113,8 +114,43 @@ def _canonical_db_for(project_root: str) -> Optional[str]:
 # call, and the cached instance is rebuilt when it changes — e.g. a canonical
 # DB created by `tricorder --init` after the server started must take effect,
 # not stay invisible behind a stale in-memory instance.
+#
+# Thread-safety: tool handlers run via asyncio.to_thread, so concurrent calls
+# can race a cold root (double 9s+ construction) or hit check-then-act
+# KeyErrors on move_to_end/popitem. One lock guards the whole get-or-create;
+# warm hits are dict ops, so the lock is uncontended in the common case.
 _tricorder_cache: "OrderedDict[str, tuple]" = OrderedDict()
+_tricorder_cache_lock = threading.Lock()
 _TRICORDER_CACHE_MAX = 32
+
+
+def _db_file_ident(db_path: Optional[str]) -> Optional[tuple]:
+    """Identity of the DB file behind db_path: (st_dev, st_ino), or None.
+
+    Detects the file being *replaced* under a cached instance — e.g.
+    `tricorder --init --wipe` while the server is running. On POSIX the
+    unlink succeeds and the server's old connection keeps writing to the
+    unlinked inode while the path points at a new file; on the next call the
+    changed identity forces a rebuild onto the new file instead of serving
+    the stale handle. Ordinary scan writes keep the inode, so they never
+    trigger a rebuild."""
+    if not db_path:
+        return None
+    try:
+        st = os.stat(db_path)
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino)
+
+
+def _close_cached_tricorder(instance: "Tricorder") -> None:
+    """Best-effort close of a discarded cached instance's DB handle."""
+    try:
+        store = getattr(instance, "_db_store", None)
+        if store is not None:
+            store.close()
+    except Exception:
+        pass
 
 
 def _get_tricorder(project_root: str) -> "Tricorder":
@@ -137,54 +173,67 @@ def _get_tricorder(project_root: str) -> "Tricorder":
         log.warning(f"Canonical DB {db_path} is not writable; "
                     "this MCP scan runs in-memory (no resumption).")
         db_path = None
+    ident = _db_file_ident(db_path)
 
-    cached = _tricorder_cache.get(project_root)
-    if cached is not None and cached[0] == db_path:
+    with _tricorder_cache_lock:
+        cached = _tricorder_cache.get(project_root)
+        if cached is not None and cached[0] == db_path and cached[1] == ident:
+            _tricorder_cache.move_to_end(project_root)
+            return cached[2]
+        if cached is not None:
+            # Path changed, or the file was replaced under us (--init
+            # --wipe): drop the stale handle so nothing keeps writing to
+            # an unlinked inode.
+            _close_cached_tricorder(cached[2])
+
+        instance = Tricorder(
+            root=project_root,
+            token_counter_func=lambda text: count_tokens(text, "gpt-4"),
+            file_reader_func=read_text,
+            output_handler_funcs={'info': log.info, 'warning': log.warning, 'error': log.error},
+            verbose=False,
+            exclude_unranked=True,
+            use_db=True,
+            db_path=db_path,
+        )
+        _tricorder_cache[project_root] = (db_path, ident, instance)
         _tricorder_cache.move_to_end(project_root)
-        return cached[1]
-
-    instance = Tricorder(
-        root=project_root,
-        token_counter_func=lambda text: count_tokens(text, "gpt-4"),
-        file_reader_func=read_text,
-        output_handler_funcs={'info': log.info, 'warning': log.warning, 'error': log.error},
-        verbose=False,
-        exclude_unranked=True,
-        use_db=True,
-        db_path=db_path,
-    )
-    _tricorder_cache[project_root] = (db_path, instance)
-    _tricorder_cache.move_to_end(project_root)
-    while len(_tricorder_cache) > _TRICORDER_CACHE_MAX:
-        _tricorder_cache.popitem(last=False)
-    return instance
+        while len(_tricorder_cache) > _TRICORDER_CACHE_MAX:
+            _tricorder_cache.popitem(last=False)
+        return instance
 
 # ponytail: advisory tier tracker — survives across calls within a server process.
 # Can't enforce agent behavior (MCP is stateless per call) but can warn in the response.
 # Bounded LRU (OrderedDict) prevents unbounded growth across many project roots.
+# Guarded by _tier_history_lock: tool handlers run on threads (asyncio.to_thread)
+# and the check-then-act sequences below (in/move_to_end, len/popitem) race
+# without it — observed as KeyError crashes under concurrent calls.
 _MAX_TIER_HISTORY = 128
 
 _tier_history_store: "OrderedDict[str, dict]" = OrderedDict()
+_tier_history_lock = threading.Lock()
 
 
 def _tier_history_get(project_root: str) -> Optional[dict]:
     """Get tier history for a project root (LRU-bounded)."""
-    if project_root in _tier_history_store:
-        # Move to end (most recently used)
-        _tier_history_store.move_to_end(project_root)
-        return _tier_history_store[project_root]
-    return None
+    with _tier_history_lock:
+        if project_root in _tier_history_store:
+            # Move to end (most recently used)
+            _tier_history_store.move_to_end(project_root)
+            return _tier_history_store[project_root]
+        return None
 
 
 def _tier_history_set(project_root: str, value: dict) -> None:
     """Set tier history for a project root (LRU-bounded with explicit eviction)."""
-    if project_root in _tier_history_store:
-        # Update existing - move to end
-        _tier_history_store.move_to_end(project_root)
-    elif len(_tier_history_store) >= _MAX_TIER_HISTORY:
-        # Evict least recently used
-        _tier_history_store.popitem(last=False)
-    _tier_history_store[project_root] = value
+    with _tier_history_lock:
+        if project_root in _tier_history_store:
+            # Update existing - move to end
+            _tier_history_store.move_to_end(project_root)
+        elif len(_tier_history_store) >= _MAX_TIER_HISTORY:
+            # Evict least recently used
+            _tier_history_store.popitem(last=False)
+        _tier_history_store[project_root] = value
 
 
 def _validate_project_root(project_root: str) -> tuple[Optional[str], Optional[Path]]:

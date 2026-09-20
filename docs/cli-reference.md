@@ -95,7 +95,7 @@ being held in RAM. See [Architecture](architecture.md#scan-pipeline).
 | `--db-path PATH` | Persist per-file tags/refs to this sqlite file instead of in-memory sqlite. |
 | `--no-db` | Opt out: use the legacy in-memory `nx.MultiDiGraph` path. Escape hatch for parity/debugging. Mutually exclusive with `--db-path`. |
 | `--init` | Create/open the canonical DB at `<root>/.tricorder/db/<name>.db`, print its path, exit. Idempotent; never wipes without `--wipe`. |
-| `--wipe` | With `--init` only: delete the existing canonical DB first. (`--wipe` requires `--init`.) |
+| `--wipe` | With `--init` only: delete the existing canonical DB first. (`--wipe` requires `--init`.) Stop the MCP server first if it is running against this DB — wiping under a held-open DB fails cleanly on Windows, and on POSIX the server detects the replacement and rebuilds. |
 | `--db-coverage` | Print one-line mapped-DB coverage for `--root` (`mapped: N files, M tags, db sig X`) and exit. Prints nothing when unmapped. |
 
 ## Diagnostics
@@ -107,6 +107,7 @@ being held in RAM. See [Architecture](architecture.md#scan-pipeline).
 | `--stats-only [MAP_FILE]` | Print token-budget JSON for `--root` and exit: `{token_estimate, full_repo_estimate, savings_pct}`. No map is built. |
 | `--probe-digest` | Print the turn-0 probe digest (language tally + sizes + navigation hint) for `--root` and exit. No map build, no token budget — cheap even on huge repos. This is the digest the Hermes/DSH plugins fall back to when the project isn't pre-mapped (a pre-mapped project instead gets a coverage/steering line from its DB). |
 | `--force-refresh` | Force refresh of caches. |
+| `--help` | Print the full option list and exit. |
 
 ## Examples
 

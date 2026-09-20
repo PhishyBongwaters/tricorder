@@ -382,7 +382,8 @@ Examples:
     parser.add_argument(
         "--wipe",
         action="store_true",
-        help="With --init only: delete the existing canonical DB first."
+        help="With --init only: delete the existing canonical DB first. "
+             "Stop the MCP server first if it is running against this DB."
     )
 
     parser.add_argument(
@@ -444,7 +445,15 @@ Examples:
         init_db = init_root / ".tricorder" / "db" / f"{init_root.name}.db"
         init_db.parent.mkdir(parents=True, exist_ok=True)
         if args.wipe and init_db.exists():
-            init_db.unlink()
+            try:
+                init_db.unlink()
+            except OSError as e:
+                # Windows: unlink fails while another process (e.g. the MCP
+                # server) holds the DB open. Fail clean, not with a traceback.
+                parser.error(
+                    f"cannot wipe {init_db}: {e.strerror or e} — the DB may "
+                    "be held open by another process (e.g. the MCP server); "
+                    "stop it and retry.")
         # Stamp ownership: with an empty meta table, _canonical_db_for's
         # db_root_matches rejects the DB, so --diff/map resumption would
         # never see it until a scan wrote meta. extractor_version=0 marks
