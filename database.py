@@ -451,6 +451,10 @@ def drop_mapped_files(files, root, db_path):
     """
     if not db_path or not files:
         return files
+    if not os.path.exists(db_path):
+        # Never connect a possibly-absent DB (sqlite creates a 0-byte stub,
+        # masking real absence); no DB means nothing is mapped.
+        return files
     try:
         db = DBStore(db_path)
         try:
