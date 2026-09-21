@@ -15,6 +15,12 @@ from tricorder_server import (
     _truncate_text_to_tokens,
     _detail_decoration_reserve,
     _shave_call_lists,
+    _shave_body,
+    _TRUNCATION_MARKER,
+    _final_budget_check,
+    _budget_fields,
+    _full_repo_tokens,
+    _mark_untrusted,
 )
 from utils import count_tokens
 
@@ -224,6 +230,69 @@ class TestShaveCallLists(unittest.TestCase):
     def test_empty_lists_returns_false(self):
         s = _symbol(callers=[], callees=[])
         self.assertFalse(_shave_call_lists(s))
+
+
+class TestShaveBody(unittest.TestCase):
+    def test_declines_futile_shave_on_tiny_body(self):
+        # Adding the marker to a tiny unmarked body costs more tokens than
+        # the 10% shave saves — decline (leaving the body untouched) so
+        # budget loops fall through to the call lists instead of burning
+        # iterations for ~zero net progress.
+        body = "def hot_target(a):\n    return a\n"
+        s = _symbol(body=body)
+        self.assertFalse(_shave_body(s))
+        self.assertEqual(s["body"], body)
+
+    def test_shaves_large_body(self):
+        s = _symbol(body="x = 1\n" * 500)
+        self.assertTrue(_shave_body(s))
+        self.assertLess(len(s["body"]), 500 * 6)
+        self.assertTrue(s["body"].endswith(_TRUNCATION_MARKER))
+
+    def test_empty_body_returns_false(self):
+        s = _symbol(body="")
+        self.assertFalse(_shave_body(s))
+
+
+class TestFinalBudgetCheck(unittest.TestCase):
+    def test_converges_with_tiny_body_and_fat_callers(self):
+        # Regression: _final_budget_check burned its whole iteration budget
+        # shaving a tiny body — the first shave *adds* the truncation marker
+        # (47 chars -> 76) and eight shaves net ~zero — and never reached
+        # the call lists holding the real mass. A few tokens of decoration
+        # drift then left the response over budget (the flaky
+        # test_default_budget_bounds_hot_symbol failure: 2052-2053 tokens
+        # vs the 2048 budget, depending on the random temp-dir name).
+        tmp = Path(tempfile.mkdtemp(prefix="final_check_"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "hot.py").write_text(
+            "def hot_target(a):\n    return a\n", encoding="utf-8")
+        callers = [
+            {"file": str(tmp / f"use{i:03d}.py"), "line": 4,
+             "cross_file": True}
+            for i in range(40)
+        ]
+        symbol = {
+            "name": "hot_target", "type": "function",
+            "file": str(tmp / "hot.py"), "line": 1, "end_line": 2,
+            "signature": "hot_target (a)", "docstring": "Hot.",
+            "language": "python", "kind": "function_definition",
+            "body": "def hot_target(a):\n    return a\n",
+            "callers": callers, "callees": [],
+        }
+        resp = {"symbol": symbol}
+        resp.update(_budget_fields(resp, _full_repo_tokens(str(tmp))))
+        resp = _mark_untrusted(resp)
+        start = _tok(resp)
+        # Simulate decoration drift: demand 10 tokens under the current total.
+        _final_budget_check(resp, symbol, start - 10, str(tmp))
+        self.assertLessEqual(_tok(resp), start - 10)
+        # Counts stay honest and the head survives.
+        self.assertEqual(symbol["callers_total"], 40)
+        self.assertEqual(symbol["callers_omitted"],
+                         40 - len(symbol["callers"]))
+        self.assertGreater(len(symbol["callers"]), 0)
+        self.assertTrue(resp["truncated"])
 
 
 class TestDetailMaxTokensIntegration(unittest.TestCase):

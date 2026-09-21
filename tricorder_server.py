@@ -437,6 +437,11 @@ def _shave_body(symbol: dict) -> bool:
     """Remove ~10% of a symbol dict's body (in place), keeping the marker.
 
     Returns False when there is no body left to shave — the metadata floor.
+    Also declines a futile shave: adding the truncation marker to a tiny
+    unmarked body costs more tokens than the 10% shave saves, so decline
+    and let the caller fall through to the call lists (which hold the real
+    mass for hot symbols) instead of burning iterations for ~zero net
+    progress. Mirrors the token guard in _shave_docstring.
     Used both by the budget trimmer and by the final total-budget check.
     """
     cur = symbol.get("body") or ""
@@ -448,7 +453,12 @@ def _shave_body(symbol: dict) -> bool:
     if new_len >= len(base):
         return False
     trimmed = base[:new_len].rstrip()
-    symbol["body"] = trimmed + _TRUNCATION_MARKER if trimmed else ""
+    new_body = trimmed + _TRUNCATION_MARKER if trimmed else ""
+    if count_tokens(new_body, "gpt-4") >= count_tokens(cur, "gpt-4"):
+        # Futile shave (marker outweighs the cut) — decline so the budget
+        # loop falls through to the call lists instead of wedging here.
+        return False
+    symbol["body"] = new_body
     return True
 
 
@@ -513,10 +523,14 @@ def _final_budget_check(resp: dict, symbol: Optional[dict], max_tokens: int,
     """Verify a fully-decorated response honors max_tokens, in place.
 
     The decoration reserve used during trimming is an estimate (placeholder
-    values, serialization merge effects), so shave the symbol body until the
-    serialized total actually fits. Refreshes the token-estimate fields
-    afterwards; the 2-token headroom absorbs digit-length wobble when the
-    refreshed estimates are re-serialized. Stops at the metadata floor
+    values, serialization merge effects), so shave the symbol until the
+    serialized total actually fits. Body and docstring shavers decline a
+    futile shave (one that would not shrink the text — e.g. adding the
+    truncation marker to a tiny body costs more than the 10% shave saves),
+    so the loop falls through to the call lists, which hold the real mass
+    for hot symbols. Refreshes the token-estimate fields afterwards; the
+    2-token headroom absorbs digit-length wobble when the refreshed
+    estimates are re-serialized. Stops at the metadata floor
     (best effort — identity/signature are never cut).
     """
     trimmed = False
@@ -1519,7 +1533,7 @@ async def tricorder_locate(
         resp = _mark_untrusted(resp)
         if max_tokens is not None and max_tokens > 0 and resp.get("match") is not None:
             # Same final guarantee as tricorder_detail: verify the
-            # serialized total, shaving the match body on estimate drift.
+            # serialized total, shaving the match on estimate drift.
             _final_budget_check(resp, resp["match"], max_tokens, project_root)
         return resp
 
