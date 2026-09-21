@@ -84,7 +84,7 @@ Search identifiers by name — the cheapest way to locate a known symbol.
 |---|---|---|---|
 | `project_root` | string | — | **Required.** Absolute path. |
 | `query` | string | — | **Required.** Identifier to find. |
-| `max_results` | int | `50` | Max results. |
+| `max_results` | int | `10` | Max results. |
 | `context_lines` | int | `2` | Source lines around each hit. |
 | `include_definitions` | bool | `true` | Include definition occurrences. |
 | `include_references` | bool | `true` | Include reference occurrences. |
@@ -106,13 +106,16 @@ Structured symbol query with type + file filters. Returns full records.
 | `query` | string | `""` | Case-insensitive substring match on symbol name. Empty matches all. |
 | `type` | string | — | Filter by symbol type: `function`, `class`, `type`, `variable`, `method`, `import`. Exact match. |
 | `file` | string | — | Filter by file path (substring). |
-| `limit` | int | `50` | Max results (caps at 200). |
+| `limit` | int | `10` | Max results (caps at 200). |
 
 **Returns:** records with `name`, `type`, `file`, line range, `signature`,
 `docstring`, `language`, tree-sitter kind. Note: Python method names are
 returned bare (`render`) while the repo map shows them qualified
 (`Renderer::render`) — both resolve to the same symbol; see
 [class-context-qualification](class-context-qualification.md).
+Docstrings are capped at 200 chars in listings (truncated records carry
+`docstring_omitted` with the exact char count); the full docstring is
+available via `tricorder_detail`.
 
 ---
 

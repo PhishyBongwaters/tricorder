@@ -122,7 +122,7 @@ validation status starts as `pending` and is updated as checks run.
 - [pending] `tricorder_detect` params: `query`, `max_results`, `context_lines`, `include_definitions`, `include_references`, `pre_index`/`pre_index_max_files`/`pre_index_include_parents`
 - [pending] `tricorder_symbols` structured symbol query with type + file filters
 - [pending] `tricorder_symbols` returns name, type, file, line range, signature, docstring, language, ts-kind
-- [pending] `tricorder_symbols` params: `query`, `type`, `file`, `limit` (default 50, cap 200)
+- [pending] `tricorder_symbols` params: `query`, `type`, `file`, `limit` (default 10, cap 200)
 - [pending] `tricorder_detail` deep-dive: body, callers, callees
 - [verified 2026-09-20] `tricorder_detail` params match `tricorder_server.py` exactly: `project_root`, `file`, `name`, `line`, `max_tokens`
 - [pending] `tricorder_query` graph traversal DSL

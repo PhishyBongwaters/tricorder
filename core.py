@@ -43,6 +43,11 @@ _COVERAGE_WARN_THRESHOLD = 60.0  # percentage; can be overridden via config
 # file can hang in-process parsing with no native timeout; we bound it.
 _PARSER_TIMEOUT_S = float(os.environ.get("TRICORDER_PARSER_TIMEOUT_S", "5"))
 
+# Bloat diet: symbols listings are the cheap detect -> symbols -> detail hop;
+# docstrings longer than this are cut to a word boundary with an explicit
+# docstring_omitted count. Full text remains available via detail.
+_LISTING_DOCSTRING_CAP = 200
+
 
 
 class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
@@ -321,7 +326,7 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
     def search_identifiers(
         self,
         query: str,
-        max_results: int = 50,
+        max_results: int = 10,
         context_lines: int = 1,
         include_definitions: bool = True,
         include_references: bool = True,
@@ -768,7 +773,7 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         query: str = "",
         type: Optional[str] = None,
         file: Optional[str] = None,
-        limit: int = 50,
+        limit: int = 10,
         files: Optional[List[str]] = None,
     ) -> Tuple[List[Dict[str, Any]], bool]:
         """Search code symbols by name, type, or file path.
@@ -866,6 +871,17 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         if rescue:
             for r_ in results:
                 r_["quality"] = "fuzzy"
+
+        # Bloat diet: listings are the cheap navigation hop (detect -> symbols
+        # -> detail); long docstrings live in detail. Keep the first 200 chars
+        # of each docstring here and say exactly how much was cut, mirroring
+        # the callers_omitted/callees_omitted convention.
+        for r_ in results:
+            doc = r_.get("docstring") or ""
+            if len(doc) > _LISTING_DOCSTRING_CAP:
+                head = doc[:_LISTING_DOCSTRING_CAP].rsplit(" ", 1)[0]
+                r_["docstring"] = head + "…"
+                r_["docstring_omitted"] = len(doc) - len(head)
 
         return results, rescue
     

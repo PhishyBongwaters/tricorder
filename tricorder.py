@@ -263,8 +263,8 @@ Examples:
     parser.add_argument(
         "--max-results",
         type=int,
-        default=50,
-        help="Maximum results for --detect/--symbols (default: 50)"
+        default=10,
+        help="Maximum results for --detect/--symbols (default: 10)"
     )
 
     parser.add_argument(

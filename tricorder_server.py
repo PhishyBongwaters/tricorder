@@ -1045,7 +1045,7 @@ async def tricorder_scan(
 async def tricorder_detect(
     project_root: str,
     query: str,
-    max_results: int = 50,
+    max_results: int = 10,
     context_lines: int = 1,
     include_definitions: bool = True,
     include_references: bool = True,
@@ -1136,16 +1136,20 @@ async def tricorder_symbols(
     query: str = "",
     type: Optional[str] = None,
     file: Optional[str] = None,
-    limit: int = 50,
+    limit: int = 10,
 ) -> Dict[str, Any]:
     """Search for code symbols by name, type, or file path. Returns matching symbols with their name, type, file, line range, signature, docstring, language, and tree-sitter kind.
+
+    Docstrings are capped at 200 chars in listings (truncated records carry
+    docstring_omitted with the exact char count); the full docstring is
+    available via tricorder_detail.
 
     Args:
         project_root: Root directory of the project to search. (must be an absolute path!)
         query: Substring match on symbol name (case-insensitive). Empty string matches all.
         type: Filter by symbol type — function, class, type, variable, method, or import. Exact match.
         file: Filter by file path — path contains the given string.
-        limit: Maximum results to return. Defaults to 50, caps at 200.
+        limit: Maximum results to return. Defaults to 10, caps at 200.
 
     Returns:
         Dictionary containing 'symbols' (list of symbol records) or 'error' key.

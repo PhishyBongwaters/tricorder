@@ -282,5 +282,35 @@ class TestCliSearch(unittest.TestCase):
         self.assertIn("auto-scanning", p.stdout)
 
 
+class TestDefaultResultCap(unittest.TestCase):
+    """Regression: default detect/symbols caps are 10 to control response bloat."""
+
+    def test_core_defaults(self):
+        import inspect
+        self.assertEqual(inspect.signature(Tricorder.search_identifiers)
+                         .parameters["max_results"].default, 10)
+        self.assertEqual(inspect.signature(Tricorder.search_symbols)
+                         .parameters["limit"].default, 10)
+
+    def test_mcp_defaults(self):
+        import inspect
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "tricorder_server_probe", REPO.parent / "tricorder_server.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        self.assertEqual(inspect.signature(mod.tricorder_detect)
+                         .parameters["max_results"].default, 10)
+        self.assertEqual(inspect.signature(mod.tricorder_symbols)
+                         .parameters["limit"].default, 10)
+
+    def test_cli_default(self):
+        p = subprocess.run([PY, CLI, "--help"],
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(p.returncode, 0, p.stderr[-500:])
+        self.assertIn("--max-results", p.stdout)
+        self.assertIn("default: 10", p.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

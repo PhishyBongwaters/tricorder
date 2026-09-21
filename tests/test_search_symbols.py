@@ -101,5 +101,28 @@ class TestSearchSymbols(unittest.TestCase):
         self.assertEqual(result["symbols"], [])
 
 
+    def test_listing_docstring_truncated(self):
+        """Symbols listing truncates long docstrings (full text via detail)."""
+        result = asyncio.run(tricorder_symbols(
+            project_root=self.project_root, query="safe_write"
+        ))
+        self.assertNotIn("error", result)
+        hit = next(s for s in result["symbols"] if s["name"] == "safe_write")
+        self.assertLessEqual(len(hit["docstring"]), 200)
+        self.assertIn("docstring_omitted", hit)
+        # omitted counts original chars not shown (the trailing ellipsis
+        # is the cut marker, not content): shown head + omitted == 426.
+        self.assertEqual(hit["docstring_omitted"] + len(hit["docstring"]) - 1, 426)
+
+    def test_short_docstring_not_marked(self):
+        """Short docstrings pass through unmarked."""
+        result = asyncio.run(tricorder_symbols(
+            project_root=self.project_root, query="count_tokens"
+        ))
+        self.assertNotIn("error", result)
+        hit = next(s for s in result["symbols"] if s["name"] == "count_tokens")
+        self.assertNotIn("docstring_omitted", hit)
+
+
 if __name__ == '__main__':
     unittest.main()

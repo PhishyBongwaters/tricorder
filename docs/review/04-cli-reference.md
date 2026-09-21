@@ -45,7 +45,7 @@ tricorder.py --chat-files main.py --other-files src/
   scan, plus tags for changed files. Read-only; honors `--format`.
 - `--detect QUERY` / `--symbols QUERY`: identifier/symbol search
   without a map build (MCP `tricorder_detect` / `tricorder_symbols`
-  equivalents). `--max-results N` (default 50) caps results; both
+  equivalents). `--max-results N` (default 10) caps results; both
   honor `--format` with machine-clean JSON.
 
 ## Persist and reset
