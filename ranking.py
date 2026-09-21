@@ -1047,7 +1047,12 @@ class RankingMixin:
                 f"or drill in with detect/symbols/query."
             )
         
-        # Add untagged files section to final output (not counted in token budget)
+        # Add untagged files section to final output. The section shares the
+        # map token budget: entries are listed only while they fit in the
+        # remaining budget, and any remainder is reported as an honest
+        # "+N more" tail. Files are never silently dropped (the pre-round-18
+        # bug) and never appended unbounded on top of the budget (the
+        # post-round-18 wart). Raising --map-tokens lists more of them.
         if best_tree and file_report.untagged_files and not self.exclude_untagged and self.context_lines == 0:
             other_lines = []
             for uf in file_report.untagged_files:
@@ -1059,7 +1064,39 @@ class RankingMixin:
                 else:
                     other_lines.append(uf)
             if other_lines:
-                best_tree = best_tree + "\n\nOther files:\n" + "\n".join(other_lines)
+                header = "\n\nOther files:\n"
+
+                def _tail(n):
+                    return (f"... +{n} more untagged file(s) "
+                            f"(raise --map-tokens to list)")
+
+                budget_left = (max_map_tokens - self.token_count(best_tree)
+                               - self.token_count(header))
+                kept = []
+                for line in other_lines:
+                    cost = self.token_count(line + "\n")
+                    if cost <= budget_left:
+                        kept.append(line)
+                        budget_left -= cost
+                    else:
+                        break
+                omitted = len(other_lines) - len(kept)
+
+                def _section():
+                    body = "\n".join(kept)
+                    if omitted:
+                        tail = _tail(omitted)
+                        body = body + "\n" + tail if body else tail
+                    return header + body
+
+                section = _section()
+                # Tokenizers aren't additive: verify the assembled total and
+                # trim until the whole map fits the budget.
+                while kept and self.token_count(best_tree + section) > max_map_tokens:
+                    kept.pop()
+                    omitted += 1
+                    section = _section()
+                best_tree = best_tree + section
         
         # Attach coverage_pct to file_report so MCP/CLI can surface it (issue #18)
         file_report.coverage_pct = coverage_pct

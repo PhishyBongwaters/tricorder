@@ -122,3 +122,68 @@ def test_warm_scan_keeps_tagless_files_included(tmp_path, monkeypatch):
         assert report2.total_files_considered == 2
     finally:
         t.close()
+
+
+def _tagless_repo(tmp_path, n_tagless):
+    """One tagged file + n tagless files; returns (repo, all_paths)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    a_py = repo / "a.py"
+    a_py.write_text("def foo():\n    pass\n")
+    paths = [str(a_py)]
+    for i in range(n_tagless):
+        p = repo / f"empty{i}.py"
+        p.write_text("# nothing to see here\n")
+        paths.append(str(p))
+    return repo, paths
+
+
+def test_other_files_section_shares_token_budget(tmp_path, monkeypatch):
+    """The 'Other files' section must not blow past --map-tokens.
+
+    Regression test for the post-round-18 wart: the untagged listing was
+    appended unbounded on top of the token budget (a 98-line map became
+    210 lines on the tricorder repo itself). Now the section is capped to
+    the remaining budget and the remainder is reported as an honest
+    "+N more" tail -- files are never silently dropped.
+    """
+    from utils import count_tokens
+
+    cache_home = tmp_path / "cachehome"
+    cache_home.mkdir()
+    repo, paths = _tagless_repo(tmp_path, 12)
+
+    t = _tc(repo, monkeypatch, cache_home, use_db=True,
+            db_path=str(tmp_path / "idx.db"), map_tokens=70)
+    try:
+        map_text, report = t.get_repo_map(chat_files=[], other_files=paths)
+        assert map_text is not None
+        assert "Other files:" in map_text
+        # Correctness (round-18) still holds: nothing silently dropped.
+        assert len(report.untagged_files) == 12, report.untagged_files
+        # ... but the rendered section is budget-capped with an honest tail.
+        assert "+12 more untagged file(s)" not in map_text  # some listed
+        assert "more untagged file(s)" in map_text, map_text[-500:]
+        total = count_tokens(map_text, "gpt-4")
+        assert total <= 70, f"map blew the budget: {total} > 70 tokens"
+    finally:
+        t.close()
+
+
+def test_other_files_section_lists_all_when_budget_allows(tmp_path, monkeypatch):
+    """Generous budget: every untagged file listed, no '+N more' tail."""
+    cache_home = tmp_path / "cachehome"
+    cache_home.mkdir()
+    repo, paths = _tagless_repo(tmp_path, 4)
+
+    t = _tc(repo, monkeypatch, cache_home, use_db=True,
+            db_path=str(tmp_path / "idx.db"), map_tokens=4000)
+    try:
+        map_text, report = t.get_repo_map(chat_files=[], other_files=paths)
+        assert map_text is not None
+        assert "Other files:" in map_text
+        for i in range(4):
+            assert f"empty{i}.py" in map_text
+        assert "more untagged file(s)" not in map_text
+    finally:
+        t.close()
