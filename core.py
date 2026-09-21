@@ -10,7 +10,7 @@ from pathlib import Path
 # Pin project dir ahead of sys.path (mirror tricorder.py) so utils/scm resolve to THIS repo.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Optional, Tuple, Callable, Any
-from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, query_variants, tokenize_identifier, levenshtein, stat_fingerprint
+from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, query_variants, tokenize_identifier, levenshtein, stat_fingerprint, canonical_token, NL_QUERY_STOPWORDS
 from cache import TagsCacheMixin, CACHE_VERSION
 from parser import ParserMixin
 from graph import GraphMixin
@@ -452,6 +452,20 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 # Trim the 2x rescue pool back to the caller's cap.
                 del matching_tags[max_results:]
 
+        # Tier 4: content-backed symbol search for natural-language queries.
+        # Name-only tiers cannot bridge "enter the exit stack" ->
+        # _solve_generator: the tokens live in docstrings, bodies, and
+        # call sites, not in the identifier. Fires ONLY when every name
+        # tier came back empty, so exact/substring/fuzzy behavior is
+        # unchanged. Deterministic, stdlib-only: weighted token overlap
+        # over the def name (3x), its own source span (1x), and caller
+        # lines (1x, capped). Flagged quality "content".
+        content_used = False
+        if not matching_tags and query and include_definitions:
+            matching_tags = self._content_search_tags(
+                query, all_tags, max_results)
+            content_used = bool(matching_tags)
+
         # Format results with context
         results = []
         for tag in matching_tags:
@@ -489,10 +503,143 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 "name": tag.name,
                 "kind": tag.kind,
                 "context": context or "",
-                "quality": "fuzzy" if rescue_used else "exact"
+                "quality": ("content" if content_used else
+                            "fuzzy" if rescue_used else "exact")
             })
 
-        return results, rescue_used
+        return results, (rescue_used or content_used)
+
+    # Tier-4 tuning: minimum bar for a content-backed candidate. The
+    # fraction keeps long NL queries honest (a random def will not cover
+    # half of 7+ distinctive tokens); the absolute floor keeps 1-2 token
+    # queries from matching on a single body word, while still letting
+    # short span-only queries (3-4 tokens) through on full coverage.
+    _CONTENT_MIN_FRACTION = 0.5
+    _CONTENT_MIN_SCORE = 3
+    _CONTENT_SPAN_LINES = 80
+    _CONTENT_MAX_CALLERS = 8
+
+    def _content_search_tags(self, query, all_tags, max_results):
+        """Rank def tags by natural-language token overlap (tier 4).
+
+        Fires only when every name-based tier returned empty. Scores each
+        definition by weighted overlap of the query's content tokens
+        (stopwords stripped, synonym-canonicalized, plural-insensitive)
+        against three token sources: the def's own name (3x, strict
+        token match), its source span (1x, substring so unsplittable
+        compounds like "asynccontextmanager" still match), and its
+        caller lines (1x, substring, capped). Ranking among content
+        candidates is heuristic by design: all top hits genuinely share
+        the query's concepts, and the candidate list carries file:line
+        plus context for the agent to disambiguate. Fully
+        deterministic: candidates are visited in (file, line) order and
+        ranked by (-score, -matched, name, file, line). Returns list[Tag].
+        """
+        qtok = []
+        for t in tokenize_identifier(query):
+            if len(t) < 2 or t in NL_QUERY_STOPWORDS:
+                continue
+            c = canonical_token(t)
+            if c not in qtok:
+                qtok.append(c)
+        if not qtok:
+            return []
+
+        def _match(q, blob):
+            # Plural-insensitive.
+            if q in blob:
+                return True
+            if q + "s" in blob:
+                return True
+            return len(q) > 3 and q.endswith("s") and q[:-1] in blob
+
+        def _match_blob(q, blob_text):
+            # Substring over the span/caller text: catches unsplittable
+            # compounds like "asynccontextmanager" for query "manager".
+            # Space-joined so matches never span token boundaries.
+            if q in blob_text:
+                return True
+            if q + "s" in blob_text:
+                return True
+            return len(q) > 3 and q.endswith("s") and q[:-1] in blob_text
+
+        # Group defs per file in deterministic order; tokenize every
+        # involved file's lines once (defs' files and callers' files —
+        # a caller may live in a file with no defs of its own).
+        defs_by_file = {}
+        for tag in all_tags:
+            if tag.kind == "def":
+                defs_by_file.setdefault(tag.rel_fname, []).append(tag)
+        refs_by_name = {}
+        for tag in all_tags:
+            if tag.kind == "ref":
+                refs_by_name.setdefault(tag.name, []).append(tag)
+
+        file_tok_lines = {}
+        for rel_fname in sorted(
+                set(defs_by_file) | {t.rel_fname for v in refs_by_name.values()
+                                     for t in v}):
+            file_path = str(Path(self.root) / rel_fname)
+            try:
+                lines = self.get_file_text(file_path).splitlines()
+            except (OSError, UnicodeDecodeError):
+                continue
+            file_tok_lines[rel_fname] = [
+                {canonical_token(w) for w in tokenize_identifier(l)}
+                for l in lines
+            ]
+        scored = []
+        for rel_fname in sorted(defs_by_file):
+            defs = sorted(defs_by_file[rel_fname], key=lambda t: t.line)
+            tok_lines = file_tok_lines.get(rel_fname)
+            if tok_lines is None:
+                continue
+            n_lines = len(tok_lines)
+            for i, dtag in enumerate(defs):
+                start = dtag.line
+                end = (defs[i + 1].line - 1 if i + 1 < len(defs)
+                       else n_lines)
+                end = min(end, start - 1 + self._CONTENT_SPAN_LINES)
+                span_set = set()
+                for ln in range(start, min(end + 1, n_lines + 1)):
+                    span_set.update(tok_lines[ln - 1])
+                short = dtag.name.split("::")[-1]
+                name_set = {canonical_token(w)
+                            for w in tokenize_identifier(short)}
+                caller_set = set()
+                callers = refs_by_name.get(dtag.name, [])
+                if dtag.name != short:
+                    callers = callers + refs_by_name.get(short, [])
+                for rtag in sorted(callers,
+                                   key=lambda t: (t.rel_fname, t.line)
+                                   )[:self._CONTENT_MAX_CALLERS]:
+                    rlines = file_tok_lines.get(rtag.rel_fname)
+                    if rlines is None:
+                        continue
+                    for ln in (rtag.line - 1, rtag.line, rtag.line + 1):
+                        if 1 <= ln <= len(rlines):
+                            caller_set.update(rlines[ln - 1])
+                # Space-joined text for substring (compound) matching.
+                span_text = " ".join(sorted(span_set))
+                caller_text = " ".join(sorted(caller_set))
+                score = 0
+                matched = 0
+                for q in qtok:
+                    if _match(q, name_set):
+                        score += 3
+                        matched += 1
+                    elif _match_blob(q, span_text):
+                        score += 1
+                        matched += 1
+                    elif _match_blob(q, caller_text):
+                        score += 1
+                        matched += 1
+                if (matched / len(qtok) >= self._CONTENT_MIN_FRACTION
+                        and score >= self._CONTENT_MIN_SCORE):
+                    scored.append((-score, -matched, dtag.name.lower(),
+                                   dtag.rel_fname, dtag.line, dtag))
+        scored.sort(key=lambda s: s[:5])
+        return [s[5] for s in scored[:max_results * 2]][:max_results]
 
     def search_symbols(
         self,

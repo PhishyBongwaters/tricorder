@@ -788,7 +788,8 @@ Examples:
                     if not results:
                         print(f"No matches for '{args.detect}'.")
                     for r in results:
-                        q = f" ({r['quality']})" if r.get("quality") == "fuzzy" else ""
+                        q = (f" ({r['quality']})"
+                             if r.get("quality") in ("fuzzy", "content") else "")
                         print(f"{r['file']}:{r['line']}  {r['name']}  [{r['kind']}]{q}")
                         for cl in r["context"].splitlines():
                             print(f"    {cl}")

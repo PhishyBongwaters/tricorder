@@ -25,12 +25,14 @@ from ctags_probe import probe_and_narrow
 # Pre-scan DB lives in canonical cache root (get_cache_root() -> .tricorder/db)
 PRE_SCAN_DB_DIR = get_cache_root() / "db"
 
-def _escalation_hint(tool: str, query: str, n_results: int, rescue_used: bool):
+def _escalation_hint(tool: str, query: str, n_results: int, rescue_used: bool,
+                     rescue_kind: str = "fuzzy"):
     """Deterministic next-rung signal for empty/fuzzy lookups (no model).
 
     Decision table over already-computed signals only:
     - 0 hits (even after rescue) -> point at the next ladder rung.
     - fuzzy rescue fired -> verify the candidate in source via detail.
+    - content rescue fired -> same, with the accurate provenance.
     Returns None when the result needs no escalation.
     # ponytail: fixed table, no heuristics beyond empty/fuzzy; extend only
     # with new measurable signals (e.g. budget-truncated), never content.
@@ -42,6 +44,13 @@ def _escalation_hint(tool: str, query: str, n_results: int, rescue_used: bool):
                 "message": f"No {'symbol' if tool == 'symbols' else 'identifier'} hit for "
                            f"'{query}' (exact + fuzzy tried). Try {nxt} or widen the query."}
     if rescue_used and n_results:
+        if rescue_kind == "content":
+            return {"next_rung": "detail", "reason": "content_verify",
+                    "evidence": {"tool": tool, "query": query},
+                    "message": "Content-backed rescue fired — candidates matched "
+                               "your description's tokens in docstrings, bodies, or "
+                               "call sites, not the identifier. Verify via detail "
+                               "before asserting/editing."}
         return {"next_rung": "detail", "reason": "fuzzy_verify",
                 "evidence": {"tool": tool, "query": query},
                 "message": "Orthographic rescue fired — candidates are lookalikes, "
@@ -1107,7 +1116,11 @@ async def tricorder_detect(
             return {"error": str(e)}
 
         resp = {"results": results}
-        esc = _escalation_hint("detect", query, len(results), rescue_used)
+        rescue_kind = ("content"
+                       if any(r.get("quality") == "content" for r in results)
+                       else "fuzzy")
+        esc = _escalation_hint("detect", query, len(results), rescue_used,
+                               rescue_kind)
         if esc:
             resp["escalation"] = esc
         resp.update(_budget_fields(resp, _full_repo_tokens(project_root)))

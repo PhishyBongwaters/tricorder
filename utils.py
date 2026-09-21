@@ -1102,6 +1102,37 @@ def tokenize_identifier(name: str):
             for w in _camel_split(part) if w]
 
 
+# Filler words in natural-language detect queries ("which function", "the",
+# "into"). Applied to the QUERY side only: short code tokens like "is"/"in"
+# keep their meaning inside identifier spans and are never stripped there.
+NL_QUERY_STOPWORDS = frozenset(
+    "a an the and or as at by for from in into of on to with "
+    "is are was were be been being do does did done have has had "
+    "that this these those it its which what when where how why "
+    "then than so such no nor own same too very can will just shall may "
+    "i me my we our you your he him his she her they them their "
+    "s t ve re ll d m".split()
+)
+
+# Synonym groups for the content-backed detect tier, canonicalized to the
+# first element so "arguments" (query) meets "args" (identifier). Verb
+# groups mirror _SYNONYM_GROUPS; noun groups bridge NL plurals/abstractions
+# to the terse names code actually uses.
+_CONTENT_SYNONYM_GROUPS = _SYNONYM_GROUPS + (
+    ("args", "argument", "arguments"),
+    ("params", "parameter", "parameters"),
+)
+_CONTENT_CANON = {}
+for _g in _CONTENT_SYNONYM_GROUPS:
+    for _w in _g:
+        _CONTENT_CANON.setdefault(_w, _g[0])
+
+
+def canonical_token(tok: str) -> str:
+    """Map a token to its synonym-group canonical form, else itself."""
+    return _CONTENT_CANON.get(tok, tok)
+
+
 def levenshtein(a: str, b: str, max_dist: int = 2) -> int:
     """Edit distance with early exit past max_dist (stdlib only)."""
     if a == b:
