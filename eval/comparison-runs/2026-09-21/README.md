@@ -42,16 +42,72 @@ Headline for 16GB VRAM local models: a full Vaultwarden session is
 branch, comfortably inside. The biggest single driver is Q3, where the
 baseline's `detect` step burned 10,714 tokens vs 1,084 on the branch.
 
-### Go (golang/go) — in progress at commit time
+### Go (golang/go, 16k files) — complete, 3 questions
 
-Corpora and eval script committed (`corpora/tasks_go.json`,
-`corpora/tasks_go_3.json`, `scripts/run_go_eval.py`); results to follow
-in a follow-up commit.
+Branch used **8,751 tokens vs baseline 19,688** (−10,937 tokens,
+**−55.5%**). Answer success: 3/3 on both.
 
-### Swift (swiftlang/swift) — in progress at commit time
+| question | baseline | branch |
+|---|---|---|
+| G1 GC mark phase | 5,360 | 3,209 |
+| G3 Channel ops | 12,781 | 4,199 |
+| G5 Compiler SSA | 1,547 | 1,343 |
+| **total** | **19,688** | **8,751** |
 
-Eval script committed (`scripts/swift_eval.py`); shallow clone used due
-to repo size. Prescan stage logs in `logs/`. Results to follow.
+Raw per-rung data in `results-go/20260921T221900Z-go-base-ds4/` and
+`results-go/20260921T221013Z-go-tip-ds4/`; narrative in
+`results-go/go-final-report.md`. 4 rungs/question with harness-side
+memoization of `get_symbols` (verified bit-identical output) to avoid
+hours of re-parsing.
+
+### Swift (swiftlang/swift, 32,805 files; indexed subset `lib`+`include`, 2,324 files) — complete, 5 questions
+
+Branch used **9,789 tokens vs baseline 69,875** (−60,086 tokens,
+**−86.0%**). Answer success: 5/5 baseline, 4/5 branch — Q4 is the only
+accuracy regression across all 12 questions (see Caveats).
+
+| question | baseline | branch |
+|---|---|---|
+| Q1 Function-call type checking | 27,276 | 2,242 |
+| Q2 SIL inliner cost model | 2,509 | 1,411 |
+| Q3 String interpolation | 1,859 | 1,877 |
+| Q4 Expression parser | 18,809 | 2,191 |
+| Q5 Qualified name lookup | 19,422 | 2,068 |
+| **total** | **69,875** | **9,789** |
+
+Shallow clone used due to repo size. v3's 6-rung loop times out on
+32k-file trees, so both arms ran an adapted 2-rung method (`detect`
+with the server's huge-repo fast path) over the indexed `lib`+`include`
+subset. Per-question payloads in `results-swift/results-20260921T204525Z/`.
+
+### Combined
+
+All three repos: baseline **116,381 → branch 27,527** tokens
+(−88,854, **−76.3%**).
+
+Headline for 16GB VRAM local models:
+- Vaultwarden session (scan + 2 heavy questions): **32,591 baseline
+  overflows a 32k window; branch 6,455** fits with 80% headroom.
+- Go 3-question session: **61% of 32k** baseline vs **27%** branch.
+- Swift 5-question session: **69,875 baseline overflows 32k AND 64k;
+  branch 9,789** fits comfortably. Both fit 128k.
+
+## Caveats
+
+- Single rep per variant; scripted policies deterministic (Go verified
+  bit-identical reproduction across two runs).
+- Vaultwarden used the MCP tool surface on both arms (baseline CLI
+  lacks `--detect`/`--symbols`; neither CLI has `--detail`).
+- Path strings (`vw-tip`/`vw-base`, length-identical) verified not to
+  affect token counts.
+- **Swift Q4 accuracy regression:** the branch cited
+  `Parser::parseExpr` in the header but missed
+  `lib/Parse/ParseExpr.cpp` — a precision/recall tradeoff from
+  stricter qualify matching. Only regression in 12 questions.
+- **Pre-existing scalability bug (both arms):** `tricorder_detail`
+  deadlocks building the whole-repo cross-file index (0% CPU, stuck in
+  `do_wait`) on 16k-file repos, so `detail` is unusable there
+  regardless of variant. Not branch-caused; logged for a fix round.
 
 ## Layout
 
@@ -61,6 +117,10 @@ to repo size. Prescan stage logs in `logs/`. Results to follow.
   question-probing and grading helpers.
 - `runs/` — raw per-run JSON records (variant, scan token counts,
   per-step payloads with token counts) for Vaultwarden.
+- `results-go/` — Go final report plus raw per-rung data for both
+  variants.
+- `results-swift/` — Swift results (per-question CSV/Markdown, prescan
+  config, per-question payload artifacts).
 - `logs/` — stage logs from the Swift and Go runs.
 
 ## Excluded (not portable)
