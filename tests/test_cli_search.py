@@ -91,6 +91,28 @@ class TestCoreSearch(unittest.TestCase):
         # The real qualified tag must outrank fuzzy lookalikes.
         self.assertEqual(names[0], "Model::save")
 
+    def test_search_identifiers_finds_argument_position_refs(self):
+        # Q2 pilot analog: http_exception_handler is registered as the
+        # default handler via
+        #   handlers.setdefault(HTTPException, http_exception_handler)
+        # a bare identifier in argument position, not a call target.
+        # The tagger must emit ref tags for call arguments, or the
+        # registration site is invisible to detect/symbols/detail.
+        (self.tmp / "src" / "registry.py").write_text(
+            "from auth import authenticate\n"
+            "\n"
+            "handlers = {}\n"
+            "handlers.setdefault(ValueError, authenticate)\n",
+            encoding="utf-8",
+        )
+        results, _ = self.tc.search_identifiers("authenticate")
+        ref_hits = [r for r in results
+                    if r["kind"] == "ref" and "registry.py" in r["file"]]
+        self.assertTrue(ref_hits,
+                        "call-argument refs must be tagged so registration "
+                        "sites are findable")
+        self.assertIn(4, [r["line"] for r in ref_hits])
+
     def test_query_variants_dot_qualified_ranked_first(self):
         from utils import query_variants
         variants = query_variants("Model.save")

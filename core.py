@@ -4,8 +4,10 @@ Tricorder class for generating repository maps.
 
 import os
 import re
+import math
 import sys
 import threading
+from bisect import bisect_left, bisect_right
 from pathlib import Path
 # Pin project dir ahead of sys.path (mirror tricorder.py) so utils/scm resolve to THIS repo.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -514,26 +516,41 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
     # half of 7+ distinctive tokens); the absolute floor keeps 1-2 token
     # queries from matching on a single body word, while still letting
     # short span-only queries (3-4 tokens) through on full coverage.
+    # Scores are IDF-weighted floats, but idf >= 1.0 always, so the old
+    # integer floor semantics carry over as a lower bound.
     _CONTENT_MIN_FRACTION = 0.5
     _CONTENT_MIN_SCORE = 3
     _CONTENT_SPAN_LINES = 80
     _CONTENT_MAX_CALLERS = 8
+    _CONTENT_MAX_CALLEES = 4
 
     def _content_search_tags(self, query, all_tags, max_results):
         """Rank def tags by natural-language token overlap (tier 4).
 
         Fires only when every name-based tier returned empty. Scores each
-        definition by weighted overlap of the query's content tokens
+        definition by IDF-weighted overlap of the query's content tokens
         (stopwords stripped, synonym-canonicalized, plural-insensitive)
         against three token sources: the def's own name (3x, strict
         token match), its source span (1x, substring so unsplittable
         compounds like "asynccontextmanager" still match), and its
-        caller lines (1x, substring, capped). Ranking among content
-        candidates is heuristic by design: all top hits genuinely share
-        the query's concepts, and the candidate list carries file:line
-        plus context for the agent to disambiguate. Fully
-        deterministic: candidates are visited in (file, line) order and
-        ranked by (-score, -matched, name, file, line). Returns list[Tag].
+        caller lines (1x, substring, capped), and the source spans of the
+        definitions it directly references (0.5x, one level only, capped
+        at 4 — same-file callees first, then cross-file by name). Each
+        token's contribution
+        is scaled by its inverse document frequency across the scanned
+        definitions, so rare discriminative terms ("operationId",
+        "yield", "dependency") outweigh ubiquitous ones ("build",
+        "path", "get"): a def matching the query's distinctive words
+        outranks one matching only its filler. Ranking is coverage-first:
+        candidates covering more of the query's distinct concepts with
+        their OWN evidence (name/span/caller) come first ((-matched,
+        -score, name, file, line)); the IDF-weighted score breaks ties,
+        so among equal-coverage candidates the one matching the rarer,
+        more discriminative terms still wins. Callee evidence adds score
+        only — never coverage — so a hub calling many helpers cannot win
+        on borrowed concepts. Fully
+        deterministic: candidates are visited in (file, line) order.
+        Returns list[Tag].
         """
         qtok = []
         for t in tokenize_identifier(query):
@@ -589,6 +606,15 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 for l in lines
             ]
         scored = []
+        # Pass 1a: per-definition evidence records. Each record holds the
+        # def tag, its span line range, and the token sets for its name
+        # and own source span. Callee evidence (pass 1b) reuses these
+        # records, so every definition's span is tokenized exactly once.
+        # records: (rel_fname, dtag, start, end, name_set, span_set).
+        records = []
+        by_file_name = {}  # (rel_fname, defname) -> record index; full
+                           # names and short names both resolve, first
+                           # definition in line order wins ties.
         for rel_fname in sorted(defs_by_file):
             defs = sorted(defs_by_file[rel_fname], key=lambda t: t.line)
             tok_lines = file_tok_lines.get(rel_fname)
@@ -606,38 +632,124 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 short = dtag.name.split("::")[-1]
                 name_set = {canonical_token(w)
                             for w in tokenize_identifier(short)}
-                caller_set = set()
-                callers = refs_by_name.get(dtag.name, [])
-                if dtag.name != short:
-                    callers = callers + refs_by_name.get(short, [])
-                for rtag in sorted(callers,
-                                   key=lambda t: (t.rel_fname, t.line)
-                                   )[:self._CONTENT_MAX_CALLERS]:
-                    rlines = file_tok_lines.get(rtag.rel_fname)
-                    if rlines is None:
+                idx = len(records)
+                records.append((rel_fname, dtag, start, end,
+                                name_set, span_set))
+                by_file_name.setdefault((rel_fname, dtag.name), idx)
+                by_file_name.setdefault((rel_fname, short), idx)
+        # Global fallback for cross-file callee resolution, in the same
+        # deterministic (file, line) visit order. Same-file names always
+        # win (checked first); this only fires for references no
+        # same-file definition satisfies — e.g. _solve_generator's call
+        # to contextmanager_in_threadpool, which lives in another module.
+        by_global_name = {}
+        for idx, (rel_fname, dtag, _s, _e, _n, _sp) in enumerate(records):
+            by_global_name.setdefault(dtag.name, idx)
+            by_global_name.setdefault(dtag.name.split("::")[-1], idx)
+
+        # Refs per file, sorted by line, for callee lookup: a callee of
+        # a definition is a definition whose name appears as a ref tag
+        # inside the definition's span. Same-file definitions are
+        # preferred; a global name index is the fallback for cross-file
+        # calls (e.g. _solve_generator -> contextmanager_in_threadpool).
+        # Either way the bound holds: one level, capped, callee spans are
+        # never expanded recursively.
+        refs_by_file = {}
+        for tag in all_tags:
+            if tag.kind == "ref":
+                refs_by_file.setdefault(tag.rel_fname, []).append(tag)
+        ref_lines = {}
+        for rel, rtags in refs_by_file.items():
+            rtags.sort(key=lambda t: t.line)
+            ref_lines[rel] = [t.line for t in rtags]
+
+        # Pass 1b: per-definition token hits plus document frequency of
+        # each query token (a "document" is one definition's combined
+        # name/span/caller/callee evidence, matched with the same
+        # semantics). Callee evidence is one level only: a callee
+        # contributes its own span tokens, never expanded recursively.
+        # A token counts once, at its highest-precedence source
+        # (name > span > caller > callee).
+        def_hits = []
+        doc_freq = {}
+        for idx, (rel_fname, dtag, start, end, name_set,
+                  span_set) in enumerate(records):
+            short = dtag.name.split("::")[-1]
+            caller_set = set()
+            callers = refs_by_name.get(dtag.name, [])
+            if dtag.name != short:
+                callers = callers + refs_by_name.get(short, [])
+            for rtag in sorted(callers,
+                               key=lambda t: (t.rel_fname, t.line)
+                               )[:self._CONTENT_MAX_CALLERS]:
+                rlines = file_tok_lines.get(rtag.rel_fname)
+                if rlines is None:
+                    continue
+                for ln in (rtag.line - 1, rtag.line, rtag.line + 1):
+                    if 1 <= ln <= len(rlines):
+                        caller_set.update(rlines[ln - 1])
+            callee_set = set()
+            rtags = refs_by_file.get(rel_fname, [])
+            if rtags:
+                lines = ref_lines[rel_fname]
+                lo = bisect_left(lines, start)
+                hi = bisect_right(lines, end)
+                seen_callees = set()
+                for rtag in rtags[lo:hi]:
+                    cidx = by_file_name.get((rel_fname, rtag.name))
+                    if cidx is None:
+                        cidx = by_global_name.get(rtag.name)
+                    if (cidx is None or cidx == idx
+                            or cidx in seen_callees):
                         continue
-                    for ln in (rtag.line - 1, rtag.line, rtag.line + 1):
-                        if 1 <= ln <= len(rlines):
-                            caller_set.update(rlines[ln - 1])
-                # Space-joined text for substring (compound) matching.
-                span_text = " ".join(sorted(span_set))
-                caller_text = " ".join(sorted(caller_set))
-                score = 0
-                matched = 0
-                for q in qtok:
-                    if _match(q, name_set):
-                        score += 3
-                        matched += 1
-                    elif _match_blob(q, span_text):
-                        score += 1
-                        matched += 1
-                    elif _match_blob(q, caller_text):
-                        score += 1
-                        matched += 1
-                if (matched / len(qtok) >= self._CONTENT_MIN_FRACTION
-                        and score >= self._CONTENT_MIN_SCORE):
-                    scored.append((-score, -matched, dtag.name.lower(),
-                                   dtag.rel_fname, dtag.line, dtag))
+                    seen_callees.add(cidx)
+                    callee_set.update(records[cidx][5])
+                    if len(seen_callees) >= self._CONTENT_MAX_CALLEES:
+                        break
+            # Space-joined text for substring (compound) matching.
+            span_text = " ".join(sorted(span_set))
+            caller_text = " ".join(sorted(caller_set))
+            callee_text = " ".join(sorted(callee_set))
+            name_hits = {q for q in qtok if _match(q, name_set)}
+            span_hits = {q for q in qtok
+                         if q not in name_hits
+                         and _match_blob(q, span_text)}
+            caller_hits = {q for q in qtok
+                           if q not in name_hits and q not in span_hits
+                           and _match_blob(q, caller_text)}
+            callee_hits = {q for q in qtok
+                           if q not in name_hits and q not in span_hits
+                           and q not in caller_hits
+                           and _match_blob(q, callee_text)}
+            for q in name_hits | span_hits | caller_hits | callee_hits:
+                doc_freq[q] = doc_freq.get(q, 0) + 1
+            def_hits.append((dtag, name_hits, span_hits, caller_hits,
+                             callee_hits))
+        n_defs = len(def_hits)
+        if n_defs == 0:
+            return []
+        # Smoothed IDF: 1.0 for a token in every definition, growing
+        # logarithmically as it gets rarer. Deterministic (math.log).
+        idf = {q: math.log((n_defs + 1) / (doc_freq.get(q, 0) + 1)) + 1.0
+               for q in qtok}
+        # Pass 2: IDF-weighted scoring. Coverage counts only the
+        # definition's OWN evidence (name, own span, caller lines):
+        # callee hits are corroborating evidence, worth 0.5x in the
+        # score, but they never inflate coverage — otherwise a hub that
+        # calls many helpers wins on borrowed concepts. The coverage
+        # fraction and the absolute floor are unchanged: idf >= 1.0, so
+        # the old floor semantics carry over as a lower bound.
+        for dtag, name_hits, span_hits, caller_hits, callee_hits in def_hits:
+            own_hits = name_hits | span_hits | caller_hits
+            matched = len(own_hits)
+            if matched / len(qtok) < self._CONTENT_MIN_FRACTION:
+                continue
+            score = (sum(idf[q] * 3 for q in name_hits)
+                     + sum(idf[q] for q in span_hits | caller_hits)
+                     + sum(idf[q] * 0.5 for q in callee_hits))
+            if score >= self._CONTENT_MIN_SCORE:
+                scored.append((-matched, -score, dtag.name.lower(),
+                               dtag.rel_fname, dtag.line, dtag))
         scored.sort(key=lambda s: s[:5])
         return [s[5] for s in scored[:max_results * 2]][:max_results]
 

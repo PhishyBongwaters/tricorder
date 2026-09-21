@@ -36,7 +36,9 @@ SCHEMA_VERSION = 1
 # the audit flags DBs stamped older. Bump on ANY capture change.
 # Separate lineage from cache.CACHE_VERSION (query-time bundles) — a
 # query-time fix must NOT force tag reparse, and vice versa.
-EXTRACTOR_VERSION = 2
+# v3 (2026-09-21): python-tags.scm captures bare identifiers in
+# call-argument position (name.reference.argument) as refs.
+EXTRACTOR_VERSION = 3
 
 _DDL = [
     "CREATE TABLE IF NOT EXISTS tags("

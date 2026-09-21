@@ -67,7 +67,9 @@ modifiers := "depth=" INT | "exclude=" GLOB | "include=" GLOB | "type=" ("functi
 
 - Git/VCS dependence — tricorder maps any directory, git or not; no `git diff`/incremental rebuild
 - AI summarization of symbols
-- Natural language → symbol mapping (embeddings)
+- Natural language → symbol mapping via embeddings (deterministic
+  NL → symbol fallback exists: tier-4 content search in `detect`;
+  embedding-based semantic mapping stays out of scope)
 - Auto-tier selection by query heuristics
 - Semantic/vector code search
 - Package manager dependency resolution (npm, cargo, go.mod, pip)

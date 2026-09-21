@@ -1,10 +1,14 @@
 """Tests for Tricorder.get_ranked_tags and caching."""
 import sys
 import os
+import shutil
+import tempfile
 import unittest
+from unittest import mock
 sys.path.insert(0, '.')
 from pathlib import Path
 from core import Tricorder, FileReport
+import cache as cache_mod
 
 
 class TestTricorderRankedTags(unittest.TestCase):
@@ -49,6 +53,44 @@ class TestTricorderCache(unittest.TestCase):
         a = Tricorder(root='/tmp/test_root')._cache_dir()
         b = Tricorder(root='/tmp/other_root')._cache_dir()
         self.assertNotEqual(a, b)
+
+    def test_capture_change_busts_tags_cache(self):
+        # Regression: the python-tags.scm argument-ref capture must not be
+        # masked by a stale per-file cache entry written by an older
+        # extractor. database.py says "bump on ANY capture change" and the
+        # cache directory is keyed by EXTRACTOR_VERSION, so an entry
+        # written under an older version is never served.
+        tmp = Path(tempfile.mkdtemp(prefix="cache_capture_"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        f = tmp / "reg.py"
+        f.write_text(
+            "handlers = {}\n"
+            "handlers.setdefault(ValueError, authenticate)\n",
+            encoding="utf-8",
+        )
+        # Simulate the old (v2) extractor's cache entry: same file, same
+        # fingerprint, but the pre-argument-ref tag set.
+        with mock.patch.object(cache_mod, "EXTRACTOR_VERSION", 2):
+            tc_old = Tricorder(root=str(tmp), use_db=False, verbose=False)
+            stale = [t for t in tc_old.get_tags_raw(str(f), "reg.py")
+                     if not (t.kind == "ref"
+                             and t.name in ("ValueError", "authenticate"))]
+            self.assertFalse(
+                any(t.kind == "ref" and t.name == "authenticate"
+                    for t in stale),
+                "test setup: stale entry must lack the argument refs",
+            )
+            fp = tc_old._file_fingerprint(str(f))
+            tc_old.TAGS_CACHE[str(f)] = {"fp": fp, "data": stale}
+        # The current extractor must not serve the v2 entry: the
+        # argument-position ref has to come back from a fresh parse.
+        tc = Tricorder(root=str(tmp), use_db=False, verbose=False)
+        tags = tc.get_tags(str(f), "reg.py")
+        self.assertTrue(
+            any(t.kind == "ref" and t.name == "authenticate" for t in tags),
+            "stale pre-capture-change cache entry must not mask the new "
+            "argument-position refs",
+        )
 
 
 class TestTricorderT1Context(unittest.TestCase):

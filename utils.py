@@ -1121,16 +1121,46 @@ NL_QUERY_STOPWORDS = frozenset(
 _CONTENT_SYNONYM_GROUPS = _SYNONYM_GROUPS + (
     ("args", "argument", "arguments"),
     ("params", "parameter", "parameters"),
+    # Q1 pilot: the NL query says "dependency" while the code says
+    # "dependant" (_solve_generator's parameter). Nominal/adjectival
+    # forms of the same root must meet, or the token can never match.
+    ("depend", "dependency", "dependencies", "dependant", "dependants",
+     "dependent", "dependents"),
+    # Q3 pilot: the NL query says "dictionary" while the code says
+    # "dict". The ubiquitous code abbreviation must meet its NL
+    # expansion.
+    ("dict", "dictionary", "dictionaries"),
 )
 _CONTENT_CANON = {}
 for _g in _CONTENT_SYNONYM_GROUPS:
     for _w in _g:
         _CONTENT_CANON.setdefault(_w, _g[0])
 
+# Words whose trailing "s" is not a plural: the inflection strip in
+# canonical_token must leave them alone ("news" is not "new").
+_INFLECTION_EXCEPTIONS = frozenset({"news"})
+
 
 def canonical_token(tok: str) -> str:
-    """Map a token to its synonym-group canonical form, else itself."""
-    return _CONTENT_CANON.get(tok, tok)
+    """Map a token to its synonym-group canonical form, else itself.
+
+    Inflection-aware: "builds" folds to "build" first so it meets the
+    ("create","make","build","new") group. The strip only applies when the
+    stripped form is actually a group member, so non-group words like
+    "responses" or "status" pass through unchanged (their plural handling
+    stays in the caller's plural-insensitive matcher). A tiny exception
+    list covers words whose trailing "s" is not a plural ("news" is not
+    "new").
+    """
+    hit = _CONTENT_CANON.get(tok)
+    if hit is not None:
+        return hit
+    if (len(tok) > 3 and tok.endswith("s") and not tok.endswith("ss")
+            and tok not in _INFLECTION_EXCEPTIONS):
+        hit = _CONTENT_CANON.get(tok[:-1])
+        if hit is not None:
+            return hit
+    return tok
 
 
 def levenshtein(a: str, b: str, max_dist: int = 2) -> int:
