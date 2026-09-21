@@ -535,7 +535,9 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         compounds like "asynccontextmanager" still match), and its
         caller lines (1x, substring, capped), and the source spans of the
         definitions it directly references (0.5x, one level only, capped
-        at 4 — same-file callees first, then cross-file by name). Each
+        at 4 — same-file definitions are preferred when resolving a
+        referenced name, with a deterministic global-name fallback for
+        cross-file calls). Each
         token's contribution
         is scaled by its inverse document frequency across the scanned
         definitions, so rare discriminative terms ("operationId",
