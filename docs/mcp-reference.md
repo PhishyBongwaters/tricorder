@@ -129,7 +129,7 @@ Deep-dive on one symbol: full body plus its callers and callees.
 | `file` | string | — | **Required.** File containing the symbol (relative to root). |
 | `name` | string | — | **Required.** Symbol name. |
 | `line` | int | `0` | Line number to disambiguate (optional). |
-| `max_tokens` | int | — | Optional token budget for the response. Trims body, then callees, then callers (never identity/signature). Adds `"truncated": true`. Best-effort below the metadata floor. |
+| `max_tokens` | int | `2048` | Token budget for the response (default 2048; `null` = unbounded). Trims body, then call lists (callees before callers, heads kept with `<list>_total` / `<list>_omitted` counts), then huge docstrings (head kept, `docstring_omitted` count). Never trims identity/signature. Adds `"truncated": true`. Best-effort below the metadata floor. |
 
 **Returns:** the symbol record with `body`, `callers`, `callees`. Name matching
 is exact on the base name first, then fuzzy (substring, `::`-aware) — a symbol
@@ -220,7 +220,7 @@ the question:
 
 1. **`tricorder_scan`** (map, ~14 tokens/tag) — "where is the auth code?"
 2. **`tricorder_detect`** (~1–2 tokens/tag) — "where is `authenticate` defined?"
-3. **`tricorder_detail`** (~50–400 tokens) — "what does it do, who calls it?"
+3. **`tricorder_detail`** (~50–400 tokens typical, up to the 2048-token default budget on hot symbols) — "what does it do, who calls it?"
 4. **`tricorder_scan` tier=1** (~350 tokens/tag) — "show me the shape of this subsystem"
 5. **Read the file** (last resort) — full source when necessary
 

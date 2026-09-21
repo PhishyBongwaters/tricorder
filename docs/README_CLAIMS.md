@@ -28,7 +28,7 @@ validation status starts as `pending` and is updated as checks run.
 
 - [pending] T0 MAP: ~14 tokens/tag
 - [pending] DETECT: ~1-2 tokens/tag
-- [pending] DETAIL: ~50-400 tokens
+- [pending] DETAIL: ~50-400 tokens typical (≤2048 default budget)
 - [pending] T1 SCAN: ~350 tokens/tag
 - [pending] FULL FILE: last resort, reads entire file
 

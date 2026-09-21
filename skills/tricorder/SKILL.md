@@ -36,7 +36,7 @@ The point of tricorder is to NOT read every file. Climb the ladder; stop at the 
 5. **Escalate the map tier** — still missing context? `mcp__tricorder__tricorder_scan {project_root, tier: 1, context_lines: 3}` gives definitions + surrounding lines (~350 tokens/tag, ~25x T0). Use `output_format: "mermaid"` for a module dependency graph. Narrow with `chat_files`/`mentioned_files` to keep it small.
 6. **Full file read — last resort** — `read_file` only when all of the above left genuine ambiguity (a bug spans half a file, you need a comment block far from any symbol, etc). Read the *specific line range* found in step 2/3, not the whole file blindly. A whole-file pull is a confession that the ladder failed.
 
-**Token economics**: T0 ≈ 14 tokens/tag. T1 ≈ 350 tokens/tag. `detail` returns one symbol body (typically 50-400 tokens). A full file read is thousands. Escalate deliberately.
+**Token economics**: T0 ≈ 14 tokens/tag. T1 ≈ 350 tokens/tag. `detail` returns one symbol body (typically 50-400 tokens, capped by its 2048-token default budget on hot symbols). A full file read is thousands. Escalate deliberately.
 
 ### Required param
 

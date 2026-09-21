@@ -92,7 +92,7 @@ answers your question:
 | 1. Map | `tricorder_scan` / `tricorder .` | ~14 tokens/tag | "Where is the auth code?" |
 | 2. Detect | `tricorder_detect` | ~1–2 tokens/tag | "Where is `authenticate` defined?" |
 | 3. Symbols | `tricorder_symbols` | structured | "List all classes in `db/`" |
-| 4. Detail | `tricorder_detail` | ~50–400 tokens | "What does it do? Who calls it?" |
+| 4. Detail | `tricorder_detail` | ~50–400 tokens typical (≤2048 default budget) | "What does it do? Who calls it?" |
 | 5. Tier-1 scan | `--tier 1` | ~350 tokens/tag | "Show me this subsystem's shape" |
 | 6. Full file | read the source | full cost | Last resort |
 

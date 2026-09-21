@@ -412,9 +412,17 @@ def _truncate_text_to_tokens(text: str, budget: int) -> str:
         import tiktoken as _tt
     except ImportError:
         # Fall back to a ~4 chars/token estimate when tiktoken is missing.
+        if budget * 4 <= len(marker):
+            return ""
         return text[:budget * 4].rstrip() + marker
     enc = _tt.get_encoding("cl100k_base")
     marker_toks = len(enc.encode(marker))
+    if budget <= marker_toks:
+        # Not even room for the marker: return empty rather than a
+        # content-free marker that costs tokens without showing anything.
+        # (A bare marker also wedges the budget clamp: shaving can't
+        # remove a marker with no content behind it.)
+        return ""
     toks = enc.encode(text)
     if len(toks) <= budget:
         return text
@@ -444,6 +452,62 @@ def _shave_body(symbol: dict) -> bool:
     return True
 
 
+def _shave_docstring(symbol: dict) -> bool:
+    """Remove ~10% of a symbol dict's docstring (in place), keeping the marker.
+
+    Mirrors _shave_body for the docstring; keeps docstring_omitted honest by
+    growing the hidden char count as the head shrinks. Returns False when
+    there is no docstring left to shave.
+    """
+    cur = symbol.get("docstring") or ""
+    if not cur:
+        return False
+    base = cur[:-len(_TRUNCATION_MARKER)] \
+        if cur.endswith(_TRUNCATION_MARKER) else cur
+    if not base:
+        return False
+    new_len = int(len(base) * 0.9)
+    if new_len >= len(base):
+        return False
+    trimmed = base[:new_len].rstrip()
+    new_doc = trimmed + _TRUNCATION_MARKER if trimmed else ""
+    # Never "shave" a docstring smaller than the marker itself: swapping a
+    # tiny docstring for the marker costs more tokens than it saves.
+    if count_tokens(new_doc, "gpt-4") >= count_tokens(cur, "gpt-4"):
+        return False
+    symbol["docstring"] = new_doc
+    if "docstring_omitted" in symbol:
+        symbol["docstring_omitted"] += len(base) - len(trimmed)
+    else:
+        # First trim (e.g. the response-level final check shaving a
+        # docstring the symbol budget left alone): base is the original,
+        # so the hidden count is exactly what this shave removed.
+        symbol["docstring_omitted"] = len(base) - len(trimmed)
+    return True
+
+
+def _shave_call_lists(symbol: dict) -> bool:
+    """Drop one tail entry from a call list (in place), keeping counts honest.
+
+    Last-resort trimmer for the response-level budget check: removes a single
+    tail entry — callees before callers, since callers outrank callees — and
+    grows the corresponding <list>_omitted count (seeding <list>_total when
+    the list was never shortened before). Returns False when both lists are
+    empty.
+    """
+    for key in ("callees", "callers"):
+        lst = symbol.get(key)
+        if lst:
+            lst.pop()
+            total_key = f"{key}_total"
+            omitted_key = f"{key}_omitted"
+            if total_key not in symbol:
+                symbol[total_key] = len(lst) + 1
+            symbol[omitted_key] = symbol.get(omitted_key, 0) + 1
+            return True
+    return False
+
+
 def _final_budget_check(resp: dict, symbol: Optional[dict], max_tokens: int,
                         project_root: str) -> None:
     """Verify a fully-decorated response honors max_tokens, in place.
@@ -456,10 +520,12 @@ def _final_budget_check(resp: dict, symbol: Optional[dict], max_tokens: int,
     (best effort — identity/signature are never cut).
     """
     trimmed = False
-    for _ in range(4):
+    for _ in range(8):
         if count_tokens(json.dumps(resp), "gpt-4") <= max_tokens - 2:
             break
-        if symbol is None or not _shave_body(symbol):
+        if symbol is None or not (_shave_body(symbol)
+                                  or _shave_docstring(symbol)
+                                  or _shave_call_lists(symbol)):
             break
         trimmed = True
     if trimmed:
@@ -572,7 +638,9 @@ def _enforce_detail_budget(symbol: dict, max_tokens: int) -> bool:
     """Trim a tricorder_detail symbol dict to fit max_tokens, in place.
 
     Trim order: body first (head kept, cut marked), then callers/callees
-    shortened to weighted top-N heads (freeing room to re-expand the body).
+    shortened to weighted top-N heads (freeing room to re-expand the body),
+    then the docstring (head kept, cut marked, exact hidden char count kept
+    in docstring_omitted — the symbols listing convention).
     Shortened lists keep explicit "<list>_total" / "<list>_omitted" counts —
     nothing is dropped silently. Name/file/line/signature metadata is never
     cut.
@@ -585,6 +653,10 @@ def _enforce_detail_budget(symbol: dict, max_tokens: int) -> bool:
 
     def _tokens_without_body() -> int:
         probe = dict(symbol, body="")
+        return count_tokens(_json.dumps(probe))
+
+    def _tokens_without_docstring() -> int:
+        probe = dict(symbol, docstring="")
         return count_tokens(_json.dumps(probe))
 
     if _tokens() <= max_tokens:
@@ -607,12 +679,27 @@ def _enforce_detail_budget(symbol: dict, max_tokens: int) -> bool:
     if _tokens() <= max_tokens:
         return True
 
-    # 4. Final clamp: the body above was budgeted in raw-text tokens, but
-    # _tokens() measures the JSON-serialized form, where escaping
-    # (newlines, quotes) inflates the count. Shave the body until the
-    # serialized total actually fits. Metadata is never touched; if even
-    # the metadata alone exceeds the budget, this is best-effort.
-    while _tokens() > max_tokens and _shave_body(symbol):
+    # 3b. Docstring: parameter-doc epics (e.g. FastAPI's __init__) can dwarf
+    # body + call lists combined. Trimmed after them — the docstring head
+    # outranks call-list tails. Head kept, cut marked, exact hidden char
+    # count in docstring_omitted (same convention as symbols listings).
+    doc = symbol.get("docstring") or ""
+    if doc and _tokens() > max_tokens:
+        trimmed = _truncate_text_to_tokens(doc, max_tokens - _tokens_without_docstring())
+        head = (trimmed[:-len(_TRUNCATION_MARKER)]
+                if trimmed.endswith(_TRUNCATION_MARKER) else trimmed)
+        symbol["docstring"] = trimmed
+        symbol["docstring_omitted"] = len(doc) - len(head)
+        if _tokens() <= max_tokens:
+            return True
+
+    # 4. Final clamp: the trims above were budgeted in raw-text tokens, but
+    # _tokens() measures the JSON-serialized form, where escaping inflates
+    # the count and token boundaries merge differently than the sum of the
+    # parts. Shave the body, then the docstring, until the serialized total
+    # actually fits. Metadata is never touched; if even the metadata alone
+    # exceeds the budget, this is best-effort.
+    while _tokens() > max_tokens and (_shave_body(symbol) or _shave_docstring(symbol)):
         pass
     return True
 
@@ -1246,7 +1333,7 @@ async def tricorder_detail(
     file: str,
     name: str,
     line: int = 0,
-    max_tokens: Optional[int] = None,
+    max_tokens: Optional[int] = 2048,
 ) -> Dict[str, Any]:
     """Get full details for a specific code symbol by file path, name, and optional line number.
 
@@ -1257,6 +1344,9 @@ async def tricorder_detail(
       - callers_total / callers_omitted, callees_total / callees_omitted:
         present only when the corresponding list was shortened to fit
         max_tokens, so a trimmed list never hides how much was dropped.
+      - docstring_omitted: present only when the docstring was shortened to
+        fit max_tokens, with the exact hidden char count (same convention
+        as tricorder_symbols listings).
     Callers/callees are populated from tree-sitter reference captures:
       - In-file: references within the same file
       - Cross-file: full-repo scan matching references to definitions
@@ -1269,11 +1359,15 @@ async def tricorder_detail(
         file: File path containing the symbol (relative to project_root or absolute).
         name: Symbol name to look up.
         line: Optional line number to disambiguate symbols with the same name.
-        max_tokens: Optional token budget for the response. When set, the body
-            is truncated first (head kept, marked), then callees and callers
-            are shortened to the largest top-N heads that fit, each keeping
-            explicit "<list>_total" / "<list>_omitted" counts — signature
-            metadata is never cut.
+        max_tokens: Token budget for the response (default 2048, same as
+            tricorder_locate). When set, the body is truncated first (head
+            kept, marked), then callees and callers are shortened to the
+            largest top-N heads that fit, each keeping explicit
+            "<list>_total" / "<list>_omitted" counts, then the docstring is
+            shortened (head kept, marked, docstring_omitted count) —
+            signature metadata is never cut.
+            Pass None explicitly for the legacy unbounded response (hot
+            symbols can return 10k+ tokens).
             Best-effort: name/file/line/signature and the response decorations
             always survive, so a budget below that floor can still be exceeded.
             The response gains "truncated": true when trimming occurred.

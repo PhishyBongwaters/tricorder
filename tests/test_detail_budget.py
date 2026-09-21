@@ -14,6 +14,7 @@ from tricorder_server import (
     _enforce_detail_budget,
     _truncate_text_to_tokens,
     _detail_decoration_reserve,
+    _shave_call_lists,
 )
 from utils import count_tokens
 
@@ -171,6 +172,59 @@ class TestEnforceDetailBudget(unittest.TestCase):
         self.assertEqual(s["callees"][0]["name"], "c0")
         self.assertEqual(s["callers"][0]["line"], 0)
 
+    def test_docstring_trimmed_with_omitted_count(self):
+        # Docstring epics (e.g. FastAPI's __init__ parameter docs) can dwarf
+        # body + call lists combined; the budget must reach them. Head kept,
+        # cut marked, exact hidden char count recorded (same convention as
+        # symbols listings) — identity metadata never cut.
+        doc = "Parameter docs. " * 2000  # ~32k chars
+        s = _symbol(body="", callers=[], callees=[], docstring=doc)
+        self.assertTrue(_enforce_detail_budget(s, 2048))
+        self.assertLessEqual(_tok(s), 2048)
+        shown = s["docstring"]
+        marker = "\n... [truncated to fit max_tokens]"
+        self.assertTrue(shown.endswith(marker), shown[-60:])
+        head = shown[:-len(marker)]
+        self.assertTrue(doc.startswith(head))
+        self.assertEqual(s["docstring_omitted"], len(doc) - len(head))
+        self.assertEqual(s["signature"], "big_function ()")
+        self.assertEqual(s["name"], "big_function")
+
+    def test_docstring_untouched_when_fits(self):
+        s = _symbol(body="", callers=[], callees=[])
+        self.assertFalse(_enforce_detail_budget(s, 100_000))
+        self.assertNotIn("docstring_omitted", s)
+        self.assertEqual(s["docstring"], "A very large function.")
+
+
+class TestShaveCallLists(unittest.TestCase):
+    def test_drops_callees_before_callers(self):
+        s = _symbol(
+            callers=[{"file": "a.py", "line": 1}, {"file": "b.py", "line": 2}],
+            callees=[{"name": "x", "file": "a.py", "line": 5}],
+        )
+        self.assertTrue(_shave_call_lists(s))
+        self.assertEqual(len(s["callees"]), 0)
+        self.assertEqual(s["callees_total"], 1)
+        self.assertEqual(s["callees_omitted"], 1)
+        # Callers untouched.
+        self.assertEqual(len(s["callers"]), 2)
+        self.assertNotIn("callers_omitted", s)
+
+    def test_grows_omitted_on_already_shortened_list(self):
+        s = _symbol(callers=[{"file": "a.py", "line": 1}],
+                    callees=[])
+        s["callers_total"] = 150
+        s["callers_omitted"] = 149
+        self.assertTrue(_shave_call_lists(s))
+        self.assertEqual(len(s["callers"]), 0)
+        self.assertEqual(s["callers_total"], 150)
+        self.assertEqual(s["callers_omitted"], 150)
+
+    def test_empty_lists_returns_false(self):
+        s = _symbol(callers=[], callees=[])
+        self.assertFalse(_shave_call_lists(s))
+
 
 class TestDetailMaxTokensIntegration(unittest.TestCase):
     def setUp(self):
@@ -212,6 +266,50 @@ class TestDetailMaxTokensIntegration(unittest.TestCase):
         reserve = _detail_decoration_reserve()
         self.assertGreater(reserve, 0)
         self.assertLess(reserve, 200)
+
+
+class TestDetailDefaultBudget(unittest.TestCase):
+    """The default detail call must be budgeted: a hot symbol's unbounded
+    caller list is the detail-bloat tail (e.g. 329 callers -> 12k tokens)."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="detail_default_"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        (self.tmp / "hot.py").write_text(
+            'def hot_target(a):\n    """Hot."""\n    return a\n',
+            encoding="utf-8",
+        )
+        for i in range(150):
+            (self.tmp / f"use{i:03d}.py").write_text(
+                f"from hot import hot_target\n\ndef caller_{i}():\n"
+                f"    return hot_target({i})\n",
+                encoding="utf-8",
+            )
+
+    def _detail(self, **kw):
+        return asyncio.run(tricorder_detail(
+            project_root=str(self.tmp), file="hot.py",
+            name="hot_target", **kw))
+
+    def test_default_budget_bounds_hot_symbol(self):
+        # No max_tokens passed: the default budget must still apply.
+        r = self._detail()
+        self.assertNotIn("error", r)
+        self.assertTrue(r.get("truncated"))
+        self.assertLessEqual(_tok(r), 2048)
+        sym = r["symbol"]
+        self.assertEqual(sym["callers_total"], 150)
+        self.assertEqual(sym["callers_omitted"],
+                         150 - len(sym["callers"]))
+        self.assertGreater(len(sym["callers"]), 0)
+        self.assertEqual(sym["signature"], "hot_target (a)")
+
+    def test_explicit_none_disables_budget(self):
+        # Escape hatch: explicit None keeps the legacy unbounded response.
+        r = self._detail(max_tokens=None)
+        self.assertNotIn("error", r)
+        self.assertNotIn("truncated", r)
+        self.assertEqual(len(r["symbol"]["callers"]), 150)
 
 
 if __name__ == "__main__":

@@ -102,7 +102,7 @@ Spend tokens deliberately, cheapest first:
 ```
 1. MAP    (~14 tokens/tag)  → "Database classes in database.py"
 2. DETECT (~1-2 tokens/tag) → "Found getConnection() at database.py:42"
-3. DETAIL (~50-400 tokens)  → Full function + callers
+3. DETAIL (~50-400 tokens typical, ≤2048 budget)  → Full function + callers
 4. T1 SCAN (~350 tokens/tag)→ 3 lines context around each definition
 5. FULL FILE (last resort)  → Read the source when necessary
 ```
