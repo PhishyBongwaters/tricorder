@@ -12,7 +12,7 @@ from pathlib import Path
 # Pin project dir ahead of sys.path (mirror tricorder.py) so utils/scm resolve to THIS repo.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Optional, Tuple, Callable, Any
-from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, query_variants, tokenize_identifier, levenshtein, stat_fingerprint, canonical_token, NL_QUERY_STOPWORDS
+from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, query_variants, tokenize_identifier, levenshtein, stat_fingerprint, canonical_token, NL_QUERY_STOPWORDS, _INFLECTION_EXCEPTIONS
 from cache import TagsCacheMixin, CACHE_VERSION
 from parser import ParserMixin
 from graph import GraphMixin
@@ -565,22 +565,30 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
             return []
 
         def _match(q, blob):
-            # Plural-insensitive.
+            # Plural-insensitive. The inflection exceptions ("news" is
+            # not "new") are honored in both directions so the matchers
+            # stay consistent with canonical_token.
             if q in blob:
                 return True
-            if q + "s" in blob:
+            if q + "s" not in _INFLECTION_EXCEPTIONS and q + "s" in blob:
                 return True
-            return len(q) > 3 and q.endswith("s") and q[:-1] in blob
+            return (len(q) > 3 and q.endswith("s")
+                    and q not in _INFLECTION_EXCEPTIONS and q[:-1] in blob)
 
         def _match_blob(q, blob_text):
             # Substring over the span/caller text: catches unsplittable
             # compounds like "asynccontextmanager" for query "manager".
-            # Space-joined so matches never span token boundaries.
+            # Space-joined so matches never span token boundaries. The
+            # inflection exceptions ("news" is not "new") are honored in
+            # the plural strip, matching canonical_token's rule.
             if q in blob_text:
                 return True
-            if q + "s" in blob_text:
+            if (q + "s" not in _INFLECTION_EXCEPTIONS
+                    and q + "s" in blob_text):
                 return True
-            return len(q) > 3 and q.endswith("s") and q[:-1] in blob_text
+            return (len(q) > 3 and q.endswith("s")
+                    and q not in _INFLECTION_EXCEPTIONS
+                    and q[:-1] in blob_text)
 
         # Group defs per file in deterministic order; tokenize every
         # involved file's lines once (defs' files and callers' files —
