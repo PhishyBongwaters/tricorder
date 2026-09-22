@@ -104,6 +104,7 @@ override the root via `TRICORDER_CACHE_HOME`).
 ## Don't — discipline
 
 - **Don't pull a full file before trying `detect` → `symbols` → `detail`.** The ladder exists because `detail` returns the body at a fraction of the cost. A whole-file read is the last rung.
+- **Don't read junk hits.** If `detect` returns wrong-language/wrong-area results, retry an exact symbol guess immediately and never pay reads on hits you can see are wrong — one failed natural-language query cost 58k tokens in eval, 50× a clean leg (`eval/agent-eval-pilot/GO.md`).
 - **Don't treat the digest as a full answer.** It's direction, not proof.
 - **Don't open the whole repo first.** Use the map to narrow.
 - **Don't re-scan when the digest already points at the right area.** It's current.
