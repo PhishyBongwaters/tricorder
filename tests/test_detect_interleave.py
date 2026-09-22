@@ -59,7 +59,14 @@ class TestDetectInterleave(unittest.TestCase):
 
     def test_global_top_hit_stays_first(self):
         results, _ = self.tc.search_identifiers("parse_expr", max_results=10)
-        self.assertTrue(results[0]["name"].startswith("parse_expr_"))
+        self.assertTrue(results)
+        top = results[0]
+        # Pin the exact top hit: interleaving must not dethrone the
+        # globally best-ranked match. The old startswith("parse_expr_")
+        # check also matched parse_expr_impl, so it could not catch a
+        # reshuffled top result.
+        self.assertEqual(top["name"], "parse_expr_00")
+        self.assertEqual(top["file"], str(Path("a") / "header.py"))
 
     def test_interleave_unit_round_robin(self):
         _interleave_by_file = _interleave()
