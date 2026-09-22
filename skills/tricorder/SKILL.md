@@ -56,13 +56,14 @@ All MCP tools require `project_root` (absolute path) — they route against that
 
 ## tricorder_detect parameters
 
-- `project_root` (required, absolute path), `query` (required — identifier to find, case-insensitive), `max_results` (default 10), `context_lines` (default 1), `include_definitions` (default true), `include_references` (default true).
+- `project_root` (required, absolute path), `query` (required — identifier to find, case-insensitive), `max_results` (default 10), `context_lines` (default 1), `include_definitions` (default true), `include_references` (default true), `max_tokens` (optional response budget — trims context first, then hits).
+- `search_mode` (default `"substring"`): `"exact"` (whole-word match), `"substring"` (contains), `"regex"` (Python regex, case-insensitive). Lead with an exact-symbol guess; NL queries risk five-figure junk payloads — cap first passes narrow and never read hits you can see are wrong.
 - `search_mode` (default `"substring"`): `"exact"` (whole-word match), `"substring"` (contains), `"regex"` (Python regex, case-insensitive).
 - `pre_index` / `pre_index_max_files` (default 100) / `pre_index_include_parents` (default 0): scope the search to files containing a probe symbol instead of scanning the whole tree. Critical for huge repos — prevents a full-tree walk per query.
 
 ## tricorder_symbols parameters
 
-- `project_root` (required, absolute path), `query` (required — substring match, case-insensitive), `type` (optional), `file` (optional), `limit` (default 10)
+- `project_root` (required, absolute path), `query` (required — substring match, case-insensitive), `type` (optional), `file` (optional), `limit` (default 10), `max_tokens` (optional response budget).
 
 ## tricorder_detail parameters
 
