@@ -1,0 +1,10 @@
+{
+ "baseline": {
+  "db": "/home/phishy/tricorder-eval/out-full/build_baseline.db",
+  "digest": "mapped: 2323 files, 726547 tags"
+ },
+ "branch": {
+  "db": "/home/phishy/tricorder-eval/out-full/build_branch.db",
+  "digest": "mapped: 2323 files, 726547 tags"
+ }
+}

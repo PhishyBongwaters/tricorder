@@ -11,6 +11,55 @@ _PARSER_TIMEOUT_S = float(os.environ.get("TRICORDER_PARSER_TIMEOUT_S", "5"))
 _PARSER_CACHE: dict = {}  # lang -> (language, parser) ponytail: one per language, not per file
 from scm import get_scm_fname
 
+# Tree-sitter node types that denote a class/struct-like scope, across the
+# grammars tricorder supports. Used to structurally qualify method names
+# (Class::method) instead of relying on the name heuristic.
+_CLASS_NODE_TYPES = ("class_declaration", "struct_declaration", "class_specifier",
+                     "impl_item", "class_definition")
+# Child node types that carry the class/struct name. "name" covers grammars
+# like tree-sitter-python where class_definition -> name (not identifier).
+_CLASS_NAME_CHILD_TYPES = ("identifier", "type_identifier", "class_identifier",
+                           "scoped_identifier", "name")
+
+
+def enclosing_class_name(node):
+    """Return the name of the nearest enclosing class/struct, or None.
+
+    Pure and picklable (module-level): safe to call from the ProcessPool
+    worker as well as from ParserMixin methods. Innermost class wins for
+    nesting. Returns None when the node is not inside any class-like scope.
+    """
+    cur = node.parent
+    while cur is not None:
+        if cur.type in _CLASS_NODE_TYPES:
+            for child in cur.children:
+                if child.type in _CLASS_NAME_CHILD_TYPES:
+                    text = child.text
+                    return text.decode("utf-8", errors="ignore") if text else ""
+            return ""
+        cur = cur.parent
+    return None
+
+
+def qualify_with_class_context(name, node, capture_name=""):
+    """Qualify a def name as Class::name using tree structure.
+
+    Returns the (possibly qualified) name. Class definitions themselves are
+    never qualified; names already containing '::' are left alone.
+    """
+    if not name or "::" in name:
+        return name
+    # Class definitions themselves are never qualified. Match the exact
+    # capture suffix (e.g. 'name.definition.class') rather than a substring,
+    # so a future capture like 'class_method' can't accidentally match.
+    if capture_name.endswith(".class"):
+        return name
+    cls = enclosing_class_name(node)
+    if cls:
+        return f"{cls}::{name}"
+    return name
+
+
 class ParserMixin:
     _SKIP_EXTS = {'.frag', '.vert', '.inc', '.icns', '.plist', '.entitlements',
                   '.cmake.in', '.h.in', '.cpp.in', '.hpp.in'}
@@ -60,8 +109,11 @@ class ParserMixin:
                     result.append(tag)
                     continue
             
-            # For methods/functions, if we're in a class context, prefix with class name
-            if tag.kind == "def" and current_class and '(' in tag.name:
+            # For methods/functions, if we're in a class context, prefix with class name.
+            # The '::' guard mirrors _apply_class_context_to_rows (ranking.py):
+            # structural qualification in get_tags_raw may already have scoped
+            # the name (e.g. 'Monitor::stretchMonitors()') — never qualify twice.
+            if tag.kind == "def" and current_class and '(' in tag.name and '::' not in tag.name:
                 # This looks like a method definition
                 new_name = f"{current_class}::{tag.name}"
                 # Create new tag with updated name
@@ -119,6 +171,9 @@ class ParserMixin:
             from grep_ast.tsl import get_language, get_parser
             from tree_sitter import Query, QueryCursor
         except ImportError:
+            # Lazy: core imports ParserMixin from this module, so a
+            # top-level import would be circular.
+            from core import GrepAstNotAvailableError
             raise GrepAstNotAvailableError("grep-ast is required. Install with: pip install grep-ast")
             
         lang = detect_lang(fname)
@@ -179,6 +234,14 @@ class ParserMixin:
                     line_num = node.start_point[0] + 1
                     # Handle potential None value
                     name = node.text.decode('utf-8') if node.text else ""
+
+                    # Structural class-context qualification (Class::method):
+                    # tree-based, so it covers Python and other languages where
+                    # the name heuristic never fires. The name-heuristic
+                    # fallback in _add_class_context_to_tags still runs later
+                    # (via get_tags) for grammars without a mapped class node.
+                    if kind == "def":
+                        name = qualify_with_class_context(name, node, capture_name)
                     
                     tags.append(Tag(
                         rel_fname=rel_fname,
@@ -199,19 +262,10 @@ class ParserMixin:
 
         Handles layouts where the function sits inside a class_declaration /
         struct_declaration / impl_item rather than directly.
+        Delegates to the module-level pure function (picklable for workers);
+        returns "" when no enclosing class is found (legacy contract).
         """
-        cur = node.parent
-        cls_types = ("class_declaration", "struct_declaration", "class_specifier",
-                     "impl_item", "class_definition")
-        while cur is not None:
-            if cur.type in cls_types:
-                for child in cur.children:
-                    if child.type in ("identifier", "type_identifier",
-                                       "class_identifier", "scoped_identifier"):
-                        return child.text.decode("utf-8", errors="ignore")
-                return ""
-            cur = cur.parent
-        return ""
+        return enclosing_class_name(node) or ""
 
     def get_symbols(self, fname: str, rel_fname: str) -> List[SymbolRecord]:
         """Extract SymbolRecord objects from a file's AST.
@@ -329,7 +383,12 @@ class ParserMixin:
                     # Scope the name to its enclosing class/struct (C/C++/Rust
                     # use '::'); e.g. void Foo::bar() -> "Foo::bar".
                     # ponytail: only for the ::-scoped languages, so Python
-                    # stays dotted and isn't mis-scoped.
+                    # stays dotted and isn't mis-scoped. (Tag extraction
+                    # qualifies every language with '::'; SymbolRecord names
+                    # intentionally stay bare here — all consumers normalize
+                    # through utils._base()/substring/fuzzy matching, so the
+                    # two forms still join. Don't widen this gate without
+                    # auditing those joins.)
                     if lang in ("cpp", "c", "rust") and "::" not in name:
                         scope = self._enclosing_class_name(parent)
                         if scope:
@@ -524,7 +583,8 @@ class ParserMixin:
         """Extract reference captures from a file's AST.
 
         Returns list of dicts with keys: line, name, capture_type, node_type.
-        capture_type is one of: call, type, class, implementation, module, macro.
+        capture_type is one of: call, argument, type, class, implementation,
+        module, macro.
         ponytail: uses @name.reference.* captures (identifier-only) not the
         full expression node text — tree-sitter captures the whole call
         expression as @reference.call but the identifier is @name.reference.call.

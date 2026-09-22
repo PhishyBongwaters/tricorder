@@ -22,7 +22,7 @@ content from one code path.
 
 ## 2. Hermes skill (`skills/tricorder/SKILL.md`)
 
-Registered as `codebase-tricorder`. Teaches agents when to reach for
+Registered as `tricorder`. Teaches agents when to reach for
 tricorder (unfamiliar repo, locating a definition, summarizing
 structure), a situation-to-tool table (structure → scan, definition
 → detect/symbols, callers → detail, multi-hop → query), and the
@@ -40,9 +40,11 @@ as a plugin-sourced message before the first turn. A navigation
 item, not a deep dive: a fast tally that never builds the full map,
 which is produced on demand via `/tricorder scan` or the MCP tools.
 
-## 4. DSH skill (`skills/tricorder-dsh/SKILL.md`)
+## 4. DSH skill — merged (2026-09-22)
 
-Same shape as the Hermes skill — situation table, escalation ladder,
-required `project_root` — with tool names in the DSH convention
-(`mcp_tricorder_scan`, `mcp_tricorder_detect`,
-`mcp_tricorder_symbols`, `mcp_tricorder_detail`).
+The former `skills/tricorder-dsh/SKILL.md` variant was merged into the single
+`skills/tricorder/SKILL.md`. The two were 95% identical; the only difference
+was the host tool-name prefix (`mcp_tricorder_*` on DSH vs
+`mcp__tricorder__tricorder_*` on Hermes/Claude Code). The merged skill documents
+both conventions in a "Tool names" section and uses the bare registered tool
+names (`tricorder_scan`, …) as canonical.

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Serial rising-cap chunk loop: one command to full coverage.
 
-Usage: chunk_resume.py <repo-path> [--start-cap N] [--step N] [--timeout S]
+Usage: chunk_resume.py <repo-path> [--start-cap N] [--step N] [--timeout S] [--db-path PATH]
 
 Loops `tricorder.py --db-path <canonical> --max-files <cap>` with a rising
-cap. Each run parses up to <cap> UNMAPPED files (drop_mapped_files slides
-the window, so fixed-cap reruns also advance). After each chunk, reads
+cap. --max-files is a prefix cap: each run takes the first <cap> files of
+the walk and skips already-mapped ones, so the rising cap is what advances
+coverage (a fixed-cap rerun adds zero). After each chunk, reads
 counts from the DB; stops when mapped == discovered total (DONE) or when
 two consecutive chunks add zero files (STALL, exit 1). Serial, one run at
 a time — no worker pool, no DB merge.
@@ -73,12 +74,20 @@ def main():
     # ponytail: fixed 50-iteration ceiling; bump if a repo ever legitimately
     # needs more than 50 cap steps (50 x 5000 = 250k files).
     for i in range(1, 51):
-        proc = subprocess.run(
-            [sys.executable, str(TRICORDER), str(repo),
-             "--db-path", str(db), "--full", "--output", str(out_map),
-             "--max-files", str(cap), "--quiet"],
-            capture_output=True, text=True, timeout=args.timeout,
-        )
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(TRICORDER), str(repo),
+                 "--db-path", str(db), "--full", "--output", str(out_map),
+                 "--max-files", str(cap), "--quiet"],
+                capture_output=True, text=True, timeout=args.timeout,
+            )
+        except subprocess.TimeoutExpired:
+            # Clean failure, not a traceback: completed chunks are already in
+            # the DB (already-mapped files are skipped), so re-running resumes.
+            files, tag_files, tags, refs = db_counts(db)
+            print(f"TIMEOUT: chunk {i} exceeded --timeout={args.timeout}s "
+                  f"(mapped {files}/{total} so far). Re-run to resume.")
+            raise SystemExit(1)
         files, tag_files, tags, refs = db_counts(db)
         print(f"[chunk {i}] cap={cap} scanned={files}/{total} tag_files={tag_files} tags={tags} refs={refs} exit={proc.returncode}", flush=True)
         if files >= total:

@@ -2,14 +2,14 @@
 
 **Mission**: Context guarding for 16GB VRAM home users — deterministic tooling only (tree-sitter, PageRank, token counting, git diff, file I/O). No model calls inside tricorder.
 
-**Current State**: RC1 — 5 MCP tools (incl. `tricorder_query` graph traversal), lifecycle plugin, skill, 10-language coverage, content-aware caching, slash commands. All verified working.
+**Current State**: RC1 — 7 MCP tools (incl. `tricorder_query` graph traversal), lifecycle plugin, skill, 11-language signature coverage (34 languages with tree-sitter queries), content-aware caching, slash commands. All verified working.
 
 ---
 
 ## Completed
 
 ### M0.9.1 - Token Budget Fields ✅ DONE
-- MCP tools: `token_estimate`, `full_repo_estimate`, `savings_pct` added to all 5 tools
+- MCP tools: `token_estimate`, `full_repo_estimate`, `savings_pct` added to all 7 tools
 - CLI: `--stats-only <map>` + `--format json` budget fields implemented
 - Plugin: `/tricorder status` surfaces savings vs full-repo via venv delegation
 
@@ -67,7 +67,9 @@ modifiers := "depth=" INT | "exclude=" GLOB | "include=" GLOB | "type=" ("functi
 
 - Git/VCS dependence — tricorder maps any directory, git or not; no `git diff`/incremental rebuild
 - AI summarization of symbols
-- Natural language → symbol mapping (embeddings)
+- Natural language → symbol mapping via embeddings (deterministic
+  NL → symbol fallback exists: tier-4 content search in `detect`;
+  embedding-based semantic mapping stays out of scope)
 - Auto-tier selection by query heuristics
 - Semantic/vector code search
 - Package manager dependency resolution (npm, cargo, go.mod, pip)

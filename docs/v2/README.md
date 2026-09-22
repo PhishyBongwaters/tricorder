@@ -50,16 +50,19 @@ Verilog, Solidity, and more. Full tiers + how to add one:
 
 Tree-sitter parse per file → tags into sqlite → name-resolved ref
 edges → SQL PageRank → token-budgeted map. Incremental via per-file
-size+mtime; resume is just re-running. Full pipeline:
+size+mtime; resume is just re-running. Query-time warmth is layered:
+detect/detail/symbols/query hit the mtime-keyed disk caches (and the
+reused in-process instance), not sqlite — only the ranked map,
+`--diff`, and scan resume read the DB. Full pipeline:
 `01-pipeline.md`, machinery: `04-internals.md`, operations:
 `03-operations.md`.
 
 ## Status
 
-`dev/db-map` branch. CLI is the stable surface; MCP server and both
-turn-0 plugins (Hermes, DSH) are ported to the DB but live-session
-verification is pending. No benchmark numbers are claimed on this
-branch until re-measured.
+`dev/db-map` branch. CLI is the stable surface; the MCP server and
+both turn-0 plugins (Hermes, DSH) are unported — TBD. No usage docs
+for them until the port lands and is verified live. No benchmark
+numbers are claimed on this branch until re-measured.
 
 ## License
 

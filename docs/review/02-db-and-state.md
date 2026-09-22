@@ -93,8 +93,10 @@ reverse.
 
 ## 6. Where the DBs live
 
-Canonical: `<root>/.tricorder/db/<name>.db` (`--init --root` prints
-it). The MCP server tries that path first, then the central cache
+Canonical: `<cache>/db/<name>.db` (`--init --root` prints
+it), where `<cache>` is `TRICORDER_CACHE_HOME` or
+`<workspace>/.tricorder` — never inside the scanned repo. The MCP
+server uses the same canonical path
 (`tricorder_server._canonical_db_for`, `tricorder_server.py:198`).
 `bench/coverage_audit.py` follows the same precedence and reports
 which home it checked (`LOCAL` vs central).

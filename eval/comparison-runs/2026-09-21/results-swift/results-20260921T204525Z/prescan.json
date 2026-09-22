@@ -1,0 +1,18 @@
+{
+ "baseline": {
+  "db": "results-20260921T204525Z/build_baseline.db",
+  "rc": 0,
+  "seconds": -1,
+  "stdout_tokens": -1,
+  "stderr_tail": "(reused)",
+  "digest": "mapped: 2324 files, 726714 tags (db sig f056b44f). Retrieve, don't rescan: mcp_tricorder_detect to locate, mcp_tricorder_symbols for shape, mcp_tricorder_detail for body+callers."
+ },
+ "branch": {
+  "db": "results-20260921T204525Z/build_branch.db",
+  "rc": 0,
+  "seconds": -1,
+  "stdout_tokens": -1,
+  "stderr_tail": "(reused)",
+  "digest": "mapped: 2324 files, 726714 tags (db sig 0c14500b). Retrieve, don't rescan: mcp_tricorder_detect to locate, mcp_tricorder_symbols for shape, mcp_tricorder_detail for body+callers."
+ }
+}

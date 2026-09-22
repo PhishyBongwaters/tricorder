@@ -1,6 +1,6 @@
 """Per-language contract test for README signature-extraction claims.
 
-Issue #25: README claims "Signature extraction + return types (10 languages)".
+Issue #25: README claims "Signature extraction + return types (11 languages)".
 Nothing failed if a grammar/query change silently broke Swift signatures or
 C# return types. This file enforces that claim: every claimed language must
 produce at least one *definition* symbol with a non-empty signature from a
@@ -25,8 +25,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core import Tricorder
 from utils import detect_lang
 
-# The 10 languages README explicitly claims (README.md "Language Coverage"
-# + "Signature extraction + return types (10 languages)"):
+# The 11 languages README explicitly claims (README.md "Language Coverage"
+# + "Signature extraction + return types (11 languages)"):
 #   Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby
 # Each entry: (language_key, file_extension, representative source)
 # The source must contain at least one function/method/class definition so the

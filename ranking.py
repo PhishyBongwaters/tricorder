@@ -6,8 +6,9 @@ import networkx as nx
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Set, Tuple, Optional, Any
-from utils import Tag, SymbolRecord
+from utils import Tag, SymbolRecord, resolve_or_none, stat_fingerprint
 from report import FileReport
+from parser import qualify_with_class_context
 _COVERAGE_WARN_THRESHOLD = 60.0
 from database import DBStore, EXTRACTOR_VERSION
 from importance import filter_important_files
@@ -18,10 +19,48 @@ from report import FileReport
 _COVERAGE_WARN_THRESHOLD = 60.0
 
 
+# Skip list mirrors ParserMixin._SKIP_EXTS / CacheMixin.get_tags early-out.
+# Kept here (not imported) so _parse_worker stays picklable without a self.
+_WORKER_SKIP_SUFFIXES = {'.frag', '.vert', '.inc', '.icns', '.plist', '.entitlements'}
+_WORKER_SKIP_ENDINGS = ('.cmake.in', '.h.in', '.cpp.in', '.hpp.in')
+
+
+def _apply_class_context_to_rows(rows):
+    """Pure, picklable version of ParserMixin._add_class_context_to_tags.
+
+    rows: list of (fname, rel_fname, line, name, kind) -> same shape, with
+    method names qualified as Class::method where the heuristic applies.
+
+    Must stay in sync with ParserMixin._add_class_context_to_tags in parser.py
+    (issue #46). The worker can't call the mixin method (no self, must stay
+    picklable), so the heuristic is duplicated here on tuples.
+    """
+    if not rows:
+        return rows
+    # Sort by line to process in source order, same as the mixin.
+    sorted_rows = sorted(rows, key=lambda r: r[2])
+    result = []
+    current_class = None
+    for fname, rel_fname, line, name, kind in sorted_rows:
+        if kind == "def" and name and name[0].isupper():
+            if '(' not in name and '::' not in name:
+                current_class = name
+                result.append((fname, rel_fname, line, name, kind))
+                continue
+        if kind == "def" and current_class and '(' in name and '::' not in name:
+            result.append((fname, rel_fname, line, f"{current_class}::{name}", kind))
+        else:
+            result.append((fname, rel_fname, line, name, kind))
+    return result
+
+
 # Tier 2 — ProcessPool worker (pure, picklable). Runs in child process, no DB.
 def _parse_worker(args):
     """Parse one file, return [(fname, rel_fname, line, name, kind), ...]. Top-level for pickle."""
     fname, rel_fname = args
+    # Mirror get_tags() early-out: skip files that can't have tree-sitter symbols.
+    if fname.endswith(_WORKER_SKIP_ENDINGS) or os.path.splitext(fname)[1] in _WORKER_SKIP_SUFFIXES:
+        return []
     try:
         from utils import detect_lang, read_text
         from scm import get_scm_fname
@@ -86,10 +125,17 @@ def _parse_worker(args):
                 try:
                     line = node.start_point[0] + 1
                     name = node.text.decode("utf-8") if node.text else ""
+                    # Structural class-context qualification (Class::method),
+                    # mirroring ParserMixin.get_tags_raw. Covers Python and
+                    # other languages where the name heuristic never fires.
+                    if kind == "def":
+                        name = qualify_with_class_context(name, node, cap_name)
                     out.append((fname, rel_fname, line, name, kind))
                 except Exception:
                     continue
-        return out
+        # Qualify method names with class context so the parallel fresh-scan
+        # path matches the sequential/incremental paths (issue #46).
+        return _apply_class_context_to_rows(out)
     except Exception:
         return []
 
@@ -98,14 +144,15 @@ class RankingMixin:
     def _db_signature(self, included: List[str]) -> str:
         """Stat-based content signature from the walked files (meta.signature).
 
-        Matches incremental (Goal 6) needs cheaply: (rel, size, mtime). Exact
-        contents hashing is deferred; sizes+mtimes catch edited/added files.
+        Matches incremental (Goal 6) needs cheaply: (rel, size, mtime_ns).
+        Exact contents hashing is deferred; sizes+ns-mtimes catch edited
+        files, including same-second same-size edits (review round 16).
         """
         parts = []
         for fname in sorted(included):
             try:
                 st = os.stat(fname)
-                parts.append(f"{self.get_rel_fname(fname)}:{st.st_size}:{int(st.st_mtime)}")
+                parts.append(f"{self.get_rel_fname(fname)}:{st.st_size}:{st.st_mtime_ns}")
             except OSError:
                 parts.append(self.get_rel_fname(fname))
         return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()[:16]
@@ -127,10 +174,12 @@ class RankingMixin:
         is Goal 6.
         """
         def normalize_path(path):
-            return str(Path(path).resolve())
+            # Symlink loops / dangling links resolve to None and are
+            # dropped below instead of crashing the scan.
+            return resolve_or_none(path)
 
-        chat_fnames = [normalize_path(f) for f in chat_fnames]
-        other_fnames = [normalize_path(f) for f in other_fnames]
+        chat_fnames = [f for f in (normalize_path(p) for p in chat_fnames) if f]
+        other_fnames = [f for f in (normalize_path(p) for p in other_fnames) if f]
         if mentioned_fnames is None:
             mentioned_fnames = set()
         if mentioned_idents is None:
@@ -143,10 +192,33 @@ class RankingMixin:
 
         db = self._db_store
         
+        # Files that resolve outside the repo root (symlinks pointing
+        # elsewhere, or explicit paths) must never enter the DB: their
+        # "rel" would be an absolute host path, leaking into stored rels
+        # and every map served from the index. Skip with a warning.
+        escaped = [f for f in all_fnames if not self._within_root(f)]
+        if escaped:
+            self.output_handlers['warning'](
+                f"Skipping {len(escaped)} file(s) that resolve outside the "
+                f"repo root: {', '.join(sorted(os.path.basename(f) for f in escaped)[:5])}")
+            excluded.update({f: "resolves outside repo root" for f in escaped})
+            all_fnames = [f for f in all_fnames if self._within_root(f)]
+
         # Check if DB already has valid data for the requested files
         # (Pre-scan case: db_path was provided and DB already populated)
         needed_rels = {self.get_rel_fname(f) for f in all_fnames}
         meta = db.get_meta()
+
+        # Extractor staleness gate: if the tag extractor changed since this DB
+        # was built (e.g. class-context qualification rules), the stored tags
+        # are stale regardless of file mtimes. Force a full rescan; the fresh
+        # scan below re-stamps with the current EXTRACTOR_VERSION.
+        if meta and meta[3] != EXTRACTOR_VERSION:
+            self.output_handlers['info'](
+                f"Extractor v{meta[3]} != v{EXTRACTOR_VERSION}: "
+                f"stored tags are stale, forcing full rescan")
+            db.reset()
+            meta = None
         
         if meta and meta[0] == 1:  # schema_version == 1
             stored_root, stored_sig = meta[1], meta[2]
@@ -167,7 +239,7 @@ class RankingMixin:
                                 rel = self.get_rel_fname(fname)
                                 try:
                                     st = os.stat(fname)
-                                    db.set_file_state(rel, st.st_size, int(st.st_mtime))
+                                    db.set_file_state(rel, *stat_fingerprint(st))
                                 except OSError:
                                     pass
                             db.commit()
@@ -190,7 +262,7 @@ class RankingMixin:
                                         (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
                                 try:
                                     st = os.stat(fname)
-                                    db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                                    db.set_file_state(rel_fname, *stat_fingerprint(st))
                                 except OSError:
                                     pass
                             db.commit()
@@ -213,7 +285,7 @@ class RankingMixin:
                                     (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
                             try:
                                 st = os.stat(fname)
-                                db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                                db.set_file_state(rel_fname, *stat_fingerprint(st))
                             except OSError:
                                 pass
                         db.commit()
@@ -227,7 +299,7 @@ class RankingMixin:
                         fname = rel_to_fname[rel]
                         try:
                             st = os.stat(fname)
-                            cur = (st.st_size, int(st.st_mtime))
+                            cur = stat_fingerprint(st)
                         except OSError:
                             # Deleted/missing -> treat as dirty (will be excluded)
                             dirty_rels.add(rel)
@@ -243,8 +315,15 @@ class RankingMixin:
                             dirty_rels.discard(self.get_rel_fname(fname))
 
                     if not dirty_rels:
+                        # Every needed rel is covered by file_state here
+                        # (anything missing, added, or changed would be
+                        # dirty). Keep ALL non-excluded files in `included`:
+                        # the old stored_rels filter kept only files owning
+                        # tag rows, silently dropping tagless files from
+                        # untagged_files and the map's "Other files" section
+                        # on every scan after the first.
                         for fname in all_fnames:
-                            if self.get_rel_fname(fname) in stored_rels:
+                            if fname not in excluded:
                                 included.append(fname)
                         self.output_handlers['info'](
                             f"Pre-scan DB hit: {len(needed_rels)} files covered, skipping parse")
@@ -283,7 +362,7 @@ class RankingMixin:
                                         db.insert_tags(rows)
                                     try:
                                         st = os.stat(fname)
-                                        db.set_file_state(rel, st.st_size, int(st.st_mtime))
+                                        db.set_file_state(rel, *stat_fingerprint(st))
                                     except OSError:
                                         pass
                                     included.append(fname)
@@ -314,7 +393,7 @@ class RankingMixin:
                                             (fname, rel, t.line, t.name, t.kind) for t in tags)
                                     try:
                                         st = os.stat(fname)
-                                        db.set_file_state(rel, st.st_size, int(st.st_mtime))
+                                        db.set_file_state(rel, *stat_fingerprint(st))
                                     except OSError:
                                         pass
                                 else:
@@ -353,7 +432,7 @@ class RankingMixin:
                                 db.insert_tags(rows)
                             try:
                                 st = os.stat(fname)
-                                db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                                db.set_file_state(rel_fname, *stat_fingerprint(st))
                             except OSError:
                                 pass
                             batch += 1
@@ -376,7 +455,7 @@ class RankingMixin:
                                 (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
                         try:
                             st = os.stat(fname)
-                            db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                            db.set_file_state(rel_fname, *stat_fingerprint(st))
                         except OSError:
                             pass
                         batch += 1
@@ -393,7 +472,6 @@ class RankingMixin:
             # Tier 2: parallel when large, else sequential with batch commit
             use_parallel_fresh = len(all_fnames) >= 200 and (os.cpu_count() or 1) > 1
             if use_parallel_fresh:
-                self.output_handlers['info'](f"[DEBUG] Parallel fresh scan: {len(all_fnames)} files, {os.cpu_count()} workers")
                 work_fresh = [(f, self.get_rel_fname(f)) for f in all_fnames if os.path.exists(f)]
                 # Mark excluded for missing
                 for f in all_fnames:
@@ -404,7 +482,6 @@ class RankingMixin:
                         included.append(f)
                 batch = 0
                 with concurrent.futures.ProcessPoolExecutor(max_workers=(2 if len(all_fnames) > 15000 else min(4, os.cpu_count() or 4))) as ex:
-                    self.output_handlers['info'](f"[DEBUG] ProcessPoolExecutor created")
                     futures = {ex.submit(_parse_worker, w): w for w in work_fresh}
                     for fut in concurrent.futures.as_completed(futures):
                         fname, rel_fname = futures[fut]
@@ -416,7 +493,7 @@ class RankingMixin:
                             db.insert_tags(rows)
                         try:
                             st = os.stat(fname)
-                            db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                            db.set_file_state(rel_fname, *stat_fingerprint(st))
                         except OSError:
                             pass
                         batch += 1
@@ -438,7 +515,7 @@ class RankingMixin:
                             (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
                     try:
                         st = os.stat(fname)
-                        db.set_file_state(rel_fname, st.st_size, int(st.st_mtime))
+                        db.set_file_state(rel_fname, *stat_fingerprint(st))
                     except OSError:
                         pass
                     batch += 1
@@ -452,6 +529,12 @@ class RankingMixin:
         # Cross defs x refs into the refs edge table (on disk, not RAM).
         db.populate_refs()
         db.commit()
+        # Checkpoint the WAL: frozen readers (CLI --diff, --db-coverage,
+        # tricorder_diff, turn-0 injectors) open the DB with immutable=1 and
+        # can only see checkpointed rows. Without this, a completed scan was
+        # invisible to the very next --diff (which then reported every file
+        # as added). Cheap relative to the parse; idempotent.
+        db.checkpoint()
 
         # file_flags sync — single point for all scan branches (no per-loop
         # edits): tagless scanned files record their reason (no-grammar,
@@ -557,10 +640,13 @@ class RankingMixin:
         
         # Normalize paths to absolute
         def normalize_path(path):
-            return str(Path(path).resolve())
-        
-        chat_fnames = [normalize_path(f) for f in chat_fnames]
-        other_fnames = [normalize_path(f) for f in other_fnames]
+            # Symlink loops / dangling links resolve to None and are
+            # dropped below instead of crashing the scan.
+            return resolve_or_none(path)
+
+        chat_fnames = [f for f in (normalize_path(p) for p in chat_fnames) if f]
+        other_fnames = [f for f in (normalize_path(p) for p in other_fnames) if f]
+
         
         # Initialize file report
         included: List[str] = []
@@ -764,23 +850,30 @@ class RankingMixin:
             # Filter graph to top nodes only
             G = nx.MultiDiGraph(G.subgraph(top_nodes))
         
-        # Build Mermaid output
+        # Build Mermaid output.
+        # Node IDs are positional (n0, n1, ...) rather than sanitized
+        # paths: the old path.replace(".","_").replace("/","_") scheme
+        # collided ('a.b/c.py' and 'a/b.c.py' both became 'a_b_c_py'),
+        # merging two nodes into one and collapsing their edges. The real
+        # path lives only in the quoted label, with quotes/newlines
+        # escaped so a hostile filename can't break out of the label
+        # (mermaid renders #34; / #124; as " and |).
+        def _label(text):
+            return (str(text).replace('"', '#34;')
+                    .replace('\r', ' ').replace('\n', ' '))
         lines = ["graph TD"]
-        # Node definitions with styling — use relative paths for readability
-        for node in sorted(G.nodes()):
-            rank = ranks.get(node, 0.0)
-            # Chat files get highlighted
+        node_ids = {}
+        for i, node in enumerate(sorted(G.nodes())):
+            node_ids[node] = f"n{i}"
             if node in chat_rel_fnames:
-                lines.append(f'    {node.replace(".", "_").replace("/", "_")}["{node}"] :::chat')
+                lines.append(f'    n{i}["{_label(node)}"] :::chat')
             else:
-                lines.append(f'    {node.replace(".", "_").replace("/", "_")}["{node}"]')
-        
+                lines.append(f'    n{i}["{_label(node)}"]')
+
         # Edges
         for src, dst, data in G.edges(data=True):
-            src_id = src.replace(".", "_").replace("/", "_")
-            dst_id = dst.replace(".", "_").replace("/", "_")
-            edge_name = data.get("name", "")
-            lines.append(f'    {src_id} -->|{edge_name}| {dst_id}')
+            edge_name = _label(data.get("name", "")).replace("|", "#124;")
+            lines.append(f'    {node_ids[src]} -->|{edge_name}| {node_ids[dst]}')
         
         # Styling
         lines.append("")
@@ -806,6 +899,12 @@ class RankingMixin:
                 mentioned_fnames, mentioned_idents, output_writer=output_writer
             )
 
+        # Content fingerprint in the key: without it a rescan after editing
+        # a file served the previous render (the DB dirty-diff re-parsed,
+        # but the map came from cache). Stat-based like meta.signature —
+        # cheap, and size+mtime catch edits/adds/deletes.
+        content_sig = self._db_signature(
+            sorted(set(chat_fnames) | set(other_fnames)))
         cache_key = (
             tuple(sorted(chat_fnames)),
             tuple(sorted(other_fnames)),
@@ -813,6 +912,7 @@ class RankingMixin:
             tuple(sorted(mentioned_fnames or [])),
             tuple(sorted(mentioned_idents or [])),
             self.full_map,
+            content_sig,
         )
         
         if not force_refresh:
@@ -893,8 +993,11 @@ class RankingMixin:
             tokens = self.token_count(tree_output)
             return tree_output, tokens
         
-        # Binary search for optimal number of tags
-        left, right = 0, len(ranked_tags)
+        # Binary search for optimal number of tags. left starts at 1:
+        # probing num_tags=0 can never yield a tree, and starting at 0
+        # meant a single-tag map took mid=0 on the first probe and never
+        # rendered at all ("No map content generated" for one-def repos).
+        left, right = 1, len(ranked_tags)
         best_tree = None
         best_num = 0
         # Fallback: track the smallest tree even if it exceeds budget
@@ -944,7 +1047,12 @@ class RankingMixin:
                 f"or drill in with detect/symbols/query."
             )
         
-        # Add untagged files section to final output (not counted in token budget)
+        # Add untagged files section to final output. The section shares the
+        # map token budget: entries are listed only while they fit in the
+        # remaining budget, and any remainder is reported as an honest
+        # "+N more" tail. Files are never silently dropped (the pre-round-18
+        # bug) and never appended unbounded on top of the budget (the
+        # post-round-18 wart). Raising --map-tokens lists more of them.
         if best_tree and file_report.untagged_files and not self.exclude_untagged and self.context_lines == 0:
             other_lines = []
             for uf in file_report.untagged_files:
@@ -956,7 +1064,45 @@ class RankingMixin:
                 else:
                     other_lines.append(uf)
             if other_lines:
-                best_tree = best_tree + "\n\nOther files:\n" + "\n".join(other_lines)
+                header = "\n\nOther files:\n"
+
+                def _tail(n):
+                    return (f"... +{n} more untagged file(s) "
+                            f"(raise --map-tokens to list)")
+
+                budget_left = (max_map_tokens - self.token_count(best_tree)
+                               - self.token_count(header))
+                kept = []
+                for line in other_lines:
+                    cost = self.token_count(line + "\n")
+                    if cost <= budget_left:
+                        kept.append(line)
+                        budget_left -= cost
+                    else:
+                        break
+                omitted = len(other_lines) - len(kept)
+
+                def _section():
+                    body = "\n".join(kept)
+                    if omitted:
+                        tail = _tail(omitted)
+                        body = body + "\n" + tail if body else tail
+                    return header + body
+
+                section = _section()
+                # Tokenizers aren't additive: verify the assembled total and
+                # trim until the whole map fits the budget.
+                while kept and self.token_count(best_tree + section) > max_map_tokens:
+                    kept.pop()
+                    omitted += 1
+                    section = _section()
+                # If even the bare header+tail doesn't fit the remaining
+                # budget, drop the section instead of violating the budget.
+                # The low-coverage warning above already tells the user the
+                # map is thin, so the omission isn't silent.
+                if self.token_count(best_tree + section) > max_map_tokens:
+                    section = ""
+                best_tree = best_tree + section
         
         # Attach coverage_pct to file_report so MCP/CLI can surface it (issue #18)
         file_report.coverage_pct = coverage_pct

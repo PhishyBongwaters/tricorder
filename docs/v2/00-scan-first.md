@@ -1,15 +1,21 @@
 # Scan first — the mandatory prereq
 
-Every tricorder workflow starts with a populated DB. Nothing else works
-without it: turn-0 injection reads the DB, MCP tools attach it, retrieval
-flags query it. An unmapped repo only gets the cheap probe digest.
+Every tricorder workflow starts with a populated DB. The ranked map
+(`--tier`, `--stats-only`, map rendering) and `--diff` query it, and
+the planned turn-0 injection and MCP tools (both TBD — not ported)
+attach to it. Note the warmth split: detect/detail/symbols/query do
+*not* read sqlite at query time — they ride the mtime-keyed disk
+caches (per-file tags, file text, cross-reference bundle) plus the
+reused in-process instance, which is why `--no-db` timings match DB
+timings on those tools. An unmapped repo only gets the cheap probe
+digest.
 
 ## The three commands
 
 ```bash
 # 1. Canonical DB (idempotent, prints path, exits)
 python tricorder.py --init --root /path/to/repo
-# -> /path/to/repo/.tricorder/db/repo.db
+# -> <cache>/db/repo.db  (TRICORDER_CACHE_HOME or <workspace>/.tricorder; never in the repo)
 
 # 2. Fill it (serial rising-cap loop; see chunking below)
 python chunk_resume.py /path/to/repo
@@ -20,10 +26,21 @@ python chunk_resume.py /path/to/repo
 # 3. Fresh session with the repo as root from here on
 ```
 
-`--init` creates `<root>/.tricorder/db/<name>.db`, applies schema
-(`database.py` `_DDL`) and size-based journal mode, and exits. Re-running
-is safe; only `--init --wipe` deletes. `--wipe` without `--init` is a
-hard error (exit 2).
+`--init` creates `<cache>/db/<name>.db` (`<cache>` = `TRICORDER_CACHE_HOME`
+or `<workspace>/.tricorder` — never inside the scanned repo), applies schema
+(`database.py` `_DDL`) and size-based journal mode, stamps ownership
+(`meta.root`; extractor_version=0 = "not yet indexed", so the first scan
+does a full rescan), and exits. Re-running is safe; only `--init --wipe`
+deletes. `--wipe` without `--init` is a hard error (exit 2).
+
+After `--init`, bare CLI runs (no `--db-path`) resume into the canonical
+DB automatically: `--max-files` is a prefix cap, so a fixed-cap rerun
+re-hits mapped files and adds zero — resume with a rising cap
+(`chunk_resume.py` does this for you). `--no-db` opts out and
+stays in-memory. Explicit `--db-path` still wins. A canonical DB that
+exists but isn't writable (read-only checkout, foreign owner) degrades
+the map scan to in-memory with a warning instead of crashing on the
+first write; `--diff` only reads, so it keeps a read-only DB.
 
 ## Chunking (large repos)
 

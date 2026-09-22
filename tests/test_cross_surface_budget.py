@@ -1,12 +1,17 @@
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 from utils import repo_budget
 
 class TestBudgetParity(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path("D:/Projects/tricorder/tests/fixture")
-        self.tmp.mkdir(exist_ok=True)
+        # Transportable: temp dir instead of a machine-specific absolute path.
+        self.tmp = Path(tempfile.mkdtemp(prefix="budget_parity_"))
         (self.tmp / "test.py").write_text("x\ny")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_repo_budget_invariants(self):
         res = repo_budget(str(self.tmp), 0)

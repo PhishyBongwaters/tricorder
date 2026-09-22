@@ -329,6 +329,32 @@ def _list_cached_projects() -> list:
 # Core: produce the map
 # ---------------------------------------------------------------------------
 
+def _canonical_db_path(cli: str, project_root: str) -> Optional[str]:
+    """Canonical index-DB path for project_root, via `tricorder --init`.
+
+    --init is idempotent (creates the DB in the tricorder workspace cache
+    root — never inside the scanned repo — and prints its path). Using it
+    keeps the plugin on the same single source of truth as the CLI and the
+    MCP server instead of reimplementing the cache-root convention.
+    Returns the path, or None on failure."""
+    try:
+        r = subprocess.run(
+            [cli, "--root", project_root, "--init"],
+            capture_output=True, text=True, timeout=120,
+        )
+    except Exception as exc:
+        logger.debug("tricorder: --init failed: %s", exc)
+        return None
+    if r.returncode != 0:
+        logger.debug("tricorder: --init failed: %s", r.stderr[-300:])
+        return None
+    lines = [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+    if not lines:
+        logger.debug("tricorder: --init printed no path")
+        return None
+    return lines[-1]
+
+
 def build_map(project_root: str) -> Optional[dict]:
     """Run tricorder scan for project_root into the cache. Returns meta dict
     (map_file, token_estimate, symbol counts) or None on failure. Best-effort,
@@ -339,11 +365,14 @@ def build_map(project_root: str) -> Optional[dict]:
         logger.debug("tricorder: CLI not found; skipping map")
         return None
     out = _cache_file(project_root)
-    # Canonical in-repo DB: slash scans populate the same sqlite that turn-0,
-    # MCP tools, and chunk_resume.py read (same convention as --init).
-    _root = Path(project_root).resolve()
-    _db = _root / ".tricorder" / "db" / (_root.name + ".db")
-    _db.parent.mkdir(parents=True, exist_ok=True)  # DBStore won't create dirs
+    # Canonical DB in the tricorder workspace cache root (never inside the
+    # scanned repo): `tricorder --init` prints its path and is the single
+    # source of truth, so slash scans populate the same sqlite that turn-0,
+    # MCP tools, and chunk_resume.py read.
+    _db = _canonical_db_path(cli, project_root)
+    if not _db:
+        logger.debug("tricorder: --init failed; skipping map")
+        return None
     cmd = [
         cli, "--root", project_root,
         "--tier", "0",
@@ -361,13 +390,20 @@ def build_map(project_root: str) -> Optional[dict]:
         cmd += ["--max-files", str(max_files)]
     try:
         # The CLI needs at least one paths positional; resolve against --root.
-        subprocess.run(
+        r = subprocess.run(
             cmd,
             capture_output=True, text=True, timeout=300,
             check=False,
         )
     except Exception as exc:
         logger.debug("tricorder: scan failed for %s: %s", project_root, exc)
+        return None
+    if r.returncode != 0:
+        # A failed scan must not serve a stale map file as fresh: the
+        # meta written below carries a fresh project signature, which
+        # would make the stale cache look valid.
+        logger.debug("tricorder: scan exited %s for %s: %s",
+                     r.returncode, project_root, (r.stderr or "")[-300:])
         return None
 
     if not out.exists() or out.stat().st_size == 0:
@@ -443,25 +479,49 @@ def _tricorder_db_for(root: str) -> Optional[str]:
     Cache root resolved without hardcoding: TRICORDER_CACHE_HOME env,
     else <cli-venv>/../.tricorder (derived from the discovered CLI path).
     Read-only use — never creates or writes.
+
+    The shared-cache lookup is by directory basename, so a same-named repo
+    elsewhere can collide; a candidate whose meta.root is not this root is
+    skipped (serving another repo's index would mislead the turn-0
+    steering into claiming this repo is mapped).
     """
     import sqlite3 as _sq
     name = Path(root).name + ".db"
-    # In-repo canonical (--init) first, cache-root homes as fallback.
-    candidates = [Path(root) / ".tricorder" / "db" / name]
+    # Cache-root homes only — state never lives inside the scanned repo.
+    candidates = []
     env = os.environ.get("TRICORDER_CACHE_HOME")
     if env:
         candidates.append(Path(env) / "db" / name)
     cli = _get_tricorder_cli()
     if cli:
         candidates.append(Path(cli).resolve().parent.parent / ".tricorder" / "db" / name)
+    want = os.path.normcase(os.path.abspath(root))
     for db in candidates:
         try:
-            if db.exists():
-                con = _sq.connect(f"file:{db}?mode=ro", uri=True)
-                n = con.execute("SELECT COUNT(DISTINCT rel_file) FROM tags").fetchone()[0]
+            if not db.exists():
+                continue
+            # Percent-encode into the URI (as_uri): '#'/'?' in the path must
+            # not truncate it. immutable=1 skips WAL sidecar access so
+            # read-only checkouts open (the plugin never imports tricorder
+            # in-process, hence the inline form instead of utils.read_only_connect).
+            con = _sq.connect(
+                Path(os.path.abspath(str(db))).as_uri() + "?mode=ro&immutable=1",
+                uri=True)
+            try:
+                # Coverage is file_state rows (house rule: never
+                # tags-distinct — tagless files own zero tag rows). A DB
+                # without file_state (pre-Goal-3) has unknowable coverage:
+                # not a usable map for this repo; try the next candidate.
+                try:
+                    n = con.execute("SELECT COUNT(*) FROM file_state").fetchone()[0]
+                except Exception:
+                    continue
+                m = con.execute(
+                    "SELECT root FROM meta ORDER BY rowid DESC LIMIT 1").fetchone()
+            finally:
                 con.close()
-                if n > 0:
-                    return str(db)
+            if n > 0 and m and m[0] and os.path.normcase(os.path.abspath(m[0])) == want:
+                return str(db)
         except Exception:
             continue
     return None
@@ -470,9 +530,23 @@ def _tricorder_db_for(root: str) -> Optional[str]:
 def _db_coverage_line(db_path: str, root: str) -> str:
     """One-line coverage + steering from the pre-scan DB. Read-only."""
     import sqlite3 as _sq
-    con = _sq.connect(f"file:{db_path}?mode=ro", uri=True)
+    # Percent-encode into the URI (as_uri): '#'/'?' in the path must not
+    # truncate it. immutable=1 skips WAL sidecar access so read-only
+    # checkouts open (inline form: the plugin never imports tricorder
+    # in-process, so utils.read_only_connect is unavailable here).
+    con = _sq.connect(
+        Path(os.path.abspath(str(db_path))).as_uri() + "?mode=ro&immutable=1",
+        uri=True)
     try:
-        files = con.execute("SELECT COUNT(DISTINCT rel_file) FROM tags").fetchone()[0]
+        # Coverage is file_state rows (house rule: never tags-distinct —
+        # tagless files own zero tag rows). A DB without file_state
+        # (pre-Goal-3) has unknowable coverage: raise so the caller falls
+        # back to the probe digest instead of misreporting tags-distinct.
+        try:
+            files = con.execute("SELECT COUNT(*) FROM file_state").fetchone()[0]
+        except Exception as e:
+            raise RuntimeError(
+                f"pre-file_state DB at {db_path}: coverage unknowable") from e
         tags = con.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
         meta = con.execute(
             "SELECT root, signature FROM meta ORDER BY rowid DESC LIMIT 1"

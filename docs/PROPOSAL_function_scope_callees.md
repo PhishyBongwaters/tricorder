@@ -1,5 +1,9 @@
 # Proposal: Function-Scope Callers/Callees in `get_symbol_detail`
 
+> **Implemented.** Function-scope guards shipped in `graph.get_symbol_detail`
+> (in-file and cross-file callee loops); pinned by the synthetic C++
+> fixture tests in `tests/test_get_symbol_details.py`. Kept as design record.
+
 ## Problem
 
 `get_symbol_detail` (core.py L1296-1302) builds the `callees` list by scanning **all** tree-sitter reference captures in the file, not just those inside the target symbol's body. This produces false positives:

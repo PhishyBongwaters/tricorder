@@ -6,12 +6,12 @@ for them, not a gap.
 
 ## Triage (judgment, verify per language while working)
 
-CODE — worth a query (25): bash, cairo, clojure, cmake, fortran, func,
+CODE — worth a query (30): bash, cairo, clojure, cmake, fortran, func,
 gdscript, glsl, gn, groovy, hack, haskell, julia, llvm, make, matlab,
 pascal, perl, powershell, proto, sql, svelte, tsx, verilog, vue, wast,
 wat, zig, uxntal, tablegen.
 
-CONFIG/DATA — `no-query` is correct (21): comment, css, csv,
+CONFIG/DATA — `no-query` is correct (20): comment, css, csv,
 dockerfile, git_config, gitattributes, gitcommit, gitignore, gomod,
 gosum, html, ini, jsdoc, json, latex, markdown, pymanifest,
 requirements, toml, yaml.
@@ -42,12 +42,13 @@ For each CODE language:
 | 3 | matlab, fortran, clojure, gdscript, cairo | done (46 subtests green) |
 | 4 | sql, proto, make, cmake (gn excluded: target names are strings) | done (50 green) |
 | 5 | glsl, func, tsx (svelte/vue excluded: script blocks are raw_text) | done (53 green) |
-| 6 | uxntal, llvm, tablegen (wast/wat unreachable: no ext mapping) | done (56 green) |
+| 6 | uxntal, llvm, tablegen (wast/wat mapped via detect_lang) | done (56 green) |
 
 All six batches complete. Remaining unproven: hcl (weak query),
-properties/udev (config formats), ql/wast/wat (no ext mapping),
-gn/svelte/vue (nothing taggable). Config/data formats stay `no-query`
-by design.
+properties/udev (config formats), gn/svelte/vue (nothing taggable).
+Config/data formats stay `no-query` by design. (ql/wast/wat are
+matrix-green — `detect_lang` maps `.ql`/`.qll`, `.wast`, `.wat` —
+not unproven.)
 
 ## Backlog — next languages (probed Sep 2026)
 
@@ -64,11 +65,11 @@ forth) — collisions need content sniffing. `.m` (matlab/objc) same
 class, untouched. Binary-adjacent mappings (`.mo` gettext, `.res`
 resources) parse as their language; binary files yield no tags.
 
-Already covered by alias (no work): zsh → bash query, systemverilog
-→ verilog query, wgsl_bevy → wgsl (once written), terraform → hcl
-(weak, see hcl note).
+Already covered by alias (no work): zsh → bash query, .sv →
+verilog (detect_lang maps `.sv` to the verilog grammar+query),
+wgsl_bevy → wgsl, terraform → hcl (weak, see hcl note).
 
-Upstream-only (no grammar in pack): futhark, xq, embeddedtemplate.
+Upstream-only (no grammar in pack): futhark, xq.
 
 Known mis-mapping (do not touch without a plan): `.m` → matlab,
 so Objective-C files parse as Matlab. Disambiguation needs content

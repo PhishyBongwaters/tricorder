@@ -1,0 +1,22 @@
+[
+ {
+  "step": "detect1",
+  "seconds": 27.2,
+  "tokens": 935
+ },
+ {
+  "step": "symbols1",
+  "seconds": 2.46,
+  "tokens": 1136
+ },
+ {
+  "step": "detect2",
+  "seconds": 24.99,
+  "tokens": 1009
+ },
+ {
+  "step": "symbols2",
+  "seconds": 3.33,
+  "tokens": 1119
+ }
+]

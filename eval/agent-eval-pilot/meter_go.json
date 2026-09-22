@@ -1,0 +1,56 @@
+{
+ "A-G5": {
+  "init": 33,
+  "detect_nl": 58624,
+  "detect_exact": 312,
+  "symbols": 150,
+  "read": 598,
+  "_total": 59717
+ },
+ "A-G3": {
+  "init": 33,
+  "detect": 1119,
+  "symbols": 843,
+  "_total": 1995
+ },
+ "A-G1": {
+  "init": 33,
+  "detect": 1147,
+  "symbols1": 374,
+  "symbols2": 809,
+  "read": 833,
+  "_total": 3196
+ },
+ "B-G1": {
+  "ls_runtime": 4640,
+  "grep_mgc": 1475,
+  "read1": 1609,
+  "read2": 610,
+  "grep_mark": 150,
+  "read3": 809,
+  "read4": 240,
+  "_total": 9533
+ },
+ "B-G3": {
+  "ls_runtime": 4640,
+  "grep_chan": 238,
+  "read1": 224,
+  "read2": 372,
+  "read3": 254,
+  "read4": 249,
+  "read5": 243,
+  "_total": 6220
+ },
+ "B-G5": {
+  "ls_root": 47,
+  "ls_internal": 155,
+  "ls_ssagen": 58,
+  "read_ssa_full": 87360,
+  "grep_ssagen": 69,
+  "read_pgen": 1233,
+  "grep_gc": 18,
+  "read_gc1": 308,
+  "read_gc2": 239,
+  "_total": 89487
+ }
+}

@@ -41,6 +41,12 @@ tricorder.py --chat-files main.py --other-files src/
   hint). No map, no budget. Same text the Hermes/DSH plugins inject.
 - `--db-coverage`: one-line mapped-DB coverage for `--root`, exit.
   Silent when unmapped.
+- `--diff` / `--since`: delta map — added/modified/deleted files since the last
+  scan, plus tags for changed files. Read-only; honors `--format`.
+- `--detect QUERY` / `--symbols QUERY`: identifier/symbol search
+  without a map build (MCP `tricorder_detect` / `tricorder_symbols`
+  equivalents). `--max-results N` (default 10) caps results; both
+  honor `--format` with machine-clean JSON.
 
 ## Persist and reset
 
@@ -49,8 +55,8 @@ tricorder.py --chat-files main.py --other-files src/
   `--no-db` opts out to the legacy in-memory graph (mutually
   exclusive with `--db-path`).
 - `--init`: create or open the canonical
-  `<root>/.tricorder/db/<name>.db`, print its path, exit. Idempotent;
-  never wipes without `--wipe`.
+  `<cache>/db/<name>.db` (never inside the scanned repo), print its
+  path, exit. Idempotent; never wipes without `--wipe`.
 - `--wipe` (with `--init` only): delete the canonical DB first.
 - `--force-refresh`: refreshes the map render cache. Does not
   reparse.

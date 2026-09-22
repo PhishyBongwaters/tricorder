@@ -26,16 +26,20 @@ yul, ql, wast, wat.
 - udev — rule files have no definitions by nature; correctly
   unprovable.
 
-## Potential (51, grammar but no query)
+## Potential (grammar but no query)
 
-bash, cairo, clojure, cmake, css, dockerfile, fortran, gdscript, glsl,
-html, json, latex, llvm, make, markdown,
-matlab, proto, sql, svelte, toml, tsx,
-vue, yaml, and the rest. The grammar parses; nothing
-extracts tags, so these scan as `no-query`. (Non-code formats like
-json/toml never need queries — `no-query` is correct for them.)
+Reproducible: `{ get_language(k) succeeds } − 93 validated − 3
+query-present` from `tree_sitter_language_pack.available_languages()`.
+On 2026-09-20 that measured 17 (bazel, css, embedded_template, gn,
+gradle, html, lisp, makefile, objc, po, pymanifest, shell, smalltalk,
+svelte, systemverilog, vb_dotnet, vue). The number moves with the
+pack — `get_language` lazily downloads grammars, so recount before
+quoting it.
 
-No grammar at all: embedded_template.
+The grammar parses; nothing extracts tags, so these scan as `no-query`.
+(Data formats like json/toml/markdown ship **no grammar** in this pack —
+detect_lang still keys them, but there is nothing to parse, so they are
+`no-query` by grammar absence, not by query absence.)
 
 ## Path to supported (per language)
 

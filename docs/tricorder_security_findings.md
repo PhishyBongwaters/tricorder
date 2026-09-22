@@ -40,6 +40,7 @@ Main risk categories:
 - **Description:** Tricorder scans arbitrary repositories. A hostile repo can contain millions of files, oversized source files, deeply nested directories, or generated code explosions.
 - **Recommendation:** Implement global scan limits (`MAX_FILES`, `MAX_TOTAL_BYTES`, `MAX_SINGLE_FILE_BYTES`, `MAX_DIRECTORY_DEPTH`, `MAX_SCAN_TIME`). Return a partial result with a warning instead of failing unpredictably.
 - **Note on existing guards:** `MAX_SCAN_FILES` (20k cap) and `MAX_SOURCE_FILE_SIZE` (1MB) partially mitigate this, but byte budgets and time limits remain open.
+- *[2026-09-20] Update: the 20k default is gone — since the `--full` feature commit the scan-envelope defaults are file count 0 = unlimited, total bytes 0 = unlimited, scan time 0 = unlimited (depth 25 and 1MB/file retained, settable via `TRICORDER_MAX_SCAN_FILES` / `TRICORDER_MAX_TOTAL_BYTES` / `TRICORDER_MAX_SCAN_TIME_S`). The MCP server additionally clamps `max_files` to 10,000 server-side.*
 
 ## TC-003: Cache Isolation (#31)
 - **Severity:** Low (Label: `low`)

@@ -59,3 +59,14 @@ def test_explicit_path_skips_autodiscover(tmp_path):
     # explicit path path must not be hijacked, and auto-scan message must not appear
     assert "No explicit files provided" not in r.stderr
     assert "extra.py" not in r.stdout
+
+def test_nonexistent_root_fails_loud(tmp_path):
+    # A typo'd --root must fail fast with a non-zero exit, not silently
+    # produce an empty map with rc=0.
+    missing = tmp_path / "does_not_exist"
+    r = subprocess.run(
+        [sys.executable, CLI, "--root", str(missing), "--format", "json"],
+        capture_output=True, text=True,
+    )
+    assert r.returncode != 0, r.stdout
+    assert "not an existing directory" in r.stderr

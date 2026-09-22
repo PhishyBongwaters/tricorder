@@ -4,8 +4,10 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from tricorder_server import (_query_variants, _levenshtein, _tokenize,
-                              _escalation_hint)
+from tricorder_server import _escalation_hint
+from utils import (query_variants as _query_variants,
+                   levenshtein as _levenshtein,
+                   tokenize_identifier as _tokenize)
 
 
 class TestFuzzyEscalation(unittest.TestCase):

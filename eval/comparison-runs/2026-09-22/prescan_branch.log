@@ -1,0 +1,61 @@
+rc=0 seconds=118.8
+--- stdout ---
+include/swift/AST/
+include/swift/AST/Types.h (8927 lines)
+
+
+  53: namespace llvm {
+  57: namespace clang {
+  58: class FunctionType;
+  61: namespace swift {
+  63: enum class AllocationArena;
+  64: class ArchetypeType;
+  65: class ArgumentList;
+  66: class AssociatedTypeDecl;
+  67: class ASTContext;
+  68: enum BufferPointerTypeKind : unsigned;
+  70: class BuiltinTupleDecl;
+  71: class ClassDecl;
+  72: class ClangModuleLoader;
+  73: class DependentMemberType;
+  74: class GenericTypeParamDecl;
+  75: class GenericTypeParamType;
+  76: class GenericParamList;
+  77: class GenericSignature;
+  78: class GenericSignatureBuilder;
+  79: class Identifier;
+  80: class InOutType;
+  81: class OpaqueTypeDecl;
+  82: class ExistentialArchetypeType;
+  83: class PackExpansionType;
+  84: class PackType;
+  85: enum class ParamSpecifier : uint8_t;
+  86: class PlaceholderTypeRepr;
+  87: enum class ReferenceCounting : uint8_t;
+  88: enum class ResilienceExpansion : unsigned;
+  89: class SILModule;
+  90: class SILFunction;
+  91: class SILType;
+  92: class SourceLoc;
+  93: class TypeAliasDecl;
+  94: class TypeDecl;
+  95: class NominalTypeDecl;
+  96: class GenericTypeDecl;
+  97: class HiddenTypeLayoutInfoDecl;
+  98: enum class EffectKind : uint8_t;
+  99: class EnumDecl;
+  100: class EnumElementDecl;
+  101: class SILFunctionType;
+  102: class StructDecl;
+  103: class ParamDecl;
+  104: class ProtocolDecl;
+  105: class TypeVariableType;
+  106: class ValueDecl;
+  107: class ModuleDecl;
+  108: class ModuleType;
+  109: class ProtocolConformance;
+  110: enum PointerTypeKind : unsigned;
+  112: class ErrorExpr;
+
+--- stderr ---
+Warning: Skipping 1 file(s) that resolve outside the repo root: _RegexParser

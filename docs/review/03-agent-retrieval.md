@@ -2,32 +2,34 @@
 
 Source of truth: the code. Every claim below names its file.
 
-Agents do not read the DB directly. They get five MCP tools
+Agents do not read the DB directly. They get seven MCP tools
 (`tricorder_server.py`) plus a turn-0 injection that orients a fresh
 session before it asks anything. Listed below in ascending order of
 response cost.
 
-## 1. The five tools
+## 1. The seven tools
 
 | tool | returns | cost |
 |---|---|---|
 | `tricorder_detect` | identifier locations: file, line, context | lowest |
 | `tricorder_symbols` | symbol shape: type, range, signature, docstring | low |
+| `tricorder_diff` | what changed since the last scan (added/modified/deleted + tags) | low |
+| `tricorder_locate` | detect → best-match detail in one call, with alternatives | low-medium |
 | `tricorder_detail` | body plus callers and callees | medium |
-| `tricorder_query` | graph traversal (callers/callees/refs/defs, piped) | medium |
+| `tricorder_query` | graph traversal (callers/callees/refs/defs/tests_for, piped) | medium |
 | `tricorder_scan` | the ranked map, inline or to disk | highest |
 
 ### detect / symbols
 
 Deterministic matching: exact, substring, then regex
-(`tricorder_detect`, `tricorder_server.py:696`;
-`tricorder_symbols`, `:890`), followed by the retrieve-0 rescue over
+(`tricorder_detect`, `tricorder_server.py:673`;
+`tricorder_symbols`, `:757`), followed by the retrieve-0 rescue over
 orthographic variants — template arguments, parens, and namespace
 qualifiers stripped; word parts re-joined under every
 separator/case form; single-word verb synonyms; then an
 edit-distance and token-overlap pass
-(`_query_variants`, `_levenshtein`, `_tokenize`,
-`tricorder_server.py:36-140`). Rescue hits carry
+(`query_variants`, `levenshtein`, `tokenize_identifier`,
+`utils.py`). Rescue hits carry
 `quality: "fuzzy"`: lookalikes, not exact hits. No ML, no model
 calls.
 
@@ -35,7 +37,7 @@ calls.
 
 Empty results (even after rescue) and fuzzy rescues return
 `escalation: {next_rung, reason, evidence, message}`
-(`_escalation_hint`, `tricorder_server.py:106-141`): a fixed decision
+(`_escalation_hint`, `tricorder_server.py:29`): a fixed decision
 table over already-computed signals. Empty detect names symbols as
 the next rung; empty symbols names query; any fuzzy hit names detail
 with a verify-before-use message.
@@ -43,7 +45,7 @@ with a verify-before-use message.
 ### detail
 
 `tricorder_detail(project_root, file, name, line)`
-(`tricorder_server.py:1017`): the symbol record plus `body` (first
+(`tricorder_server.py:838`): the symbol record plus `body` (first
 500 chars) and in-file plus cross-file `callers`/`callees`, restored
 from the cross-ref bundle without re-parsing (`graph.py:44-100`).
 Unknown symbols return `{"error": "not found"}` with exit code 0.
@@ -51,7 +53,7 @@ Unknown symbols return `{"error": "not found"}` with exit code 0.
 ### query
 
 `tricorder_query(project_root, query, token_limit=2048)`
-(`tricorder_server.py:1081`). DSL: `callers('x')`, `callees('x')`,
+(`tricorder_server.py:1009`). DSL: `callers('x')`, `callees('x')`,
 `refs('x')`, `defs('x')`, chained with `|`, with `depth=`,
 `exclude=`/`include=`, `type=`, and `limit=` modifiers. Parsed by a
 hand-rolled parser (`utils.parse_query_dsl`) and executed by
@@ -60,15 +62,15 @@ index. Unknown names return `symbol_not_found`.
 
 ### scan
 
-`tricorder_scan` (`tricorder_server.py:365`): the full map builder.
+`tricorder_scan` (`tricorder_server.py:342`): the full map builder.
 `token_limit` truncates, `tier` selects definitions-only (0) or
 definitions plus context lines (1), `output_file` writes the map to
 disk and returns only the path (recommended past roughly 50 files),
 `dry_run` prices the map without building it, `exclude_globs` cuts
 vendored subtrees before ranking, and `tier_hint` reports when the
-budget truncated the tag set (`tricorder_server.py:567,633`). Every
+budget truncated the tag set (`tricorder_server.py:544,610`). Every
 response carries `token_estimate`, `full_repo_estimate`, and
-`savings_pct` (`_budget_fields`, `tricorder_server.py:315`).
+`savings_pct` (`_budget_fields`, `tricorder_server.py:209`).
 
 ## 2. Turn-0 injection
 

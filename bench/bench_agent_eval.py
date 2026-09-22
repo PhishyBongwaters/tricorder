@@ -294,7 +294,7 @@ def run_variant(repo_task, variant: str, model: str, provider: str,
         "--cli",
     ]
     if variant == "A":
-        cmd += ["-s", "codebase-tricorder"]
+        cmd += ["-s", "tricorder"]
         cmd += ["--profile", "bench-tricorder"]
     elif variant == "B":
         cmd += ["--profile", "bench-baseline"]

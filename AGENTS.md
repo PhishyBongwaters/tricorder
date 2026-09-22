@@ -8,7 +8,7 @@ ranked map. Flat-memory walk; the DB is the memory.
 ```bash
 .venv/Scripts/python.exe tricorder.py --init --root <repo>   # canonical DB, prints path
 .venv/Scripts/python.exe chunk_resume.py <repo>              # serial rising-cap loop to DONE
-.venv/Scripts/python.exe -m pytest tests/ -q -p no:cacheprovider   # 206 passed
+.venv/Scripts/python.exe -m pytest tests/ -q -p no:cacheprovider   # 474 passed, 4 skipped (POSIX-only), 96 subtests
 ```
 
 Use the repo `.venv` (pytest + grammars). No DB = no map, no tools.
@@ -27,6 +27,10 @@ Use the repo `.venv` (pytest + grammars). No DB = no map, no tools.
   rules. Never `sqlite3.connect` a possibly-absent DB (creates a
   0-byte stub); check existence first.
 - No destructive commands (rm, wipes) without explicit approval.
+- Savings numbers must cite the committed run that produced them
+  (`eval/comparison-runs/2026-09-21/README.md` for Vaultwarden/Go,
+  `eval/comparison-runs/2026-09-22/README.md` for Swift — canonical until
+  superseded). No version, no quote.
 - Depth: `docs/v2/` (00 scan-first, 01 pipeline, 02 tiering+retrieval,
   03 operations). MCP server + turn-0 plugins are unported — document
   as TBD, no usage claims.

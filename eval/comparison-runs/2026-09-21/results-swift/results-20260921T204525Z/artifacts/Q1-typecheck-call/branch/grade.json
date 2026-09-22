@@ -1,0 +1,9 @@
+{
+ "ground_truth_cited": [
+  "lib/Sema/CSApply.cpp"
+ ],
+ "ground_truth_existing": [
+  "lib/Sema/CSApply.cpp"
+ ],
+ "pass": true
+}

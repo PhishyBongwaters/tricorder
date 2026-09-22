@@ -64,6 +64,10 @@ class TestTierHistoryStress(unittest.TestCase):
         self.assertIsNotNone(_tier_history_store.get(f"proj_{100_000 - 1}"))
 
 
+# Transportable: ctags is an optional external tool (same skip pattern as
+# test_ctags_probe.py). Without it ensure_ctags_index() returns None and the
+# test would fail instead of skip.
+@unittest.skipUnless(shutil.which("ctags"), "ctags not installed")
 class TestCtagsRegenerateOnChange(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="issue39_ctags_"))

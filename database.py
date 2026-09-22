@@ -10,20 +10,24 @@ Schema v1:
     tags(file, rel_file, line, name, kind)   -- one row per tag (kind in def/ref)
     refs(from_file, to_file, name)           -- one row per cross-file reference edge
     meta(schema_version, root, signature, extractor_version) -- identity + extractor stamp
-    file_state(rel_file, size, mtime)        -- per-file stat fingerprint
+    file_state(rel_file, size, mtime)        -- per-file stat fingerprint (size, mtime_ns)
     stop_names(name)                         -- def-names skipped by populate_refs (>50 files)
     file_flags(rel_file, reason)             -- why a scanned file owns zero tags
 
 Modes:
     DBStore(path)    -> file-backed sqlite (--db-path)
     DBStore(None)    -> in-memory sqlite      (--no-db)
+    DBStore(path, read_only=True) -> file-backed sqlite, frozen
+        (mode=ro&immutable=1, no DDL/migration/commit)
 """
 from __future__ import annotations
 
 import os
 import sqlite3
 import threading
-from typing import Iterable, Iterator, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+
+from utils import read_only_connect
 
 SCHEMA_VERSION = 1
 
@@ -32,7 +36,9 @@ SCHEMA_VERSION = 1
 # the audit flags DBs stamped older. Bump on ANY capture change.
 # Separate lineage from cache.CACHE_VERSION (query-time bundles) — a
 # query-time fix must NOT force tag reparse, and vice versa.
-EXTRACTOR_VERSION = 1
+# v3 (2026-09-21): python-tags.scm captures bare identifiers in
+# call-argument position (name.reference.argument) as refs.
+EXTRACTOR_VERSION = 3
 
 _DDL = [
     "CREATE TABLE IF NOT EXISTS tags("
@@ -57,15 +63,76 @@ _DDL = [
 _TagRow = Tuple[str, str, int, str, str]  # file, rel_file, line, name, kind
 
 
-class DBStore:
-    """Thin sqlite wrapper. Search/rank reads happen here; callers stay flat."""
+_SQLITE_MAGIC = b"SQLite format 3\x00"
 
-    def __init__(self, path: Optional[str] = None):
+
+def _looks_like_sqlite(path: str) -> bool:
+    """True when path is missing/empty (sqlite can init it) or starts with
+    the SQLite magic header.
+
+    Guards DBStore against corrupt --db-path files: without it, sqlite
+    raises a raw DatabaseError mid-init (scan path) or readers silently
+    degrade to "no index" (diff path) — both dishonest about a file that
+    exists but is unreadable.
+    """
+    try:
+        with open(path, "rb") as f:
+            head = f.read(len(_SQLITE_MAGIC))
+    except OSError:
+        return True  # missing/unreadable: let sqlite report it its own way
+    return not head or head == _SQLITE_MAGIC
+
+
+class DBStore:
+    """Thin sqlite wrapper. Search/rank reads happen here; callers stay flat.
+
+    read_only=True opens a frozen read-only view of an existing DB (used by
+    --diff and tricorder_diff, which never update the index): no DDL, no
+    migration, no commit — the connection itself rejects writes. Requires
+    an existing path; the schema must already exist (readers fall back at
+    query time for pre-version DBs, as get_meta does). A read-only open
+    skips WAL sidecars (immutable=1), so uncheckpointed WAL rows are
+    invisible — callers must point it at a closed/checkpointed DB."""
+
+    def __init__(self, path: Optional[str] = None, *, read_only: bool = False):
+        if read_only and not path:
+            raise ValueError("read_only=True requires an existing DB path")
+        if path and not _looks_like_sqlite(path):
+            raise ValueError(
+                f"Not a SQLite database: {path} "
+                "(corrupt file, or the wrong --db-path?)")
         self.path = path
+        self.read_only = read_only
         # check_same_thread=False: the scan runs via asyncio.to_thread (MCP
         # server) in a different thread than __init__; all access serialized
         # by self._lock.
         self._lock = threading.RLock()
+        try:
+            self._open_locked()
+        except sqlite3.OperationalError:
+            # Missing/unopenable file (e.g. read-only open of a nonexistent
+            # DB): keep the original error contract — callers distinguish
+            # "absent" from "corrupt".
+            raise
+        except sqlite3.DatabaseError as e:
+            # Truncated/corrupt-but-magic-ok files slip past the header
+            # check; sqlite only complains on first touch. Still a clean
+            # error, never a raw traceback: callers (CLI/MCP) surface the
+            # message as-is.
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+            raise ValueError(
+                f"Not a SQLite database: {path or ':memory:'} ({e})") from e
+
+    def _open_locked(self) -> None:
+        path = self.path
+        if self.read_only:
+            # Frozen open: mode=ro&immutable=1 never creates the file or its
+            # sidecars, so a read-only checkout can't crash on first DDL.
+            self.conn = read_only_connect(path)
+            return
         self.conn = sqlite3.connect(path if path else ":memory:", check_same_thread=False)
         # WAL keeps reads from blocking the walk's insert bursts on disk builds.
         # ponytail: DELETE for large existing DBs (>500MB) to avoid WAL loop;
@@ -167,7 +234,14 @@ class DBStore:
         multiplicity the MultiDiGraph used for ranking survives on disk.
         Uses rel_file (the graph's node identity).
         Idempotent: clears refs before repopulating (needed for incremental).
+        Takes the store lock: the DELETE+INSERT pair must be atomic against
+        concurrent readers/writers sharing the instance (MCP server threads).
         """
+        with self._lock:
+            self._populate_refs_locked()
+
+    def _populate_refs_locked(self):
+        """populate_refs body; caller holds self._lock."""
         self.conn.execute("DELETE FROM refs")
         # ponytail: skip stop-names (def in >50 files) — unresolvable by name,
         # and their cross product is the 30M-edge bloat. Ceiling: fixed 50.
@@ -443,16 +517,30 @@ class DBStore:
 
 
 def drop_mapped_files(files, root, db_path):
-    """Sliding window: drop walked files already mapped in the DB so a
-    --max-files cap limits *unmapped* files, not the walk prefix.
+    """Drop walked files already mapped in the DB.
 
-    Same-file helper for CLI + MCP (one implementation, no drift).
-    No DB or any mapped set -> input unchanged. Pure path-string work.
+    Used after the --max-files prefix cap: files inside the prefix that
+    are already indexed are skipped so a resumed rising-cap run doesn't
+    re-parse them. Same-file helper for CLI + MCP (one implementation,
+    no drift). No DB or any mapped set -> input unchanged.
+
+    Rel comparison is case-normalized (os.path.normcase — identity on
+    POSIX, lowercases on Windows): stored rels come from
+    Tricorder.get_rel_fname (Path.relative_to, case-insensitive on
+    Windows) while this loop computes rels via os.path.relpath
+    (case-sensitive component compare on ntpath) against a
+    realpath-resolved root — a case-mismatched root must still match.
     """
     if not db_path or not files:
         return files
+    if not os.path.exists(db_path):
+        # Never connect a possibly-absent DB (sqlite creates a 0-byte stub,
+        # masking real absence); no DB means nothing is mapped.
+        return files
     try:
-        db = DBStore(db_path)
+        # Read-only: this helper only reads mapped_rels() (notably on the
+        # CLI --diff path, where the target DB may be unwritable).
+        db = DBStore(db_path, read_only=True)
         try:
             mapped = db.mapped_rels()
         finally:
@@ -461,6 +549,8 @@ def drop_mapped_files(files, root, db_path):
         return files
     if not mapped:
         return files
+    norm = os.path.normcase
+    mapped_n = {norm(m) for m in mapped}
     root_s = str(root)
     kept = []
     for f in files:
@@ -471,7 +561,7 @@ def drop_mapped_files(files, root, db_path):
         except ValueError:
             kept.append(f)
             continue
-        if rel not in mapped:
+        if norm(rel) not in mapped_n:
             kept.append(f)
     return kept
 

@@ -33,12 +33,17 @@
   --wipe` and rescan; never hand-edit.
 - Empty map, files present → tree-sitter lacks the grammar. Install
   the language pack; the warning names it.
+- `Not a SQLite database: <path>` → the --db-path (or canonical index
+  DB) is corrupt or not a DB at all. Fails clean with exit 1 — never a
+  traceback, and --diff no longer misreports it as "no index". Delete
+  (or `--init --wipe`) and rescan; never hand-edit.
 
 ## Layout
 
 - `<repo>/.tricorder/db/<repo>.db` — per-repo sqlite (canonical).
 - `<repo>.map` beside it — rendered output. Both gitignored
   (`.tricorder/`).
-- `.tricorder.tags.cache.v1/` — per-file parse cache.
+- `<cache root>/cache/<sha1(repo|version|config)[:16]>/` — per-file parse
+  cache, mtime-keyed (see `cache.py:_cache_dir`).
 - `TRICORDER_CACHE_HOME` relocates the shared cache root.
 - Full suite: `pytest tests/` from repo root (repo `.venv`).

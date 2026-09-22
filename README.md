@@ -1,443 +1,130 @@
-# Tricorder — Code Intelligence Scanner (CLI + MCP Server)
+# Tricorder — Code Intelligence Scanner
 
-## Executive Summary
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-474%20passed%2C%204%20skipped-brightgreen.svg)](tests/)
 
-Tricorder transforms incomprehensible codebases into actionable intelligence. Instead of drowning in 50M tokens of Linux kernel, you get a 40K-token map with **99.9% token savings** — pointing you straight to `kernel/sched/fair.c:pick_next_task` in ~1.1s.
+**Turn any codebase into a token-efficient map an LLM agent can actually navigate.**
 
-## Why Tricorder Matters
+Tricorder scans a repository with tree-sitter, ranks every symbol by importance (PageRank over the call graph), and emits a compact map — definitions, signatures, and cross-file references — sized to fit your context window. Measured on the current pipeline in scripted retrieval runs (fixed rung policies per repo, no live agent): Vaultwarden queries cost 8,987 response-payload tokens vs 26,818 for baseline navigation (−66.5%), and 5 Swift queries cost 7,608 tokens where the baseline needs 38,885 (−80.4%).
 
-| Traditional Approach | Tricorder Approach |
+```
+$ tricorder /path/to/repo --map-tokens 2048
+
+src/database.py (24 lines)
+
+  1: class Database:
+  7:     def get_connection(self) -> Connection:
+ 11:     def execute(self, query: str) -> Result:
+
+src/server.py (18 lines)
+
+  1: class Server:
+  5:     def handle_request(self, req: Request) -> Response:
+```
+
+Three interfaces, one engine: a **CLI** for humans and scripts, an **MCP server** for any MCP client (Hermes, Cline, Claude Code), and **lifecycle plugins** that inject a navigation digest at session start.
+
+## Why Tricorder
+
+| Without it | With it |
 |---|---|
-| ❌ Read every file (hours) | ✅ Intelligent mapping (seconds) |
-| ❌ Hit-or-miss search | ✅ Precise symbol detection |
-| ❌ Manual dependency tracing | ✅ Auto call-graph + PageRank |
-| ❌ Context window overflow | ✅ Token-aware exploration |
+| Read every file (hours) | Intelligent map in seconds |
+| Hit-or-miss grep | Precise symbol detection with definitions *and* references |
+| Manual dependency tracing | Automatic call graph + PageRank |
+| Context window overflow | Token-budgeted output (−55% to −80% per-query payload vs baseline tools, measured) |
 
-**Real impact:** 15/15 benchmarks pass across C++, Rust, TypeScript, Go, Linux kernel.
-
-## Three Integrated Interfaces
-
-```
-CLI ──► tricorder .                    # Human/agent direct use
-MCP ──► tricorder-mcp (STDIO)          # Any MCP client (Hermes, Cline, etc.)
-Hermes/DSH ──► plugins + turn-0 digest # Auto-inject nav digest at session start
-```
-
-## Smart Escalation Ladder (stop at first rung that answers your question)
-
-```
-1️⃣ T0 MAP (~14 tokens/tag)   → "Database classes in database.py"
-2️⃣ DETECT (~1-2 tokens/tag)  → "Found getConnection() at database.py:42"
-3️⃣ DETAIL (~50-400 tokens)   → Full function + callers
-4️⃣ T1 SCAN (~350 tokens/tag) → 3 lines context around function
-5️⃣ FULL FILE (last resort)   → Read entire file when necessary
-```
+**Measured on the current pipeline (response-payload tokens in scripted retrieval runs — fixed rung policies, ground-truth citation grading, no live agent):** −70.3% combined across Vaultwarden, Go, and Swift repos — ground truth cited in 12/12 runs on both baseline and branch (Vaultwarden/Go measured 2026-09-21, Swift re-measured 2026-09-22 after the Q4 crowding fix; see [comparison runs](eval/comparison-runs/2026-09-22/README.md)). This is distinct from end-to-end agent eval (`bench/bench_agent_eval.py`, model in the loop) — no agent-eval numbers are quoted here. Older Gen 2 map-vs-blind-repo numbers (86.7–100% across 15 repos) describe a previous pipeline version and are kept for history in [Benchmarks](docs/benchmarks.md).
 
 ## Quick Start
 
 ```bash
-python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
-tricorder .                          # Map current dir
-tricorder . --mermaid --top 10       # Dependency graph
+# Requires Python 3.11+ (the --pre-index fast path is ripgrep-first;
+# a ctags index is the fallback when rg isn't on PATH)
+git clone https://github.com/PhishyBongwaters/tricorder
+cd tricorder
+python -m venv .venv
+.venv/Scripts/pip install -e .        # Windows
+# .venv/bin/pip install -e .          # Linux/macOS
+
+tricorder /path/to/your/repo          # Map it
+tricorder /path/to/your/repo --mermaid --top 10   # Dependency flowchart
 ```
 
-## Core Features
+That's it. No config files, no model keys, no telemetry — everything runs locally. (First install pulls packages from PyPI, and the language pack fetches any missing tree-sitter grammar on first parse.)
 
-- **Tree-sitter + PageRank** — accurate parsing, relevance-ranked maps
-- **Token-aware** — binary search fits map to budget (~1.5% of full repo)
-- **Pre-index probe** — `--pre-index SYMBOL` narrows huge trees in ~1s (rg-first, no full walk)
-- **Graph query DSL** — `callers('auth') depth=2 exclude=tests/**` replaces 5+ round-trips
-- **Mermaid graphs** — dependency flowcharts with chat files highlighted
-- **Cross-file call graph** — import-resolved callers/callees
-- **Caching** — content-aware invalidation, outside repo (TC-003)
-- **28 languages** — 11 with signatures+return types
+## Features
 
-## CLI Usage
+- **Tree-sitter parsing, 93 validated languages** — 11 with full signature + return-type extraction (Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby)
+- **Class-context qualification** — methods scoped as `Class::method` from AST structure, identical across sequential and parallel scans
+- **PageRank ranking** — the important code surfaces first, inside your token budget
+- **Token-aware output** — binary search fits the map to `--map-tokens`; tiers (T0 definitions → T1 with context) let you stop at the cheapest rung that answers the question
+- **Pre-index probe** — `--pre-index SYMBOL` narrows giant trees via ripgrep in ~1s (no full walk)
+- **Graph query DSL** — `callers('auth') depth=2 exclude=tests/**` replaces 5+ round-trips; `tests_for('x')` finds covering tests
+- **One-call locate** — `tricorder_locate` runs detect → detail in a single round trip with a token budget
+- **Delta maps** — `tricorder_diff` / `--diff` (alias `--since`) shows what changed since the last scan (read-only)
+- **Budget-aware detail** — `tricorder_detail(max_tokens=…)` trims body → callees → callers, never identity
+- **Cross-file call graph** — import-resolved callers/callees, persisted across processes
+- **DB-backed scanning** (after `--init`; a fresh repo with no index scans in-memory) — tags stream into sqlite; extractor versioning forces rescan when the parser changes
+- **Content-aware caching** — cache lives outside the repo; stat-based signatures invalidate on change
+- **Security model** — repo content treated as untrusted input (path containment, output containment, resource envelopes)
 
-### Basic Mapping
+## Documentation
 
-```bash
-tricorder .                         # Map current directory
-tricorder src/ --map-tokens 2048    # Specific directory with token limit
-tricorder file1.py file2.py         # Specific files
-tricorder --chat-files main.py --other-files src/  # Prioritized file sets
-```
-
-### File Priority Order
-
-1. `--chat-files` — highest priority (current work)
-2. `--mentioned-files` — high priority (explicitly mentioned)
-3. `--other-files` — lowest priority (additional context)
-
-### Advanced Options
-
-```bash
-tricorder . --verbose
-tricorder . --force-refresh          # Bust cache
-tricorder . --exclude-unranked       # Drop zero-score files
-tricorder . --exclude-untagged       # Drop files with no symbols
-tricorder . --quiet
-tricorder . --dry-run --map-tokens 2048
-tricorder . --max-files 5000         # Raise auto-discovery cap (default 1000)
-tricorder . --exclude-globs vendor/** third_party/**
-tricorder . --top 10                 # Top N ranked files
-tricorder . --mermaid --mermaid-top 30  # Mermaid flowchart
-|tricorder . --signature-only         # Content signature for cache debugging
-|tricorder . --full                   # Emit full map regardless of token budget
-```
-
-### Output Tiers
-
-- **T0 (default):** definition lines only — ~14 tokens/tag, find targets fast
-- **T1:** definitions + N lines context — verify relevance without loading full files
-
-```bash
-tricorder . --tier 0
-tricorder . --tier 1 --context-lines 3
-tricorder . --tier 1 --context-lines 5 --map-tokens 4096
-```
-
-### Query Coverage — What's Captured per Language
-
-The tree-sitter queries (`queries/tree-sitter-language-pack/`, `tree-sitter-languages/` fallback) decide what becomes tags. Verified live per language:
-
-| Language | Definitions | References | Notes |
-|----------|-------------|------------|-------|
-| C/C++ | class, function, method, struct, enum, `using`-alias, const/constexpr, namespace | free, method, qualified `ns::` calls | Aliases/constexpr/namespaces added after coverage audit found them blind |
-| Rust | fn, struct, enum, trait, impl | free, method, `path::` calls | `path::` calls were invisible (grammar uses `scoped_identifier`) — fixed |
-| Python | def, class, module assignments | calls | Module assignments parse as direct `module` children (no wrapper) — fixed |
-| TypeScript | function, method, class, interface, alias, enum | free + method calls | Fallback pack had zero call rules — fixed |
-| Go / Ruby / Swift / Kotlin | per-pack rules | calls via selector/member/navigation forms | Audited present; Kotlin resolves via fallback pack |
-
-Blind by design: include-only umbrella headers (no symbols to capture) correctly yield zero tags. State lives in `<workspace>/.tricorder/`, never in the scanned repo — see the tricorder skill.
-
-### Optimal Agent Workflow (Lowest Token Cost)
-
-1. **Direct access (0 tokens):** path known → read directly; symbol known → `tricorder_detect`/grep
-2. **Architecture overview (~1K-3K tokens):** `tricorder . --mermaid` for module structure
-3. **Subsystem symbols (~1K-2K tokens):** `--tier 0` scoped to `src/sub/`
-4. **Targeted reading (~100-500 tokens):** `read_file` with line numbers from map
-5. **Huge-repo drill-in (pre-index):** `--pre-index SYMBOL` for giant trees
-
-### Pre-Index Probe — Fast Path for Huge Repos
-
-For a known symbol in a large tree (kernel, monorepo), a full scan wastes time walking every file:
-
-```bash
-tricorder D:/Projects/linux --pre-index "pick_next_task" --pre-index-max-files 20 --map-tokens 2048
-```
-
-- **rg-first:** `rg -l -w SYMBOL` with multi-language globs — no index, no full-tree walk (6-file `kernel/sched/` narrow on Linux kernel = full map in ~1.1s)
-- **ctags fallback:** only if rg finds nothing; index builds refused on >20,000 source files, >100MB tags ignored as corrupt
-- `--pre-index-max-files N` (default 100): cap files from probe
-- `--pre-index-include-parents N` (default 0): also include N parent dirs
-
-Pick a **specific** symbol — `pick_next_task` (~6 matches) lands on `kernel/sched/`; `schedule` (thousands) caps out and misses.
-
-When `--pre-index` is given, the probe runs **before** any path-walk and is authoritative. Same `pre_index`/`pre_index_max_files`/`pre_index_include_parents` args available on MCP `tricorder_scan` and plugin.
+| Doc | Contents |
+|---|---|
+| [User Guide](docs/user-guide.md) | Installation, workflows, tiers, pre-index, caching, troubleshooting, FAQ |
+| [How a Scan Works](docs/how-a-scan-works.md) | Plain-language walkthrough of what happens when you scan a repo |
+| [CLI Reference](docs/cli-reference.md) | Every flag, with examples |
+| [MCP Reference](docs/mcp-reference.md) | All 7 tools, parameters, response shapes |
+| [Architecture](docs/architecture.md) | Pipeline, DB design, ranking, graph, caching, security |
+| [Class-Context Qualification](docs/class-context-qualification.md) | Deep dive on `Class::method` scoping |
+| [Benchmarks](docs/benchmarks.md) | Methodology, full results, reproduce steps |
 
 ## MCP Server
 
-Tricorder runs as an MCP server over **STDIO**.
-
-### Hermes Agent (Primary Integration)
-
-Register under `mcp_servers:` in `~/.hermes/config.yaml`, restart Hermes:
-
-```yaml
-mcp_servers:
-  tricorder:
-    command: "C:/absolute/path/to/tricorder/.venv/Scripts/tricorder-mcp.exe"
-    args: []
+```bash
+tricorder-mcp          # STDIO server; register in your MCP client
 ```
-
-Requires `mcp` Python package (`pip install mcp`). A bundled skill teaches the escalation ladder.
-
-### Other Clients (Cline/Roo)
-
-Add to `cline_mcp_settings.json`:
 
 ```json
-{
-  "mcpServers": {
-    "tricorder": {
-      "disabled": false,
-      "timeout": 60,
-      "type": "stdio",
-      "command": "C:/absolute/path/to/tricorder/.venv/Scripts/tricorder-mcp.exe",
-      "args": []
-    }
-  }
-}
+// cline_mcp_settings.json
+{ "mcpServers": { "tricorder": {
+    "command": "/absolute/path/to/.venv/Scripts/tricorder-mcp.exe",
+    "type": "stdio", "args": [] } } }
 ```
 
-Or run directly: `python tricorder_server.py`
+Seven tools: `tricorder_scan`, `tricorder_detect`, `tricorder_symbols`, `tricorder_detail`, `tricorder_query`, `tricorder_diff`, `tricorder_locate`. Full reference in [MCP Reference](docs/mcp-reference.md). A bundled skill (`skills/tricorder/SKILL.md`) teaches agents the escalation ladder: map → detect → detail → tier-1 → full file.
 
-### MCP Tools
+## The Escalation Ladder
 
-| Tool | Purpose |
-|------|---------|
-| `tricorder_scan` | Generate repo map. `output_format`: `text` or `mermaid`. `tier`: `0` or `1`. Also `token_limit`, `chat_files`, `other_files`, `mentioned_files/idents`, `exclude_unranked`, `exclude_untagged`, `force_refresh`, `max_context_window`, `output_file`, `dry_run`, `exclude_globs`, `pre_index`/`pre_index_max_files`/`pre_index_include_parents`, `full`. Returns `token_estimate`, `full_repo_estimate`, `savings_pct`, `tier_hint`. |
-| `tricorder_detect` | Search identifiers by name. Case-insensitive; returns file, line, def/ref kind, context. Params: `query`, `max_results`, `context_lines`, `include_definitions`, `include_references`, `pre_index`/`pre_index_max_files`/`pre_index_include_parents`. |
-| `tricorder_symbols` | Structured symbol query with type + file filters. Returns full records (name, type, file, line range, signature, docstring, language, ts-kind). Params: `query`, `type`, `file`, `limit` (default 50, cap 200). |
-| `tricorder_detail` | Deep-dive on a symbol — body, callers, callees. Params: `name`, `file`, `line`. |
-| `tricorder_query` | Graph traversal DSL: `callers('sym') depth=2 exclude=tests/** \| callees('other') type=class`. Returns `{nodes, edges, token_estimate, savings_pct}`. |
+Spend tokens deliberately, cheapest first (tier costs are rough rules of
+thumb, not measurements — measured end-to-end savings are above):
 
-**Example `tricorder_scan` (mermaid):**
-```json
-{
-  "tool": "tricorder_scan",
-  "arguments": {
-    "project_root": "/absolute/path/to/project",
-    "output_format": "mermaid",
-    "chat_files": ["main.py"],
-    "other_files": ["src/"]
-  }
-}
+```
+1. MAP    (~14 tokens/tag)  → "Database classes in database.py"
+2. DETECT (~1-2 tokens/tag) → "Found getConnection() at database.py:42"
+3. DETAIL (~50-400 tokens typical, ≤2048 budget)  → Full function + callers
+4. T1 SCAN (~350 tokens/tag)→ 3 lines context around each definition
+5. FULL FILE (last resort)  → Read the source when necessary
 ```
 
-Returns `{"map": "<mermaid flowchart>", "report": {...}}`. Chat files highlighted in pink.
+## Security
 
-## Hermes Lifecycle Plugin
+Tricorder treats **repository content as untrusted input**. Every MCP response is stamped `source: scanned_repository` / `trust: untrusted_repository_content`; raw maps are wrapped in `BEGIN/END UNTRUSTED REPOSITORY CONTEXT` markers. Path containment, output containment (`safe_write()` — the never-write-to-scanned-repo invariant is structural), resource envelopes, and parser timeouts are all enforced. Details in [Architecture](docs/architecture.md#security-model).
 
-Plugin (`plugins/tricorder/`) installs to `~/.hermes/plugins/tricorder/` via `hermes plugins install`. Wires `on_session_start` + `pre_llm_call` to inject a **turn-0 probe digest** (language tally + file count + line estimate + MCP tool pointer) — **never builds full map on turn 0**. Also registers `/tricorder` slash commands.
-
-### Slash Commands
-
-| Command | Description |
-|---------|-------------|
-| `/tricorder root <path>` | Set active project (persists). Checks cache: valid → "cache ready"; stale/missing → auto-rebuild. |
-| `/tricorder scan [path]` | Force-rebuild repo map (default: active project). Ignores signature. |
-| `/tricorder status` | Show active project + cache state (valid/stale/missing, age) + all cached projects. |
-
-### Plugin Config
-
-Under `plugins.entries.tricorder.*` in `~/.hermes/config.yaml`:
-
-| Key | Type | Description |
-|-----|------|-------------|
-| `active_project` | string | **Required** — project root to auto-map on session start |
-| `exclude_globs` | list | Glob patterns (POSIX, relative to active_project) to skip |
+## Contributing
 
 ```bash
-hermes config set plugins.entries.tricorder.active_project D:/Projects/projectm
-hermes config set plugins.entries.tricorder.exclude_globs '[\"vendor/**\",\"third_party/**\"]' --force
+.venv/Scripts/python -m pytest tests/ -q -p no:cacheprovider   # full suite
 ```
 
-**Cache validity:** Stat-based content signature (not TTL). CLI `--signature-only` computes sha256 over `{path}:{size}:{mtime}` per source file; plugin shells to CLI, compares to stored `project_sig`. Changing `exclude_globs` changes file set → signature changes → rebuild triggered.
+474 tests passing, 4 skipped on Windows (all POSIX-only semantics; Linux runs the mirror image with 1 skip on the Windows-only path test), 96 subtests. Platform-specific cases use `skipif` guards or branched fixtures; symlink tests need Windows Developer Mode (or an elevated shell). Bug reports and PRs welcome — please include a failing test where practical. See [AGENTS.md](AGENTS.md) for repo conventions.
 
-**Persistent cross-file / import index:** The import-resolved cross-file call graph (`_import_index_cache`, `_cross_file_index_cache`, `_file_refs_index`) is written to the tags diskcache under key `__cross_ref_index_v1__` by `_save_cross_ref_disk()` and restored on the next process by `_load_cross_ref_disk()`. Fresh MCP processes (one per RPC call) therefore reuse the previously-parsed cross-file refs instead of re-parsing the repo on every `tricorder_detail`, keeping caller/callee resolution fast across process boundaries. The bundle carries a **fingerprint** — sha256 over the sorted `(rel path, mtime)` of every discovered source file, computed by `_cross_ref_fingerprint()` (one stat per file, no tree-sitter parse). On restore the current fingerprint is compared to the stored one; a match means the file set is unchanged and the indexes are used, any add/edit/delete invalidates them and triggers a rebuild. Save/load are best-effort: any failure (disk error, cache eviction) falls back to an in-memory rebuild, which then re-persists.
-
-### Installation
-
-```bash
-hermes plugins install "http://127.0.0.1:3001/projects/tricorder.git#plugins/tricorder" --force --enable
-hermes config set plugins.entries.tricorder.active_project D:/Projects/<repo>
-```
-
-## DSH Integration
-
-Two pieces for deepseek-harness:
-
-1. **Turn-0 probe-digest injector** — `plugins/dsh-tricorder-inject/` (vendored Cordis plugin). Runs `tricorder --root <cwd> --probe-digest`, injects same digest as Hermes. Install by copying into dsh profile's `node_modules/@deepseek-ai/dsh-tricorder-inject` and enabling in `cordis.patch.yml`.
-
-2. **MCP tools + skill** — downstream skill at `skills/tricorder-dsh/SKILL.md`. MCP server registered as `tricorder` via `dsh-mcp-client`.
-
-```bash
-pip install -e "D:/Projects/tricorder"
-mkdir -p ~/.dsh/skills/tricorder
-cp "D:/Projects/tricorder/skills/tricorder-dsh/SKILL.md" ~/.dsh/skills/tricorder/SKILL.md
-```
-
-`cordis.patch.yml`:
-```yaml
-- insert:
-    - id: mcp-tricorder
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: tricorder
-        transport: stdio
-        command: <path-to-python>/Scripts/tricorder-mcp.exe
-        args: []
-
-    - id: tricorder-inject
-      name: '@deepseek-ai/dsh-tricorder-inject'
-      config:
-        tricorderExe: 'D:/Projects/tricorder/.venv/Scripts/tricorder.exe'
-        verbose: false
-```
-
-## Benchmarks
-
-Tricorder's whole point is token savings: a compact map steers an agent to the right code without reading the entire repo. Efficacy measured with `bench/bench_validity.py` (CLI) and `bench/bench_validity_mcp.py` (MCP). Each task poses a realistic agent question; `ground_truth` identifiers must appear in the map for a PASS.
-
-| Repo | Tasks | Suite | Map Tokens | Full Repo | Savings |
-|------|-------|-------|------------|-----------|---------|
-| projectm | 2/2 | bench_validity.py | 2,048 | 642,428 | 99.7% |
-| projectm | 2/2 | bench_validity_mcp.py | 221 / 1,358 | 642,428 | 100.0% / 99.8% |
-| vaultwarden | 2/2 | bench_validity.py | 32,563 | 755,518 | 95.7% |
-| vaultwarden | 2/2 | bench_validity_mcp.py | 1,173 / 2,695 | 755,518 | 99.8% / 99.6% |
-| linux | 1/1 | bench_validity.py | 39,936 | 50,352,437 | 99.9% |
-| linux | 1/1 | bench_validity_mcp.py | 5,500 | 50,352,437 | 100.0% (pre-indexed) |
-| bitburner | 1/1 | bench_validity.py | 65,024 | 1,504,232 | 95.7% |
-| bitburner | 1/1 | bench_validity_mcp.py | 205 | 1,504,232 | 100.0% |
-| librechat | 1/1 | bench_validity.py | 65,024 | 6,316,980 | 99.0% |
-| librechat | 1/1 | bench_validity_mcp.py | 1,560 | 6,316,980 | 100.0% |
-| elixir | 1/1 | bench_validity.py | 4,096 | 3,060,510 | 99.9% |
-| elixir | 1/1 | bench_validity_mcp.py | 6,911 | 3,060,510 | 99.8% |
-| otp | 1/1 | bench_validity.py | 102 | 46,463,905 | 100.0% |
-| otp | 1/1 | bench_validity_mcp.py | 202 | 46,463,905 | 100.0% |
-| go | 1/1 | bench_validity.py | 307 | 36,501,836 | 100.0% |
-| go | 1/1 | bench_validity_mcp.py | 19,587 | 36,501,836 | 99.9% |
-| kotlin | 1/1 | bench_validity.py | 64,204 | 13,984,544 | 99.5% |
-| kotlin | 1/1 | bench_validity_mcp.py | 8,810 | 13,984,544 | 99.9% |
-| swift | 1/1 | bench_validity.py | 64,409 | 38,017,250 | 99.8% |
-| swift | 1/1 | bench_validity_mcp.py | 5,793 | 38,017,250 | 100.0% |
-| rails | 1/1 | bench_validity.py | 64,819 | 5,445,557 | 98.8% |
-| rails | 1/1 | bench_validity_mcp.py | 6,601 | 5,445,557 | 99.9% |
-| framework | 1/1 | bench_validity.py | 65,024 | 4,218,620 | 98.5% |
-| framework | 1/1 | bench_validity_mcp.py | 5,583 | 4,218,620 | 99.9% |
-| kong | 1/1 | bench_validity.py | 53,145 | 3,440,558 | 98.5% |
-| kong | 1/1 | bench_validity_mcp.py | 97 | 3,440,558 | 100.0% |
-| spring-boot | 1/1 | bench_validity.py | 65,024 | 487,802 | 86.7% |
-| spring-boot | 1/1 | bench_validity_mcp.py | 448 | 487,802 | 99.9% |
-| vue | 1/1 | bench_validity.py | 1,433 | 549,971 | 99.7% |
-| vue | 1/1 | bench_validity_mcp.py | 5,738 | 549,971 | 99.0% |
-
-**RESULT: ALL TASKS PASS (15 repos × 2 surfaces).**
-
-- **projectm** (~5,800 files, ~1.1M lines, C++): ~100% token savings; 2K-token map covers `PCM::AddToBuffer`, `Loudness`, `CurrentRelative`, `AverageRelative`.
-- **vaultwarden** (~200 Rust files): ~96–99.8% token savings; 33K-token map covers `generate_invite`, `delete_user`, `admin_page`, `hash_password`, `verify_password_hash`, `routes`, `catchers`.
-- **linux** (Linux kernel, ~50M tokens full): With `--pre-index pick_next_task` the map narrows to `kernel/sched/` and ships in **~1.1s** (no full-tree walk), covering `pick_next_task`, `schedule`, `update_curr` at 99.9% savings. Use a *specific* probe symbol.
-- **bitburner** (TypeScript): 95.7% savings CLI (65K-token map); `loadAliases`/`addAlias` found in both surfaces.
-- **librechat** (TypeScript monorepo, `packages/`): needs 65K-token map to surface `getTenantId`/`configCapability` under whole monorepo; still 99.0% savings.
-- **elixir** (`lib/iex`): 99.9% savings; `IEx`, `configure`, `configuration` present in both surfaces.
-- **otp** (`lib/compiler`): 100% savings at ~102 (CLI) / 202 (MCP) map tokens.
-- **go** (`src/cmp`): 100% savings; `Less`/`Compare`/`Or` present in both surfaces.
-- **kotlin** (`core`): 99.5% savings CLI (64K-token map); `Variance`/`TypeSystemCommonBackendContext` present in both surfaces. `computeExpandedTypeForInlineClass` excluded (kotlin-grammar blind spot).
-- **swift** (`lib`): 99.8% savings CLI (64K-token map).
-- **rails** (`activerecord/lib`): 98.8% savings CLI (65K-token map).
-- **framework** (`src`): 98.5% savings CLI (65K-token map).
-- **kong** (`kong`): 98.5% savings CLI (53K-token map).
-- **spring-boot** (build-plugin): 86.7% savings CLI (65K-token map).
-- **vue** (`src/v3/reactivity`): 99.7% savings CLI (1.4K-token map).
-
-**Note on the linux slot:** `--pre-index pick_next_task` (CLI) and `pre_index="pick_next_task"` (MCP) narrow the 66k-file kernel to `kernel/sched/*` (~6 files). Without scoping, MCP detect walks all 66k files and is cold-cache-flaky. With scoping: deterministic — verified 3x consecutive PASS.
-
-**MCP token shape differs from CLI:** `bench_validity_mcp.py` exercises `tricorder_detect` (per-file definition records), not a serialized map — MCP "tokens" scale with result count per identifier. projectm MCP tokens are smaller than CLI map (1358 vs 2048); vaultwarden's grow to ~2695. Savings measured against same full-repo estimate in both suites.
-
-**MCP `tricorder_detect` supports `pre_index`** (mirrors CLI `--pre-index`) — linux MCP slot uses `pre_index="pick_next_task"` to narrow to `kernel/sched/*`; runtime dropped from ~168s to ~64s, no longer cold-cache-flaky.
-
-## Running Tests (Agent Instructions)
-
-To run the unit and regression test suite locally:
-
-```bash
-# 1. Navigate to the tricorder repo root
-cd D:/Projects/tricorder
-
-# 2. Run targeted test suites (CLI, MCP, utilities, regression phase 1)
-python -m pytest tests/test_cli_autodiscovery.py tests/test_mcp.py tests/test_utils.py tests/test_regression_phase1.py -v
-
-# 3. Run the full test suite
-python -m pytest tests/ -v
-```
-
-*Note: Tests insert `.` into `sys.path`, so pytest must be executed from the repository root.*
-
----
-
-### Reproduce
-
-- **Repos:** projectm (C++), vaultwarden (Rust), Linux kernel, bitburner (`bitburner-src`, TS), LibreChat (`LibreChat`, TS), elixir (`lib/iex`), otp (`lib/compiler`), go (`src/cmp`), kotlin (`core`), swift (`lib`), rails (`activerecord/lib`), framework (`src`), kong (`kong`), spring-boot (build-plugin), vue (`src/v3/reactivity`). projectm at `D:\Projects\projectm`; rest under `D:\Projects\Tricorder-Testing-Repos/<folder>`. bitburner folder is `bitburner-src`.
-
-```bash
-# from tricorder repo root, in its venv
-python bench/bench_validity.py               # CLI surface (all 15 repos)
-python bench/bench_validity_mcp.py           # MCP surface
-python bench/bench_validity.py linux         # linux fast-path only
-python bench/bench_validity.py bitburner     # single repo by name
-python bench/bench_validity.py --root /path/to/your/repos  # custom checkouts
-```
-
-Note: `rg` must be on `PATH` for `--pre-index` fast path (linux slot). Task definitions live in `bench/bench_validity*.py`. No CI bench machinery — run locally; numbers reproducible on same public repos.
-
-## A/B agent harness (`bench_agent_eval.py`)
-
-End-to-end agent benchmark: Variant A (Tricorder MCP) vs Variant B (baseline tools) on the same relationship task, with real session telemetry from each variant's profile `state.db`. Normal legs are telemetry-only — the overseeing agent grades the A/B comparison itself from the saved reports + `state.db`.
-
-```bash
-python bench/bench_agent_eval.py projectm --variant both                # A + B, telemetry-only
-python bench/bench_agent_eval.py projectm --judge-only report_<sid>-A.md report_<sid>-B.md  # re-grade explicit reports, no agent re-run
-python bench/bench_agent_eval.py vaultwarden --variant both --max-turns 20   # set the API-turn cap per leg
-```
-
-**`--max-turns` (hard cap, default 10):** caps the number of model API turns per leg — previously the harness had no real stop (`--max-turns` was a hardcoded `60` and `--run-budget 120` is a soft prompt nudge the model can ignore). It is configurable per run (`--max-turns 20`), never derived from any repo's prior runs, and no repo/language-specific tuning. `--run-budget` remains only a soft nudge; the real guard is `--max-turns`.
-
-**Judge semantics (changed):** the fast path is **fail-fast only** — it returns a cheap FAIL when the final answer names none of the expected ground-truth identifiers. It never emits a PASS on filename presence, because an agent can name `PCM.cpp` and still hallucinate its contents. Every non-trivial answer then hits a **deterministic grounding gate** (no model call): template-arg literals the answer asserts (e.g. `AddToBuffer<2, 0>`) must appear verbatim in the session's retrieved source — absent → immediate `FAIL(deterministic-grounding)`. Only if that passes does the semantic LLM judge run, given the session's **full retrieved source** (actual tool output) as the authority: any specific value the answer asserts (template args, line numbers, step ordering) must appear there or it fails as a hallucinated detail (`GROUND SPECIFICS` rule). Rationale prefixes: `PASS:` (fast), `FAIL(fast):`, `FAIL(deterministic-grounding):`, `SEMANTIC PASS/FAIL:`, `no final answer:`, `Judge Error:`.
-
-Notes: `--judge-only` grading model/provider default to the agent's — pass `--judge-model`/`--judge-provider` for a stronger grader. The grader gets the **full** retrieved source (54-97KB on projectm); pick a model with adequate context — the old 20KB window silently truncated real code bodies and caused false FAILs on correct answers. Cache isolation between legs requires restarting the inference server between legs; warm-cache legs invalidate a comparison. Grading lives only in `--judge-only` on explicit report paths; normal legs never call it. A leg that fails to PASS within `--max-turns` is a valid result (budget loss counts); only infra failures (no session row, zero API calls from provider errors) are discarded.
-
-## Security Model
-
-Tricorder treats **repository content as untrusted input**. A malicious repo can contain prompt-injection attempts, path-traversal filenames, or resource-exhaustion structures.
-
-| Control | Ticket | Behavior |
-|---------|--------|----------|
-| Trust metadata | TC-005 | Every MCP response stamped `source: scanned_repository`, `trust: untrusted_repository_content`. |
-| Content boundary | TC-001 | Raw map wrapped in `BEGIN/END UNTRUSTED REPOSITORY CONTEXT` markers. |
-| Path containment | TC-006 | `chat_files` / `detail` file params rejected if they resolve outside `project_root`. |
-| `max_files` clamp | TC-007 | MCP `max_files` clamped to 10,000 server-side; discovery early-stops at 20,000. |
-| Output containment | TC-008 | `output_file`/`--output` writes contained: server output goes to `get_cache_root()/.tricorder/output/<basename>` (honors `TRICORDER_CACHE_HOME`); `--output` is the sole sanctioned user-chosen path. **All in-process writes route through `utils.safe_write()`, which raises `ValueError` on any target escaping the cache root** — the never-write-to-scanned-repo invariant is enforced structurally, not per-call. |
-| Resource envelope | TC-002 | Global budget: max 20k files, 500 MB, depth 25, 300s, 1 MB/file. Limits → partial result + `scan_warning`. Tunable via `TRICORDER_MAX_*` env vars. |
-| Cache isolation | TC-003 | Tags cache lives outside the repo (see Caching). |
-| Parser timeout | TC-004 | Each tree-sitter parse: 5s hard timeout (`TRICORDER_PARSER_TIMEOUT_S`); hang skipped, not stalled. |
-| Dependency pinning | TC-009 | `requirements.txt` fully pinned; `scripts/depscan.py` emits pinned inventory + `pip-audit`. |
-| Parser fuzzing | TC-010 | `tests/security/` holds adversarial fixtures (deeply nested, huge line, malformed, unicode, broken, giant string) asserting no crash/hang. |
-
-**Environment overrides (all optional):**
-
-```
-TRICORDER_MAX_SCAN_FILES=20000
-TRICORDER_MAX_TOTAL_BYTES=524288000
-TRICORDER_MAX_SCAN_DEPTH=25
-TRICORDER_MAX_SCAN_TIME_S=300
-TRICORDER_MAX_SOURCE_FILE_SIZE=1048576
-TRICORDER_PARSER_TIMEOUT_S=5
-TRICORDER_CACHE_HOME=<tricorder workspace>/.tricorder   # default; controls cache + output root
-```
-
-## Supported Languages
-
-**Signature extraction + return types (11 grammars):** Python, JavaScript, TypeScript, C, C++, Java, Go, Rust, Swift, C#, Ruby. Enforced by `tests/test_language_matrix.py` (`test_claimed_languages_extract_defined_signature`).
-
-**Wider parse support (28 total via two query packs):**
-
-- `tree-sitter-language-pack` (29): arduino, c, chatito, commonlisp, cpp, csharp, d, dart, elisp, elixir, elm, gleam, go, hcl, java, javascript, lua, ocaml, ocaml_interface, pony, properties, python, r, racket, ruby, rust, solidity, swift, udev
-- `tree-sitter-languages` (22, adds): kotlin, php, ql, scala, typescript (plus re-confirms c, cpp, elixir, elm, go, hcl, java, javascript, ocaml, ruby, rust)
-
-Union = 28 distinct languages. Canonical list in `utils.py` `EXTENSIONS`. `.h` files mapped to `cpp` (cpp grammar is strict superset of C).
-
-**Language registry (ctags_probe.py):** Single source of truth mapping ctags names, tree-sitter keys, extensions, and SCM query files for 24 languages. Shared by ctags pre-index probe and tree-sitter extraction — adding a new language (e.g. Zig) is one registry entry.
-
-**tricorder_detect search modes:** `search_mode` parameter — `"exact"` (whole word), `"substring"` (contains, default), `"regex"` (Python regex). Case-insensitive for exact/substring. Fixes noisy results (e.g. searching "map" no longer returns "mapping"/"bitmap"/"remap").
-
-## Caching
-
-- Cache location: `<tricorder workspace>/.tricorder/cache/<sha1(repo_path|version|config)>/` — **outside the repository** (TC-003). A repo never controls cache state.
-- Default cache root is the tricorder workspace `.tricorder` dir (always writable); override with `TRICORDER_CACHE_HOME`.
-- Server map output also lands under the cache root (`<cache root>/output`), so it is contained by the same `safe_write()` guard.
-- `--output` is the only write that may target a user-chosen path outside the cache root; it still fails gracefully (honest error + stdout fallback) if the path is unwritable.
-- `--signature-only` prints 16-char content signature for debugging.
-
-## Lineage & Attribution
+## Lineage
 
 1. **Gen 1 — Aider `RepoMap`** (Paul Gauthier): tree-sitter + PageRank.
-2. **Gen 2 — RepoMapper** (Paul Davis / pdavis68): standalone CLI + MCP server. Upstream: https://github.com/pdavis68/RepoMapper
-3. **Gen 3 — tricorder**: our fork — 8 bug fixes, 199 tests, 10-language signature extraction, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, full rebrand.
+2. **Gen 2 — RepoMapper** (Paul Davis): standalone CLI + MCP server. Upstream: https://github.com/pdavis68/RepoMapper
+3. **Gen 3 — tricorder**: this fork — 474 tests, 93 validated languages, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, DB-backed ranking with extractor versioning.
 
-Lineage intentionally kept visible. MIT Licensed.
-
-## License
-
-MIT. Based on the RepoMap design from the Aider project; lineage documented above.
+Lineage intentionally kept visible. MIT Licensed — see [LICENSE](LICENSE).

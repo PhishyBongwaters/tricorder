@@ -6,11 +6,12 @@ import networkx as nx
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Tuple, Optional, Any
-from utils import SymbolRecord, Tag, discover_src_files, repo_budget, count_tokens, detect_lang, read_text, _base
+from utils import SymbolRecord, Tag, discover_src_files, repo_budget, count_tokens, detect_lang, read_text, _base, _qual, _scope, is_test_file
 import json as _json
 from scm import get_scm_fname
 from collections import defaultdict
 from cache import CACHE_VERSION
+from database import EXTRACTOR_VERSION
 
 class GraphMixin:
     def _discover_files(self) -> List[str]:
@@ -22,24 +23,30 @@ class GraphMixin:
     _CROSS_REF_DISK_KEY = "__cross_ref_index_v1__"
 
     def _cross_ref_fingerprint(self) -> str:
-        """Fingerprint of every discovered file's (rel path, mtime).
+        """Fingerprint of every discovered file's (rel path, mtime_ns).
 
         One stat per file, no tree-sitter parse. Any add/edit/delete changes
         the fingerprint, so a matching fingerprint means the persisted
         cross-file/import indexes are still valid for THIS repo snapshot.
+        mtime_ns (not float getmtime): float seconds lose sub-microsecond
+        precision, re-creating the same-second-blindness the DB dirty-diff
+        had before review round 16.
         """
         entries = []
         for fpath in self._discover_files():
             try:
-                m = os.path.getmtime(fpath)
+                m = os.stat(fpath).st_mtime_ns
             except OSError:
                 continue
             entries.append((self.get_rel_fname(fpath).replace("\\", "/"), m))
         entries.sort()
         # CACHE_VERSION: index format/logic changes must invalidate old
         # bundles (a matching fingerprint must mean valid for THIS code too).
+        # EXTRACTOR_VERSION: defs carry the same class-context qualification
+        # the DB extractor gate guards — an extractor bump must not keep
+        # serving the old bundle.
         return hashlib.sha256(
-            (repr(entries) + f"|cv{CACHE_VERSION}").encode("utf-8")).hexdigest()
+            (repr(entries) + f"|cv{CACHE_VERSION}|ev{EXTRACTOR_VERSION}").encode("utf-8")).hexdigest()
 
     def _load_cross_ref_disk(self) -> bool:
         """Restore the import+cross-file indexes from diskcache if valid.
@@ -243,6 +250,38 @@ class GraphMixin:
             }
         return graph
 
+    def _def_in_scope(self, def_file: str, def_line: int,
+                      qual_key: str, want_scope: str) -> bool:
+        """Does this definition live under the queried scope? (F1)
+
+        Scoped def keys compare directly ('PCM::m' vs scope 'PCM').
+        Unscoped keys (e.g. Python's bare 'run') are checked against the
+        innermost enclosing class in the file; module-level definitions
+        fall back to the file's module path, so 'ops_a::run' matches a
+        top-level 'run' in ops_a.rs but not ops_b.rs.
+        """
+        key_scope = _scope(qual_key)
+        if key_scope:
+            return key_scope == want_scope or key_scope.endswith("::" + want_scope)
+        rel = self.get_rel_fname(def_file)
+        best = None  # (class_name, span)
+        for sym in self.get_symbols(def_file, rel):
+            if sym.type != "class":
+                continue
+            end = sym.end_line if sym.end_line and sym.end_line > sym.line else sym.line + 10
+            if sym.line <= def_line <= end:
+                span = end - sym.line
+                if best is None or span < best[1]:
+                    best = (sym.name, span)
+        if best is not None:
+            cls = best[0]
+            return cls == want_scope or cls.endswith("::" + want_scope)
+        # No enclosing class: compare against the module path.
+        stem = rel[:rel.rfind(".")] if "." in rel else rel
+        modpath = stem.replace("/", ".").replace("\\", ".")
+        q = want_scope.replace("::", ".")
+        return modpath == q or modpath.endswith("." + q)
+
     def query_graph(self, parsed_query: 'ParsedQuery', token_limit: int = 2048) -> Dict[str, Any]:
         """Execute a parsed graph query and return subgraph.
 
@@ -265,7 +304,19 @@ class GraphMixin:
 
         # Build per-file call graphs for in-file traversal
         all_files = self._discover_files()
-        file_graphs = self.build_call_graph(all_files)
+        # Per-file references derived from the index just built. Calling
+        # build_call_graph(all_files) here re-parsed every file
+        # (get_symbols + get_all_references per file) for data the index
+        # already holds from the identical calls — _file_refs_index is
+        # populated on every _build_cross_file_index path (fresh build,
+        # instance cache, disk bundle), keyed by '/'-normalized path.
+        # Only ["references"] is consumed below.
+        _fri = getattr(self, "_file_refs_index", {}) or {}
+        file_graphs = {
+            fpath: {"references": _fri.get(fpath.replace("\\", "/"), [])}
+            for fpath in all_files
+            if os.path.isfile(fpath)
+        }
 
         # Helper: filter file by exclude/include globs
         def file_allowed(filepath: str, mods: QueryModifiers) -> bool:
@@ -310,11 +361,47 @@ class GraphMixin:
                         best_match = {"name": sym.name, "type": sym.type, "line": sym.line, "end_line": sym_end}
             return best_match
 
-        # Helper: get all symbols in a file for quick lookup
-        def get_file_symbols(filepath: str) -> List[Dict]:
-            rel = self.get_rel_fname(filepath)
-            symbols = self.get_symbols(filepath, rel)
-            return [{"name": s.name, "type": s.type, "line": s.line, "end_line": s.end_line} for s in symbols]
+        # F1: qualified-first index lookups. A qualified traversal key consults
+        # the qualified refs/def entries first; only when none exist does it
+        # fall back to the bare name — flagged on the edge so consumers know
+        # the result is approximate instead of silently conflating homonyms.
+        # Unqualified queries are untouched (backward compatible).
+        bare_fallbacks = 0  # reported in stats
+
+        def _refs_lookup(name):
+            nonlocal bare_fallbacks
+            entries = refs.get(name)
+            if entries:
+                return entries, "exact"
+            if '::' in name:
+                base_entries = refs.get(_base(name))
+                if base_entries:
+                    bare_fallbacks += 1
+                    return base_entries, "bare-name-fallback"
+            return [], "none"
+
+        def _degraded(resolution, name, query_scope):
+            """Flag the honest approximation: query was qualified but the
+            index only offers bare names, so homonyms may conflate (F1)."""
+            nonlocal bare_fallbacks
+            if resolution == "exact" and query_scope and '::' not in name:
+                bare_fallbacks += 1
+                return "bare-name-fallback"
+            return resolution
+
+        def _defs_lookup(name):
+            nonlocal bare_fallbacks
+            if name in defs:
+                return [(name, f, l) for f, l in defs[name]], "exact"
+            if '::' in name:
+                merged = []
+                for dk, dl in defs.items():
+                    if _base(dk) == _base(name):
+                        merged.extend((dk, f, l) for f, l in dl)
+                if merged:
+                    bare_fallbacks += 1
+                    return merged, "bare-name-fallback"
+            return [], "none"
 
         # Track visited nodes and edges
         nodes = []  # List of {name, file, line, type}
@@ -332,9 +419,12 @@ class GraphMixin:
             mods = step.modifiers
 
             if step_idx == 0:
-                # First step: find all definitions matching target_name
-                # Normalize: strip :: prefix and () suffix for fuzzy matching
-                # (e.g. 'PCM::GetFrameAudioData' matches 'PCM::GetFrameAudioData() const -> FrameAudioData')
+                # First step: find all definitions matching target_name.
+                # Traversal keys keep their scope: _qual strips only signature
+                # text ('PCM::m() const' -> 'PCM::m'). The old code downgraded
+                # to _base(target), so a qualified query like 'QuerySet::filter'
+                # traversed every bare 'filter' ref repo-wide (F1: 16/40 of the
+                # first Django refs were wrong-definition conflations).
                 base_target = _base(target_name)
                 # 1) Exact key match
                 for def_file, def_line in defs.get(target_name, []):
@@ -344,22 +434,35 @@ class GraphMixin:
                         sym_type = get_symbol_type(def_file, target_name)
                         if sym_type != mods.symbol_type:
                             continue
-                    current_targets.append((target_name, def_file, def_line))
+                    current_targets.append((_qual(target_name), def_file, def_line))
                 # 2) Base-name match: scan all defs for _base(def_key) == _base(target)
-                #    (handles qualified queries where stored key has ()/const/etc.)
-                #    Use base_target as the BFS lookup key so callers/refs/defs
-                #    find the right refs entries (refs stores base names).
+                #    (handles qualified queries where stored keys carry ()/const/etc.).
+                #    For qualified queries, scope-filter the candidates so 'A::run'
+                #    keeps A's definition and drops B's homonym instead of
+                #    conflating them. Unqualified queries keep every candidate
+                #    (backward compatible).
                 if not current_targets:
+                    want_scope = _scope(target_name)
                     for def_key, def_list in defs.items():
-                        if _base(def_key) == base_target:
-                            for def_file, def_line in def_list:
-                                if not file_allowed(def_file, mods):
+                        if _base(def_key) != base_target:
+                            continue
+                        qual_key = _qual(def_key)
+                        # Traversal key keeps qualified identity: the def key's
+                        # own scope when it has one, else the query's qualified
+                        # form (def keys are often unscoped while refs carry
+                        # the resolver's module scope, e.g. 'ops_a::run').
+                        trav_key = qual_key if _scope(qual_key) else _qual(target_name)
+                        for def_file, def_line in def_list:
+                            if not file_allowed(def_file, mods):
+                                continue
+                            if mods.symbol_type:
+                                sym_type = get_symbol_type(def_file, def_key)
+                                if sym_type != mods.symbol_type:
                                     continue
-                                if mods.symbol_type:
-                                    sym_type = get_symbol_type(def_file, def_key)
-                                    if sym_type != mods.symbol_type:
-                                        continue
-                                current_targets.append((base_target, def_file, def_line))
+                            if want_scope and not self._def_in_scope(
+                                    def_file, def_line, qual_key, want_scope):
+                                continue
+                            current_targets.append((trav_key, def_file, def_line))
                     if not current_targets:
                         symbol_not_found = True
             else:
@@ -396,7 +499,9 @@ class GraphMixin:
 
                 if kind == "callers":
                     # Find callers: references TO this symbol in ANY file
-                    for ref_file, ref_line in refs.get(name, []):
+                    ref_entries, resolution = _refs_lookup(name)
+                    resolution = _degraded(resolution, name, _scope(target_name))
+                    for ref_file, ref_line in ref_entries:
                         if not file_allowed(ref_file, mods):
                             continue
                         if ref_file == file and ref_line == line:
@@ -408,23 +513,44 @@ class GraphMixin:
                         # Find the caller (containing symbol) at this reference location
                         caller = find_containing_symbol(ref_file, ref_line)
                         if caller:
-                            neighbors.append((caller["name"], ref_file, caller["line"], "calls"))
+                            neighbors.append((caller["name"], ref_file, caller["line"], "calls", resolution))
                         else:
                             # Fallback: use the reference name as caller
-                            neighbors.append((name, ref_file, ref_line, "calls"))
+                            neighbors.append((name, ref_file, ref_line, "calls", resolution))
+
+                elif kind == "tests_for":
+                    # Find test callers: like callers, but restricted to test
+                    # files. Answers "which tests exercise this symbol?".
+                    ref_entries, resolution = _refs_lookup(name)
+                    resolution = _degraded(resolution, name, _scope(target_name))
+                    for ref_file, ref_line in ref_entries:
+                        if not is_test_file(ref_file):
+                            continue
+                        if not file_allowed(ref_file, mods):
+                            continue
+                        if ref_file == file and ref_line == line:
+                            continue  # Skip self-reference
+                        if mods.symbol_type:
+                            sym_type = get_symbol_type(ref_file, name)
+                            if sym_type != mods.symbol_type:
+                                continue
+                        # Find the caller (containing symbol) at this reference location
+                        caller = find_containing_symbol(ref_file, ref_line)
+                        if caller:
+                            neighbors.append((caller["name"], ref_file, caller["line"], "tests", resolution))
+                        else:
+                            # Fallback: use the reference name as caller
+                            neighbors.append((name, ref_file, ref_line, "tests", resolution))
 
                 elif kind == "callees":
                     # Find callees: symbols that THIS symbol calls (references FROM this symbol's body)
                     # Use the per-file call graph
                     file_graph = file_graphs.get(file, {"definitions": {}, "references": []})
                     file_refs = file_graph.get("references", [])
-                    # Find references made BY this symbol (at or near its line)
-                    file_symbols = get_file_symbols(file)
-                    containing = None
-                    for sym in file_symbols:
-                        if sym["line"] <= line <= sym["end_line"]:
-                            containing = sym
-                            break
+                    # Innermost symbol containing this line (a method, not its
+                    # class): first-match in file order yields the outermost
+                    # scope, which leaks sibling methods' calls into the result.
+                    containing = find_containing_symbol(file, line)
                     if containing:
                         # Find references in this containing symbol's body
                         for ref in file_refs:
@@ -442,11 +568,13 @@ class GraphMixin:
                                         sym_type = get_symbol_type(def_file, callee_name)
                                         if sym_type != mods.symbol_type:
                                             continue
-                                    neighbors.append((callee_name, def_file, def_line, "calls"))
+                                    neighbors.append((callee_name, def_file, def_line, "calls", "exact"))
 
                 elif kind == "refs":
                     # Find all references TO this symbol
-                    for ref_file, ref_line in refs.get(name, []):
+                    ref_entries, resolution = _refs_lookup(name)
+                    resolution = _degraded(resolution, name, _scope(target_name))
+                    for ref_file, ref_line in ref_entries:
                         if not file_allowed(ref_file, mods):
                             continue
                         if ref_file == file and ref_line == line:
@@ -455,11 +583,16 @@ class GraphMixin:
                             sym_type = get_symbol_type(ref_file, name)
                             if sym_type != mods.symbol_type:
                                 continue
-                        neighbors.append((name, ref_file, ref_line, "refers"))
+                        neighbors.append((name, ref_file, ref_line, "refers", resolution))
 
                 elif kind == "defs":
-                    # Find all definitions OF this symbol
-                    for def_file, def_line in defs.get(name, []):
+                    # Find all definitions OF this symbol. For a qualified
+                    # first-step query, scope-filter the expansion so
+                    # defs('A::run') doesn't re-conflate B::run after step 0
+                    # filtered it (F1).
+                    def_entries, resolution = _defs_lookup(name)
+                    want_scope = _scope(target_name)
+                    for def_key, def_file, def_line in def_entries:
                         if not file_allowed(def_file, mods):
                             continue
                         if def_file == file and def_line == line:
@@ -468,10 +601,13 @@ class GraphMixin:
                             sym_type = get_symbol_type(def_file, name)
                             if sym_type != mods.symbol_type:
                                 continue
-                        neighbors.append((name, def_file, def_line, "defines"))
+                        if want_scope and not self._def_in_scope(
+                                def_file, def_line, _qual(def_key), want_scope):
+                            continue
+                        neighbors.append((name, def_file, def_line, "defines", resolution))
 
                 # Add neighbors to queue and edges
-                for n_name, n_file, n_line, edge_type in neighbors:
+                for n_name, n_file, n_line, edge_type, resolution in neighbors:
                     n_key = (n_name, n_file, n_line)
                     if n_key not in visited and n_key not in seen_nodes:
                         queue.append((n_name, n_file, n_line, depth + 1))
@@ -479,15 +615,21 @@ class GraphMixin:
                         # Edge: from current node TO neighbor
                         # For callers: caller calls callee (current), so edge is caller -> callee
                         # For callees: current calls callee, so edge is current -> callee
-                        if kind in ("callers", "refs", "defs"):
-                            # For callers/refs/defs, we're traversing TO the current node
+                        # F1: edges built from a bare-name fallback carry
+                        # "resolution": "bare-name-fallback" so consumers know
+                        # the traversal was approximate, not silent.
+                        if kind in ("callers", "refs", "defs", "tests_for"):
+                            # For callers/refs/defs/tests_for, we're traversing TO the current node
                             # So the neighbor is the "from" and current is "to"
-                            step_edges.append({
+                            edge = {
                                 "from": n_name, "to": name,
                                 "from_file": n_file, "to_file": file,
                                 "from_line": n_line, "to_line": line,
                                 "type": edge_type
-                            })
+                            }
+                            if resolution != "exact":
+                                edge["resolution"] = resolution
+                            step_edges.append(edge)
                         else:
                             # For callees, we're traversing FROM current TO neighbor
                             step_edges.append({
@@ -512,22 +654,35 @@ class GraphMixin:
         budget = repo_budget(self.root, 0)
         full_repo = budget.get("full_repo_estimate", 0)
 
+        # Truncate only when over budget (never silently): the slice used
+        # to apply unconditionally, dropping nodes/edges with no tier_hint
+        # whenever the result exceeded token_limit // 50 nodes. A
+        # non-positive token_limit disables truncation instead of
+        # producing empty/negative slices.
+        tier_hint = None
+        nodes_ret, edges_ret = nodes, edges
+        if token_limit > 0 and token_est > token_limit:
+            tier_hint = (f"Response truncated: {token_est} tokens > limit {token_limit}. "
+                         "Consider increasing token_limit or reducing depth/limit.")
+            nodes_ret = nodes[:max(1, token_limit // 50)]
+            edges_ret = edges[:max(1, token_limit // 30)]
+            # Re-estimate on the payload actually returned, not the
+            # pre-truncation one.
+            token_est = count_tokens(_json.dumps({"nodes": nodes_ret, "edges": edges_ret}))
+
         savings = 0.0
         if full_repo:
             savings = round(max(0.0, 1 - token_est / full_repo) * 100, 1)
 
-        tier_hint = None
-        if token_est > token_limit:
-            tier_hint = f"Response truncated: {token_est} tokens > limit {token_limit}. Consider increasing token_limit or reducing depth/limit."
-
         return {
-            "nodes": nodes[:token_limit // 50],
-            "edges": edges[:token_limit // 30],
+            "nodes": nodes_ret,
+            "edges": edges_ret,
             "token_estimate": token_est,
             "full_repo_estimate": full_repo,
             "savings_pct": savings,
             "tier_hint": tier_hint,
-            "stats": {"nodes_visited": total_nodes_found, "edges_traversed": len(edges)},
+            "stats": {"nodes_visited": total_nodes_found, "edges_traversed": len(edges),
+                      "bare_name_fallbacks": bare_fallbacks},
             "symbol_not_found": symbol_not_found,
         }
 
@@ -556,12 +711,26 @@ class GraphMixin:
         # TC-011: this is the root of the "not found" retry loop — detail was
         # brittle where the explore tools are fuzzy.
         symbol_l = symbol_name.lower()
+        symbol_base = _base(symbol_name)
+        # Pass 1: full-name match — a qualified query (C++/Rust Class::method)
+        # against a qualified symbol. Pass 2: base-name match with BOTH sides
+        # based. Previously only the symbol side was based
+        # (_base(sym.name) == symbol_name), so a qualified query could never
+        # hit exact and fell through to fuzzy, which returns the first
+        # substring match in file order: e.g. "Renderer::render" matched class
+        # "Renderer" (via "renderer" in "renderer::render") or the wrong
+        # class's method instead of Renderer::render.
         for sym in symbols:
-            sym_name = _base(sym.name)
-            if sym_name == symbol_name:
+            if sym.name == symbol_name:
                 if line == 0 or sym.line == line:
                     target = sym
                     break
+        if target is None:
+            for sym in symbols:
+                if _base(sym.name) == symbol_base:
+                    if line == 0 or sym.line == line:
+                        target = sym
+                        break
         if target is None:
             # fuzzy: case-insensitive + substring (mirror detect/symbols)
             for sym in symbols:

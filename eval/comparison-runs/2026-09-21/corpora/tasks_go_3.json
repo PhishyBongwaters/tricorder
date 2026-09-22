@@ -1,0 +1,70 @@
+{
+ "tasks": [
+  {
+   "ground_truth_files": [
+    "src/runtime/mgc.go"
+   ],
+   "id": "G1-gc-mark-phase",
+   "keywords": [
+    "gcBgMarkWorker",
+    "markroot"
+   ],
+   "pass_threshold": 0.6,
+   "question": "Where is the Go garbage collector's mark phase implemented, and what function do the background mark workers run?",
+   "repo": "/home/hatch/workspace/comparisons/go",
+   "rubric_entities": [
+    "gcBgMarkWorker",
+    "markroot",
+    "gcDrain",
+    "mgc.go",
+    "gcController"
+   ],
+   "spot_check": "src/runtime/mgc.go:1766 func gcBgMarkWorker; markroot in src/runtime/mgcmark.go",
+   "status": "available"
+  },
+  {
+   "ground_truth_files": [
+    "src/runtime/chan.go"
+   ],
+   "id": "G3-channel-send-recv",
+   "keywords": [
+    "chansend",
+    "chanrecv"
+   ],
+   "pass_threshold": 0.6,
+   "question": "Where are channel send and receive operations implemented in the Go runtime?",
+   "repo": "/home/hatch/workspace/comparisons/go",
+   "rubric_entities": [
+    "chansend",
+    "chanrecv",
+    "hchan",
+    "chan.go",
+    "closechan"
+   ],
+   "spot_check": "src/runtime/chan.go: func chansend, func chanrecv",
+   "status": "available"
+  },
+  {
+   "ground_truth_files": [
+    "src/cmd/compile/internal/ssagen/ssa.go"
+   ],
+   "id": "G5-compiler-ssa",
+   "keywords": [
+    "buildssa",
+    "NewConfig"
+   ],
+   "pass_threshold": 0.5,
+   "question": "Where does the Go compiler build SSA form for a function, and which function is the entry point?",
+   "repo": "/home/hatch/workspace/comparisons/go",
+   "rubric_entities": [
+    "buildssa",
+    "NewConfig",
+    "ssa.go",
+    "ssagen",
+    "Compile"
+   ],
+   "spot_check": "src/cmd/compile/internal/ssagen/ssa.go:302 func buildssa",
+   "status": "available"
+  }
+ ]
+}

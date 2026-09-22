@@ -7,11 +7,44 @@ handle instead of building a giant in-RAM string.
 
 from collections import defaultdict
 from io import StringIO
+import os
 from pathlib import Path
 from typing import IO, List, Optional, Set, Tuple, Union
 
 from grep_ast import TreeContext
 from utils import Tag
+
+
+def _cached_tree_context(self, abs_fname: str, rel_fname: str, code: str,
+                       lois_0based: List[int]) -> TreeContext:
+    """TreeContext for a file, cached per Tricorder but mtime-validated.
+
+    The MCP server reuses one Tricorder per root across tool calls, so a
+    cache keyed by filename alone would render stale code after the file
+    is edited between calls. Rebuild when the mtime moved (nanosecond
+    resolution: float st_mtime has ~238ns granularity at this epoch, so a
+    same-second same-size edit could map to the same float and serve a
+    stale TreeContext built from old code).
+
+    Pinned grep-ast==0.9.0 API: LOIs are 0-based, registered with
+    add_lines_of_interest, expanded with add_context, rendered with
+    format(). Both add_* calls accumulate, so per-render LOI state is
+    reset here — otherwise a reused tree leaks lines from previous
+    renders' LOIs.
+    """
+    try:
+        mtime = os.stat(abs_fname).st_mtime_ns
+    except OSError:
+        mtime = None
+    entry = self.tree_context_cache.get(rel_fname)
+    if entry is None or entry[0] != mtime:
+        entry = (mtime, TreeContext(rel_fname, code, color=False))
+        self.tree_context_cache[rel_fname] = entry
+    tc = entry[1]
+    tc.lines_of_interest = set(lois_0based)
+    tc.show_lines = set()
+    tc.add_context()
+    return tc
 
 
 def render_tree(
@@ -49,15 +82,11 @@ def render_tree(
 
     # T1 mode: use TreeContext for context rendering
     try:
-        if rel_fname not in self.tree_context_cache:
-            self.tree_context_cache[rel_fname] = TreeContext(
-                rel_fname,
-                code,
-                color=False
-            )
-
-        tree_context = self.tree_context_cache[rel_fname]
-        result = tree_context.format(lois)
+        # grep-ast LOIs are 0-based; render_tree callers pass 1-based.
+        lois_0based = [loi - 1 for loi in sorted(set(lois)) if loi >= 1]
+        tree_context = _cached_tree_context(self, abs_fname, rel_fname, code,
+                                            lois_0based)
+        result = tree_context.format()
         if writer is not None:
             writer.write(result)
             return None
@@ -110,15 +139,10 @@ def _render_body(
         return result
 
     try:
-        if rel_fname not in self.tree_context_cache:
-            self.tree_context_cache[rel_fname] = TreeContext(
-                rel_fname,
-                code,
-                color=False
-            )
-
-        tree_context = self.tree_context_cache[rel_fname]
-        result = tree_context.format(lois)
+        lois_0based = [loi - 1 for loi in sorted(set(lois)) if loi >= 1]
+        tree_context = _cached_tree_context(self, abs_fname, rel_fname, code,
+                                            lois_0based)
+        result = tree_context.format()
         if writer is not None:
             writer.write(result)
             return None
@@ -246,23 +270,27 @@ def to_tree(
 
             abs_fname = str(self.root / rel_fname)
             max_rank = max(rank for rank, tag in file_tag_list)
-            rendered = render_tree(self, abs_fname, rel_fname, lois)
-            if not rendered:
+            # Body only (no filename header — it is written above). _render_body
+            # is the shared path with the streaming branch; render_tree's
+            # first line is NOT a filename header on the TreeContext path
+            # (grep-ast==0.9.0 format() emits code lines only), so the old
+            # rendered_lines[1:] surgery silently dropped one context line.
+            body = _render_body(self, abs_fname, rel_fname, lois)
+            if not body:
                 continue
 
-            rendered_lines = rendered.splitlines()
-            first_line = rendered_lines[0]
-            code_lines = rendered_lines[1:]
             lc = file_line_counts.get(rel_fname)
             if lc:
                 first_line = f"{rel_fname} ({lc} lines)"
+            else:
+                first_line = rel_fname
             rank_line = f"(Rank value: {max_rank:.4f})\n"
             if len(set(rank for rank, _ in file_tag_list)) == 1 and all(
                 max(r for r, _ in file_tags) == max_rank for _, file_tags in sorted_files
             ):
                 rank_line = ""
             group_parts.append(
-                f"{first_line}\n{rank_line}\n\n" + "\n".join(code_lines)
+                f"{first_line}\n{rank_line}\n\n" + body
             )
 
         if group_parts:

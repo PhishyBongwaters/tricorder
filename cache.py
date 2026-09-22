@@ -25,9 +25,16 @@ from typing import List
 
 import diskcache
 
-from utils import get_cache_root, Tag
+from database import EXTRACTOR_VERSION
+from utils import get_cache_root, Tag, stat_fingerprint
 
 CACHE_VERSION = 3  # bumped: #46 qualified names + Sep-14 query captures changed index contents
+# NOTE: the cache key below also carries EXTRACTOR_VERSION. Cached tag rows
+# hold post-_add_class_context_to_tags qualified names — the exact output the
+# extractor version gates. Without the extractor stamp, an EXTRACTOR_VERSION
+# bump would fire the DB staleness gate, the forced rescan would replay the
+# stale qualified tags from this cache (mtimes unchanged), and the DB would
+# be re-stamped — permanent, undetectable staleness. Keep both stamps.
 
 SQLITE_ERRORS = (sqlite3.OperationalError, sqlite3.DatabaseError)
 
@@ -55,7 +62,7 @@ class TagsCacheMixin:
                 "TRICORDER_CACHE_HOME",
                 str(Path.home() / ".tricorder" / "cache"),
             ))
-        key = f"{self.root.resolve()}|v{CACHE_VERSION}|{self.cache_size_limit}"
+        key = f"{self.root.resolve()}|v{CACHE_VERSION}|e{EXTRACTOR_VERSION}|{self.cache_size_limit}"
         h = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
         return base / h
 
@@ -102,6 +109,23 @@ class TagsCacheMixin:
         except Exception:
             self.TAGS_CACHE = {}
 
+    def _file_fingerprint(self, fname: str):
+        """(size, mtime_ns) stat fingerprint, or None when the file is gone.
+
+        The tags/text caches used to key on float getmtime(): float
+        seconds have ~238ns granularity at this epoch, so two same-size
+        edits inside one quantum conflated and the cache served stale
+        entries indefinitely (round 16 fixed file_state/the dirty-diff for
+        this, but not this cache). Keying on stat_fingerprint() matches
+        file_state exactly, so the two can never disagree about whether a
+        file changed.
+        """
+        try:
+            return stat_fingerprint(os.stat(fname))
+        except OSError:
+            self.output_handlers['warning'](f"File not found: {fname}")
+            return None
+
     def get_tags(self, fname: str, rel_fname: str) -> List[Tag]:
         """Get tags for a file, using cache when possible."""
         # ponytail: skip files that can't have tree-sitter symbols — saves read+parse per file
@@ -110,17 +134,20 @@ class TagsCacheMixin:
         if Path(fname).suffix in _SKIP_EXTS or fname.endswith(('.cmake.in', '.h.in', '.cpp.in', '.hpp.in')):
             return []
 
-        file_mtime = self.get_mtime(fname)
-        if file_mtime is None:
+        fp = self._file_fingerprint(fname)
+        if fp is None:
             return []
 
         # Use lock to prevent TOCTOU race condition in check-then-write
         with self._tags_cache_lock:
             try:
-                # Both diskcache.Cache and dict have .get() method
+                # Both diskcache.Cache and dict have .get() method.
+                # Entries written before the ns-keying change carry "mtime"
+                # (float seconds) instead of "fp": they never match and are
+                # overwritten on first miss -- self-healing, no migration.
                 cached_entry = self.TAGS_CACHE.get(fname)
 
-                if cached_entry and cached_entry.get("mtime") == file_mtime:
+                if cached_entry and cached_entry.get("fp") == fp:
                     try:
                         with open(os.path.join(self._cache_dir(), "hits.log"), "a") as _hf:
                             _hf.write(f"hit\tget_tags\t{fname}\n")
@@ -137,29 +164,29 @@ class TagsCacheMixin:
             tags = self._add_class_context_to_tags(tags)
 
             try:
-                self.TAGS_CACHE[fname] = {"mtime": file_mtime, "data": tags}
+                self.TAGS_CACHE[fname] = {"fp": fp, "data": tags}
             except SQLITE_ERRORS:
                 self.tags_cache_error()
 
             return tags
 
     def get_file_text(self, fname: str) -> str:
-        """Whole-file text, mtime-keyed like tags. Spares detail/callers
+        """Whole-file text, fingerprint-keyed like tags. Spares detail/callers
         repeat disk reads; same store, namespaced key, no new infra."""
-        file_mtime = self.get_mtime(fname)
-        if file_mtime is None:
+        fp = self._file_fingerprint(fname)
+        if fp is None:
             return ""
         key = "text:" + fname
         with self._tags_cache_lock:
             try:
                 cached = self.TAGS_CACHE.get(key)
-                if cached and cached.get("mtime") == file_mtime:
+                if cached and cached.get("fp") == fp:
                     return cached["data"]
             except SQLITE_ERRORS:
                 self.tags_cache_error()
             text = self.read_text_func_internal(fname) or ""
             try:
-                self.TAGS_CACHE[key] = {"mtime": file_mtime, "data": text}
+                self.TAGS_CACHE[key] = {"fp": fp, "data": text}
             except SQLITE_ERRORS:
                 self.tags_cache_error()
             return text
