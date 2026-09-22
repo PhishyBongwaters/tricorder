@@ -80,7 +80,7 @@ tricorder src/ --tier 1 --context-lines 3    # T1 with context
 tricorder --chat-files main.py --other-files src/ --mermaid
 tricorder --force-refresh .                  # bust stale tag cache
 tricorder --exclude-globs vendor/** third_party/** .  # skip vendored code
-tricorder --root . --map-tokens 2048           # no paths → auto-discover --root (--max-files, default 1000)
+tricorder --root . --map-tokens 2048           # no paths → auto-discover --root (--max-files 0 = no cap)
 ```
 
 Tier tokens: T0 ≈ 14 tokens/tag (definitions), T1 ≈ 350 tokens/tag (with context).
@@ -97,10 +97,7 @@ override the root via `TRICORDER_CACHE_HOME`).
 
 - The DB is reused across runs — no rebuild when nothing changed.
   `force_refresh: true` (CLI `--force-refresh`) forces a rebuild.
-- `--max-files` caps a CLI scan (default 1000; `--max-files 0` = unlimited).
-  The MCP `tricorder_scan` `max_files` param instead defaults to 0 (unlimited) —
-  set it explicitly on large repos. Truncation is logged server-side; verify
-  coverage before trusting a map.
+- `--max-files` caps a scan during auto-discovery when no paths are given (default 0 = no cap; the MCP `tricorder_scan` `max_files` param also defaults to 0, clamped server-side at 10,000 files). Set it explicitly to bound large repos. Truncation is logged server-side; verify coverage before trusting a map.
 - `pre_index` narrows huge repos to files containing a probe symbol
   (rg fast path, ctags fallback) instead of walking the whole tree.
 
