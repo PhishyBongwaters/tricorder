@@ -6,7 +6,7 @@
 
 **Turn any codebase into a token-efficient map an LLM agent can actually navigate.**
 
-Tricorder scans a repository with tree-sitter, ranks every symbol by importance (PageRank over the call graph), and emits a compact map — definitions, signatures, and cross-file references — sized to fit your context window. A 50M-token Linux kernel becomes a 40K-token map pointing straight at `pick_next_task` (`kernel/sched/`).
+Tricorder scans a repository with tree-sitter, ranks every symbol by importance (PageRank over the call graph), and emits a compact map — definitions, signatures, and cross-file references — sized to fit your context window. Measured on the current pipeline: Vaultwarden sessions burn 8,987 response-payload tokens vs 26,818 for baseline navigation (−66.5%), and a 5-question Swift session fits in 9,789 tokens where the baseline needs 69,875 (−86.0%).
 
 ```
 $ tricorder /path/to/repo --map-tokens 2048
@@ -32,9 +32,9 @@ Three interfaces, one engine: a **CLI** for humans and scripts, an **MCP server*
 | Read every file (hours) | Intelligent map in seconds |
 | Hit-or-miss grep | Precise symbol detection with definitions *and* references |
 | Manual dependency tracing | Automatic call graph + PageRank |
-| Context window overflow | Token-budgeted output (~1.5% of the full repo) |
+| Context window overflow | Token-budgeted output (−55% to −86% per-query payload vs baseline tools, measured) |
 
-**Measured (pre-db-map pipeline, Gen 2):** 15/15 benchmarks pass across C++, Rust, TypeScript, Go, and the Linux kernel — 86.7–100% token savings. See [Benchmarks](docs/benchmarks.md). Branch comparison (baseline vs db-map branch, measured response-payload tokens): −76.3% combined across Vaultwarden, Go, and Swift repos (baseline 12/12 questions answered, branch 11/12). See [comparison runs](eval/comparison-runs/2026-09-21/README.md).
+**Measured on the current pipeline ([comparison runs](eval/comparison-runs/2026-09-21/README.md), response-payload tokens):** −76.3% combined across Vaultwarden, Go, and Swift repos (baseline 12/12 questions answered, branch 11/12 as measured — the single Swift miss was fixed after measurement in `090456e`, full-corpus re-measure pending). Older Gen 2 map-vs-blind-repo numbers (86.7–100% across 15 repos) describe a previous pipeline version and are kept for history in [Benchmarks](docs/benchmarks.md).
 
 ## Quick Start
 
@@ -98,7 +98,8 @@ Seven tools: `tricorder_scan`, `tricorder_detect`, `tricorder_symbols`, `tricord
 
 ## The Escalation Ladder
 
-Spend tokens deliberately, cheapest first:
+Spend tokens deliberately, cheapest first (tier costs are rough rules of
+thumb, not measurements — measured end-to-end savings are above):
 
 ```
 1. MAP    (~14 tokens/tag)  → "Database classes in database.py"

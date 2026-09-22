@@ -4,11 +4,16 @@ A flat list of every factual claim made in README.md, grouped by section,
 for validation against source code. Each claim maps to a checkable statement;
 validation status starts as `pending` and is updated as checks run.
 
+> **Numbers rule (2026-09-22):** savings claims must cite the committed run
+> that produced them. `eval/comparison-runs/2026-09-21/README.md` is canonical
+> until superseded. Older map-vs-blind percentages ran against previous
+> pipeline versions — marked `[superseded-by-9/21]` below, kept for history.
+
 ---
 
 ## 1. Executive Summary
 
-- [pending] Tricorder produces a 40K-token map from 50M-token Linux kernel with 99.9% token savings
+- [superseded-by-9/21] Tricorder produces a 40K-token map from 50M-token Linux kernel with 99.9% token savings
 - [pending] Map points to `kernel/sched/fair.c:pick_next_task`
 - [pending] Map generates in ~1.1s
 
@@ -16,7 +21,7 @@ validation status starts as `pending` and is updated as checks run.
 
 - [pending] Traditional approach reads every file (hours)
 - [pending] Tricorder approach maps intelligently (seconds)
-- [pending] 15/15 benchmarks pass across C++, Rust, TypeScript, Go, Linux kernel
+- [superseded-by-9/21] 15/15 benchmarks pass across C++, Rust, TypeScript, Go, Linux kernel
 
 ## 3. Three Integrated Interfaces
 
@@ -24,7 +29,7 @@ validation status starts as `pending` and is updated as checks run.
 - [pending] MCP: `tricorder-mcp` runs over STDIO
 - [pending] Hermes/DSH: plugins + turn-0 digest auto-inject at session start
 
-## 4. Smart Escalation Ladder
+## 4. Smart Escalation Ladder (tier costs are rules of thumb, not measurements)
 
 - [pending] T0 MAP: ~14 tokens/tag
 - [pending] DETECT: ~1-2 tokens/tag
@@ -41,7 +46,7 @@ validation status starts as `pending` and is updated as checks run.
 ## 6. Core Features
 
 - [pending] Uses tree-sitter + PageRank
-- [pending] Binary search fits map to budget (~1.5% of full repo)
+- [superseded-by-9/21] Binary search fits map to budget (~1.5% of full repo)
 - [pending] `--pre-index SYMBOL` narrows huge trees in ~1s (rg-first, no full walk)
 - [pending] Graph query DSL: `callers('auth') depth=2 exclude=tests/**`
 - [pending] Mermaid graphs — dependency flowcharts with chat files highlighted

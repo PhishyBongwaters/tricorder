@@ -1,5 +1,10 @@
 # Comparison runs — 2026-09-21
 
+**Canonical savings numbers.** This is the single source of truth for all
+token-savings claims in the docs, until a newer committed run supersedes it.
+Measured at tip of `fix/parallel-qualify` (current pipeline), response-payload
+tokens via tiktoken `cl100k_base` — not estimates.
+
 Baseline-vs-branch (tip of `fix/parallel-qualify`) repo comparison runs
 measuring **context tokens used** per query on large repos.
 

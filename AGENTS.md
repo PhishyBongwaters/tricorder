@@ -27,6 +27,9 @@ Use the repo `.venv` (pytest + grammars). No DB = no map, no tools.
   rules. Never `sqlite3.connect` a possibly-absent DB (creates a
   0-byte stub); check existence first.
 - No destructive commands (rm, wipes) without explicit approval.
+- Savings numbers must cite the committed run that produced them
+  (`eval/comparison-runs/2026-09-21/README.md` is canonical until
+  superseded). No version, no quote.
 - Depth: `docs/v2/` (00 scan-first, 01 pipeline, 02 tiering+retrieval,
   03 operations). MCP server + turn-0 plugins are unported — document
   as TBD, no usage claims.

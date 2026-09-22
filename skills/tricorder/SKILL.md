@@ -5,7 +5,7 @@ description: Use tricorder to map a codebase (symbols, call graphs, signatures) 
 
 # Tricorder
 
-Use tricorder when you need `symbols`, `signatures`, `callers/callees`, or a compact **map** of a codebase without reading every file. It scans with tree-sitter, ranks by PageRank, and returns only the important definitions — typically **~1.5% of full-repo token cost**.
+Use tricorder when you need `symbols`, `signatures`, `callers/callees`, or a compact **map** of a codebase without reading every file. It scans with tree-sitter, ranks by PageRank, and returns only the important definitions — measured −55% to −86% per-query response-payload tokens vs baseline navigation (see `eval/comparison-runs/2026-09-21/README.md`).
 
 ## Tool names — match your host's prefix
 
@@ -40,7 +40,7 @@ The point of tricorder is to NOT read every file. Climb the ladder; stop at the 
 5. **Escalate the map tier** — still missing context? `tricorder_scan {project_root, tier: 1, context_lines: 3}` gives definitions + surrounding lines (~350 tokens/tag, ~25x T0). Use `output_format: "mermaid"` for a module dependency graph. Narrow with `chat_files`/`mentioned_files` to keep it small.
 6. **Full file read — last resort** — `read_file` only when all of the above left genuine ambiguity (a bug spans half a file, you need a comment block far from any symbol, etc). Read the *specific line range* found in step 2/3, not the whole file blindly. A whole-file pull is a confession that the ladder failed.
 
-**Token economics**: T0 ≈ 14 tokens/tag. T1 ≈ 350 tokens/tag. `detail` returns one symbol body (typically 50-400 tokens, capped by its 2048-token default budget on hot symbols). A full file read is thousands. Escalate deliberately.
+**Token economics** (rough rules of thumb, not measurements): T0 ≈ 14 tokens/tag. T1 ≈ 350 tokens/tag. `detail` returns one symbol body (typically 50-400 tokens, capped by its 2048-token default budget on hot symbols). A full file read is thousands. Escalate deliberately.
 
 ### Required param
 
@@ -83,7 +83,7 @@ tricorder --exclude-globs vendor/** third_party/** .  # skip vendored code
 tricorder --root . --map-tokens 2048           # no paths → auto-discover --root (--max-files 0 = no cap)
 ```
 
-Tier tokens: T0 ≈ 14 tokens/tag (definitions), T1 ≈ 350 tokens/tag (with context).
+Tier tokens (rough rules of thumb, not measurements): T0 ≈ 14 tokens/tag (definitions), T1 ≈ 350 tokens/tag (with context).
 
 ## DB backend — where state lives
 

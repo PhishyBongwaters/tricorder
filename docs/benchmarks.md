@@ -1,5 +1,12 @@
 # Benchmarks
 
+> **Historical snapshot (Gen 2, pre-db-map pipeline).** These numbers were
+> measured against a previous pipeline version and are kept for methodology
+> reference only — do not quote them for the current code. Current,
+> committable savings numbers live in
+> [comparison runs 2026-09-21](../eval/comparison-runs/2026-09-21/README.md)
+> (−76.3% combined response-payload tokens vs baseline tools).
+
 Tricorder's whole point is token savings: a compact map steers an agent to
 the right code without reading the entire repo.
 
