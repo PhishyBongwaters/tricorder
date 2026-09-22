@@ -301,10 +301,13 @@ class TestDetailMaxTokensIntegration(unittest.TestCase):
         lines = ["def target_func(a, b):", '    """Add two things."""']
         lines += [f"    step{i} = a + b + {i}" for i in range(80)]
         lines.append("    return step0")
-        (self.tmp / "mod.py").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        # newline="\n": CRLF translation on Windows inflates token counts
+        # and pushes the trimmer past the callers budget.
+        (self.tmp / "mod.py").write_text("\n".join(lines) + "\n", encoding="utf-8",
+                                         newline="\n")
         (self.tmp / "use.py").write_text(
             "from mod import target_func\n\ndef caller_one():\n    return target_func(1, 2)\n",
-            encoding="utf-8",
+            encoding="utf-8", newline="\n",
         )
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
@@ -318,11 +321,17 @@ class TestDetailMaxTokensIntegration(unittest.TestCase):
         self.assertNotIn("truncated", r)
 
     def test_budget_honored(self):
-        # Untrimmed response is ~400 tokens; 250 forces trimming.
-        r = self._detail(max_tokens=250)
+        # Force trimming by a fixed margin below the untrimmed size, not a
+        # magic token number: absolute fixture paths vary by machine
+        # (workspace-redirected tmp roots on Windows are ~100 chars), and a
+        # fixed budget trims deeper on machines with longer paths.
+        full = self._detail()
+        self.assertNotIn("error", full)
+        budget = _tok(full) - 150
+        r = self._detail(max_tokens=budget)
         self.assertNotIn("error", r)
         self.assertTrue(r.get("truncated"))
-        self.assertLessEqual(_tok(r), 250)
+        self.assertLessEqual(_tok(r), budget)
         sym = r["symbol"]
         self.assertEqual(sym["signature"], "target_func (a, b)")
         self.assertTrue(sym["callers"], "callers should survive budgeting")

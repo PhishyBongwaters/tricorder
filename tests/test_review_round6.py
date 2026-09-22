@@ -25,6 +25,13 @@ CLI = str(REPO.parent / "tricorder.py")
 PY = sys.executable
 
 
+def _can_drop_privs():
+    # os.geteuid does not exist on Windows; guard the attribute first so
+    # collection (decorator evaluation) never raises there.
+    return (hasattr(os, "geteuid") and shutil.which("runuser")
+            and os.geteuid() == 0)
+
+
 def _cli(*args, env=None):
     e = dict(os.environ)
     if env:
@@ -195,7 +202,7 @@ class TestDiffCliHardening(unittest.TestCase):
     canonical DB must diff against the baseline (not crash), and --diff
     --db-path <directory> must fail clean."""
 
-    @unittest.skipUnless(os.geteuid() == 0 and shutil.which("runuser"),
+    @unittest.skipUnless(_can_drop_privs(),
                          "needs root + runuser to drop privileges")
     def test_diff_against_read_only_canonical_db(self):
         tmp = Path(tempfile.mkdtemp(prefix="diffro6_"))

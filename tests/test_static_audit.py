@@ -13,6 +13,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from render import _cached_tree_context
@@ -43,6 +45,8 @@ def test_cached_tree_context_invalidated_on_sub_float_ulp_edit(tmp_path):
     f.write_text("x = 2\n")
     ns1 = ns0 + 1
     os.utime(absf, ns=(st0.st_atime_ns, ns1))
+    if os.stat(absf).st_mtime_ns != ns1:
+        pytest.skip("OS/filesystem cannot represent 1ns mtime steps")
     assert float(ns1) / 1e9 == float(ns0) / 1e9, (
         "test premise broken: 1ns step changed the float mtime on this platform"
     )

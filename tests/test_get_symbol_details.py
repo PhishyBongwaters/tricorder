@@ -98,18 +98,22 @@ class TestGetSymbolDetails(unittest.TestCase):
 
     def test_cross_file_callees(self):
         """Cross-file callees are detected when a symbol calls something defined elsewhere."""
-        # get_symbol_detail in graph.py calls read_text (defined in utils.py)
+        # CacheMixin.get_tags in cache.py calls ParserMixin helpers
+        # (get_tags_raw, _add_class_context_to_tags in parser.py). Verified
+        # live: the old graph.py/get_symbol_detail example went stale after
+        # refactors (it now only calls self.* helpers, which resolve
+        # in-file), so the test pins a currently-true cross-file edge.
         result = asyncio.run(tricorder_detail(
             project_root=self.project_root,
-            file="graph.py",
-            name="get_symbol_detail"
+            file="cache.py",
+            name="get_tags"
         ))
         self.assertNotIn("error", result)
         sym = result["symbol"]
-        # Should have cross-file callees (e.g., read_text from utils.py)
+        # Should have cross-file callees (e.g., get_tags_raw from parser.py)
         cross_file_callees = [c for c in sym["callees"] if c.get("cross_file")]
         self.assertGreater(len(cross_file_callees), 0,
-                           "Expected cross-file callees (e.g., read_text from utils.py)")
+                           "Expected cross-file callees (e.g., get_tags_raw from parser.py)")
         for callee in cross_file_callees:
             self.assertIn("name", callee)
             self.assertIn("file", callee)

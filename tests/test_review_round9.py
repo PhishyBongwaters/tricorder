@@ -117,6 +117,10 @@ def test_tier_history_concurrent_access_no_crash(monkeypatch):
 # detect the replacement (dev+ino change) and rebuild instead of serving
 # the stale handle.
 
+@pytest.mark.skipif(os.name == "nt",
+                     reason="Windows locks open sqlite DBs (WinError 32); "
+                            "the locked-DB path is covered by "
+                            "test_init_wipe_locked_db_clean_error")
 def test_get_tricorder_rebuilds_when_db_file_replaced(tmp_path, monkeypatch):
     root = tmp_path / "proj"
     root.mkdir()
@@ -183,20 +187,23 @@ def test_init_wipe_locked_db_clean_error(tmp_path, monkeypatch, capsys):
 
 def test_plugin_db_uri_survives_special_chars(tmp_path, monkeypatch):
     import utils
-    root = tmp_path / "we#ird?repo"
+    # '?' is illegal in Windows file names; '#' still exercises URI
+    # escaping there, '?' is covered on POSIX.
+    weird = "we#ird_repo" if os.name == "nt" else "we#ird?repo"
+    root = tmp_path / weird
     root.mkdir()
     cache = tmp_path / "tcache"
     monkeypatch.setattr(utils, "_CACHE_ROOT", None)
     monkeypatch.setenv("TRICORDER_CACHE_HOME", str(cache))
     dbdir = cache / "db"
     dbdir.mkdir(parents=True)
-    dbpath = dbdir / "we#ird?repo.db"
+    dbpath = dbdir / f"{weird}.db"
     _make_db(dbpath, root, ["a.py"])
     plugin, teardown = _import_plugin()
     try:
         found = plugin._tricorder_db_for(str(root))
         assert found == str(dbpath), (
-            "plugin failed to open a DB whose path contains '#'/'?'")
+            f"plugin failed to open a DB whose path contains {weird!r}")
         line = plugin._db_coverage_line(str(dbpath), str(root))
         assert "mapped: 1 files" in line
     finally:

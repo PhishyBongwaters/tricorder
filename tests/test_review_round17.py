@@ -1,6 +1,9 @@
 """Round-17 fresh-eyes review tests (red-first)."""
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -61,6 +64,8 @@ def test_mermaid_node_ids_are_unique(tmp_path):
     out = tc.to_mermaid(
         chat_fnames=[str(f1)], other_fnames=[str(f1), str(f2)],
     )
+    # Normalize separators: Windows renders rel paths with backslashes.
+    out = out.replace("\\", "/")
     # Both files must appear as labeled nodes.
     assert "a.b/c.py" in out, "first file missing from mermaid output"
     assert "a/b.c.py" in out, "second file missing from mermaid output"
@@ -69,6 +74,8 @@ def test_mermaid_node_ids_are_unique(tmp_path):
     assert len(ids) == len(set(ids)), f"duplicate mermaid node ids: {ids}"
 
 
+@pytest.mark.skipif(os.name == "nt",
+                     reason="double-quote filenames are illegal on Windows")
 def test_mermaid_label_escapes_quotes(tmp_path):
     """A double-quote in a filename must not break out of the mermaid label."""
     evil = tmp_path / 'we"].ir.py'

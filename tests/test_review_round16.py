@@ -29,7 +29,9 @@ assert len(OLD) == len(NEW)
 def _make_repo():
     tmp = Path(tempfile.mkdtemp(prefix="r16_mtime_"))
     (tmp / ".tricorder").mkdir()
-    (tmp / "a.py").write_text(OLD, encoding="utf-8")
+    # newline="\n": text-mode writes on Windows would otherwise translate
+    # \n -> \r\n and break the exact byte-size premise below.
+    (tmp / "a.py").write_text(OLD, encoding="utf-8", newline="\n")
     return tmp
 
 
@@ -39,7 +41,7 @@ def _pin_mtime(path: Path):
     nanoseconds — exactly what a real sub-second edit looks like on a
     filesystem with ns timestamps."""
     st = os.stat(path)
-    path.write_text(NEW, encoding="utf-8")
+    path.write_text(NEW, encoding="utf-8", newline="\n")
     sec = int(st.st_mtime)
     new_ns = sec * 10**9 + 123_456_789  # same second, different ns
     os.utime(path, ns=(st.st_atime_ns, new_ns))

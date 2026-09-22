@@ -87,7 +87,12 @@ def test_get_tricorder_rebuilds_when_db_appears(tmp_path, monkeypatch):
 
 # --- 3: URI-escaped read-only opens ----------------------------------------
 
-@pytest.mark.parametrize("dirname", ["repo#1", "repo?x", "repo 100%"])
+# '?' is illegal in Windows file names, so that case only runs on POSIX.
+_SPECIAL_DIRS = ["repo#1", "repo 100%"]
+if os.name != "nt":
+    _SPECIAL_DIRS = _SPECIAL_DIRS + ["repo?x"]
+
+@pytest.mark.parametrize("dirname", _SPECIAL_DIRS)
 def test_read_only_connect_special_char_dirs(tmp_path, dirname):
     d = tmp_path / dirname
     d.mkdir()
