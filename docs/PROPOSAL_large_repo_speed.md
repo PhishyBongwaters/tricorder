@@ -1,5 +1,9 @@
 # Proposal: Large-Repo Processing Speed
 
+> **Implemented.** Tier 1 (per-worker parser cache) + Tier 2 (ProcessPool
+> fresh/incremental scans at ≥200 files) shipped; parallel paths live in
+> `ranking._parse_worker`. Kept as design record.
+
 **Branch:** `dev/db-map`  
 **Goal:** Make kotlin (57k files, ~14M tokens) and linux (66k files, ~50M tokens) tractable without 6-15h wall-clock. DB + incremental + resume are done; this is the speed tier on top.
 

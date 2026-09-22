@@ -333,8 +333,9 @@ project from config: `plugins.entries.tricorder.active_project` (via `/tricorder
 
 **Bounded, not chatty.** The map is built once (on session start / stale first turn);
 the digest is injected only on the first turn. Later turns stay silent — the map file
-+ MCP tools + skill cover follow-up access, keeping context economy intact (~1.5% of
-full-repo cost).
++ MCP tools + skill cover follow-up access, keeping context economy intact
+(~1.5% of full-repo cost — historical estimate from the pre-db-map pipeline;
+current measured numbers in `eval/comparison-runs/2026-09-21/README.md`).
 
 ---
 
