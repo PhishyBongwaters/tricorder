@@ -100,26 +100,27 @@ settings.stateless_http = True
 # Create MCP server
 mcp = FastMCP("tricorder")
 
-# No cache: re-checked on every call. The lookup costs two exists() checks
+# No cache: re-checked on every call. The lookup costs one exists() check
 # plus one read-only meta open — trivial next to a scan — and a cached
 # "no DB" answer would hide a canonical DB created by `tricorder --init`
 # after the server started (scans would silently run in-memory, diffs
 # would report everything as added).
 def _canonical_db_for(project_root: str) -> Optional[str]:
-    """First existing DB: <root>/.tricorder/db/<name>.db (--init canonical),
-    else <cache>/db/<name>.db (pre_scan default). None if neither mapped.
+    """Index DB for project_root: <cache>/db/<name>.db (canonical).
+
+    State is never kept inside the scanned repo — the canonical DB always
+    lives in the tricorder workspace cache root. None if not yet mapped.
 
     The lookup is by directory basename, so a same-named repo elsewhere can
     leave a colliding DB in the shared cache; db_root_matches rejects those
     (serving another repo's index would silently corrupt answers)."""
     name = f"{Path(project_root).name}.db"
-    for cand in (Path(project_root) / ".tricorder" / "db" / name,
-                 PRE_SCAN_DB_DIR / name):
-        try:
-            if cand.exists() and db_root_matches(str(cand), project_root):
-                return str(cand)
-        except Exception:
-            continue
+    cand = PRE_SCAN_DB_DIR / name
+    try:
+        if cand.exists() and db_root_matches(str(cand), project_root):
+            return str(cand)
+    except Exception:
+        pass
     return None
 
 

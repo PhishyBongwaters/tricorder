@@ -15,7 +15,7 @@ digest.
 ```bash
 # 1. Canonical DB (idempotent, prints path, exits)
 python tricorder.py --init --root /path/to/repo
-# -> /path/to/repo/.tricorder/db/repo.db
+# -> <cache>/db/repo.db  (TRICORDER_CACHE_HOME or <workspace>/.tricorder; never in the repo)
 
 # 2. Fill it (serial rising-cap loop; see chunking below)
 python chunk_resume.py /path/to/repo
@@ -26,7 +26,8 @@ python chunk_resume.py /path/to/repo
 # 3. Fresh session with the repo as root from here on
 ```
 
-`--init` creates `<root>/.tricorder/db/<name>.db`, applies schema
+`--init` creates `<cache>/db/<name>.db` (`<cache>` = `TRICORDER_CACHE_HOME`
+or `<workspace>/.tricorder` — never inside the scanned repo), applies schema
 (`database.py` `_DDL`) and size-based journal mode, stamps ownership
 (`meta.root`; extractor_version=0 = "not yet indexed", so the first scan
 does a full rescan), and exits. Re-running is safe; only `--init --wipe`

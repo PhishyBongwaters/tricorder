@@ -98,6 +98,10 @@ class TestSurfaceParity(unittest.TestCase):
             out = Path(tempfile.mkdtemp()) / "x.map"
 
             def fake_run(cmd, *a, **k):
+                if "--init" in cmd:
+                    # _canonical_db_path round-trip: hand back a cache DB path.
+                    return types.SimpleNamespace(returncode=0, stdout="/tmp/x.db\n",
+                                                 stderr="")
                 captured['cmd'] = cmd
                 return types.SimpleNamespace(returncode=0, stdout="", stderr="")
             plugin._TRICORDER_CLI = "tricorder"

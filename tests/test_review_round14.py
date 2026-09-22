@@ -25,13 +25,23 @@ _PYBIN = sys.executable
 _CLI = str(REPO / "tricorder.py")
 
 
-def _cli_run(root, *args):
+def _cli_run(root, *args, env=None):
     return subprocess.run([_PYBIN, _CLI, "--root", str(root), "--quiet", *args],
-                          capture_output=True, text=True, timeout=180)
+                          capture_output=True, text=True, timeout=180, env=env)
 
 
-def _canonical_db(root: Path) -> Path:
-    return root / ".tricorder" / "db" / f"{root.name}.db"
+def _test_env(tmp_path):
+    """Hermetic cache root per test: basename collisions in the shared
+    default cache must not leak state between tests."""
+    cache = tmp_path / "tcache"
+    return dict(os.environ, TRICORDER_CACHE_HOME=str(cache))
+
+
+def _canonical_db(root: Path, tmp_path) -> Path:
+    # Canonical DB lives in the tricorder workspace cache root — never in
+    # the scanned repo. Tests pass a hermetic TRICORDER_CACHE_HOME via
+    # _test_env, so the DB is under tmp_path/"tcache".
+    return tmp_path / "tcache" / "db" / f"{root.name}.db"
 
 
 def _rels(db_path: Path):
@@ -51,17 +61,18 @@ def test_scan_skips_symlink_pointing_outside_root(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "secret.py").write_text("def leaked_secret(): pass\n", encoding="utf-8")
+    env = _test_env(tmp_path)
     try:
         os.symlink(str(outside / "secret.py"), root / "link.py")
     except OSError:
         pytest.skip("symlinks unavailable")
 
-    assert _cli_run(root, "--init").returncode == 0
-    r = _cli_run(root)
+    assert _cli_run(root, "--init", env=env).returncode == 0
+    r = _cli_run(root, env=env)
     assert r.returncode == 0, r.stderr[-500:]
     assert "leaked_secret" not in r.stdout
 
-    db = _canonical_db(root)
+    db = _canonical_db(root, tmp_path)
     fs, tags = _rels(db)
     assert fs, "expected file_state rows for in-repo files"
     assert all(not os.path.isabs(x) for x in fs), fs
@@ -76,13 +87,14 @@ def test_scan_skips_symlinked_dir_pointing_outside_root(tmp_path):
     outside = tmp_path / "ext"
     outside.mkdir()
     (outside / "mod.py").write_text("def ext_fn(): pass\n", encoding="utf-8")
+    env = _test_env(tmp_path)
     try:
         os.symlink(str(outside), root / "extlink")
     except OSError:
         pytest.skip("symlinks unavailable")
 
-    assert _cli_run(root, "--init").returncode == 0
-    r = _cli_run(root)
+    assert _cli_run(root, "--init", env=env).returncode == 0
+    r = _cli_run(root, env=env)
     assert r.returncode == 0, r.stderr[-500:]
     assert "ext_fn" not in r.stdout
 
@@ -94,16 +106,17 @@ def test_diff_ignores_symlink_pointing_outside_root(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "secret.py").write_text("def leaked_secret(): pass\n", encoding="utf-8")
+    env = _test_env(tmp_path)
 
-    assert _cli_run(root, "--init").returncode == 0
-    assert _cli_run(root).returncode == 0
+    assert _cli_run(root, "--init", env=env).returncode == 0
+    assert _cli_run(root, env=env).returncode == 0
     # Add the escaping symlink AFTER the scan; diff must not report it.
     try:
         os.symlink(str(outside / "secret.py"), root / "link.py")
     except OSError:
         pytest.skip("symlinks unavailable")
 
-    r = _cli_run(root, "--diff")
+    r = _cli_run(root, "--diff", env=env)
     assert r.returncode == 0, r.stderr[-500:]
     assert "Added (0)" in r.stdout, \
         f"outside-root symlink must not report as added:\n{r.stdout}"
@@ -175,20 +188,21 @@ def test_scan_survives_symlink_loop(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
     (root / "real.py").write_text("def real_fn():\n    return 1\n", encoding="utf-8")
+    env = _test_env(tmp_path)
     try:
         os.symlink("b.py", root / "a.py")
         os.symlink("a.py", root / "b.py")
     except OSError:
         pytest.skip("symlinks unavailable")
 
-    assert _cli_run(root, "--init").returncode == 0
-    r = _cli_run(root)
+    assert _cli_run(root, "--init", env=env).returncode == 0
+    r = _cli_run(root, env=env)
     assert r.returncode == 0, f"scan crashed on symlink loop:\n{r.stderr[-800:]}"
     assert "RuntimeError" not in r.stderr
     assert "Symlink loop" not in r.stderr
     # The healthy file still maps.
     assert "real_fn" in r.stdout
 
-    db = _canonical_db(root)
+    db = _canonical_db(root, tmp_path)
     fs, _ = _rels(db)
     assert all(not os.path.isabs(x) for x in fs), fs

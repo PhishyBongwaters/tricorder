@@ -42,10 +42,10 @@ def _import_plugin():
     return plugin, teardown
 
 
-def _make_pre_goal3_db(root: Path) -> Path:
-    """A pre-Goal-3 index DB: tags + meta, but NO file_state table."""
-    db_dir = root / ".tricorder" / "db"
-    db_dir.mkdir(parents=True)
+def _make_pre_goal3_db(root: Path, cache: Path) -> Path:
+    """A pre-Goal-3 index DB in the cache root: tags + meta, but NO file_state table."""
+    db_dir = cache / "db"
+    db_dir.mkdir(parents=True, exist_ok=True)
     db_path = db_dir / (root.name + ".db")
     con = sqlite3.connect(str(db_path))
     con.execute("CREATE TABLE tags(file TEXT, rel_file TEXT, line INTEGER, name TEXT, kind TEXT)")
@@ -64,13 +64,17 @@ def _make_pre_goal3_db(root: Path) -> Path:
     return db_path
 
 
-def test_plugin_db_for_ignores_pre_file_state_db(tmp_path):
+def test_plugin_db_for_ignores_pre_file_state_db(tmp_path, monkeypatch):
     """_tricorder_db_for must not report a pre-Goal-3 DB as mapped."""
+    import utils
     root = tmp_path / "proj"
     root.mkdir()
+    cache = tmp_path / "tcache"
+    monkeypatch.setattr(utils, "_CACHE_ROOT", None)
+    monkeypatch.setenv("TRICORDER_CACHE_HOME", str(cache))
     plugin, teardown = _import_plugin()
     try:
-        db_path = _make_pre_goal3_db(root)
+        db_path = _make_pre_goal3_db(root, cache)
         assert db_path.exists()
         # A tags-distinct fallback would return the path ("2 files mapped").
         assert plugin._tricorder_db_for(str(root)) is None
@@ -78,13 +82,17 @@ def test_plugin_db_for_ignores_pre_file_state_db(tmp_path):
         teardown()
 
 
-def test_plugin_coverage_line_rejects_pre_file_state_db(tmp_path):
+def test_plugin_coverage_line_rejects_pre_file_state_db(tmp_path, monkeypatch):
     """_db_coverage_line must not emit a tags-distinct coverage line."""
+    import utils
     root = tmp_path / "proj"
     root.mkdir()
+    cache = tmp_path / "tcache"
+    monkeypatch.setattr(utils, "_CACHE_ROOT", None)
+    monkeypatch.setenv("TRICORDER_CACHE_HOME", str(cache))
     plugin, teardown = _import_plugin()
     try:
-        db_path = _make_pre_goal3_db(root)
+        db_path = _make_pre_goal3_db(root, cache)
         # The caller falls back to the probe digest on exception; a
         # tags-distinct count here would misreport coverage.
         with pytest.raises(Exception):
@@ -93,13 +101,18 @@ def test_plugin_coverage_line_rejects_pre_file_state_db(tmp_path):
         teardown()
 
 
-def test_plugin_db_for_accepts_current_db(tmp_path):
-    """Control: a current-schema DB with file_state still reports mapped."""
+def test_plugin_db_for_accepts_current_db(tmp_path, monkeypatch):
+    """Control: a current-schema DB with file_state still reports mapped.
+
+    The DB lives in the cache root (TRICORDER_CACHE_HOME) — never inside
+    the scanned repo."""
     root = tmp_path / "proj"
     root.mkdir()
+    cache = tmp_path / "tcache"
+    monkeypatch.setenv("TRICORDER_CACHE_HOME", str(cache))
     plugin, teardown = _import_plugin()
     try:
-        db_dir = root / ".tricorder" / "db"
+        db_dir = cache / "db"
         db_dir.mkdir(parents=True)
         db_path = db_dir / (root.name + ".db")
         con = sqlite3.connect(str(db_path))

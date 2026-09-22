@@ -55,8 +55,8 @@ tricorder.py --chat-files main.py --other-files src/
   `--no-db` opts out to the legacy in-memory graph (mutually
   exclusive with `--db-path`).
 - `--init`: create or open the canonical
-  `<root>/.tricorder/db/<name>.db`, print its path, exit. Idempotent;
-  never wipes without `--wipe`.
+  `<cache>/db/<name>.db` (never inside the scanned repo), print its
+  path, exit. Idempotent; never wipes without `--wipe`.
 - `--wipe` (with `--init` only): delete the canonical DB first.
 - `--force-refresh`: refreshes the map render cache. Does not
   reparse.

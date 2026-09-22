@@ -38,22 +38,24 @@ def find_git_root(base: str) -> Optional[str]:
 
 
 def _canonical_db_for(root: str) -> Optional[str]:
-    """First existing index DB for root: <root>/.tricorder/db/<name>.db
-    (--init canonical), else <cache>/db/<name>.db (pre_scan default).
-    Mirrors tricorder_server._canonical_db_for so the CLI --diff mode sees
-    the same index the MCP server uses. None if neither exists.
+    """Index DB for root: <cache>/db/<name>.db, keyed by directory basename.
+
+    State is never kept inside the scanned repo — the canonical DB always
+    lives in the tricorder workspace cache root (TRICORDER_CACHE_HOME or
+    <workspace>/.tricorder/). Mirrors tricorder_server._canonical_db_for so
+    the CLI --diff mode sees the same index the MCP server uses. None if
+    no DB exists yet.
 
     Basename collisions in the shared cache (same folder name, different
     repo) are rejected via db_root_matches — a mismatched DB reports as
     absent rather than corrupting the delta map."""
     name = f"{Path(root).name}.db"
-    for cand in (Path(root) / ".tricorder" / "db" / name,
-                 get_cache_root() / "db" / name):
-        try:
-            if cand.exists() and db_root_matches(str(cand), root):
-                return str(cand)
-        except Exception:
-            continue
+    cand = get_cache_root() / "db" / name
+    try:
+        if cand.exists() and db_root_matches(str(cand), root):
+            return str(cand)
+    except Exception:
+        pass
     return None
 
 
@@ -375,8 +377,9 @@ Examples:
     parser.add_argument(
         "--init",
         action="store_true",
-        help="Create/open the canonical DB at <root>/.tricorder/db/<name>.db "
-             "(journal mode auto by size), print its path and exit. Idempotent; "
+        help="Create/open the canonical DB at <cache>/db/<name>.db "
+             "(TRICORDER_CACHE_HOME or <workspace>/.tricorder; never inside "
+             "the scanned repo), print its path and exit. Idempotent; "
              "never wipes without --wipe."
     )
 
@@ -441,9 +444,11 @@ Examples:
 
     # --init: canonical DB path, create dirs, open (schema + journal by size
     # handled in DBStore.__init__), print path, exit. Early, like --probe-digest.
+    # The DB lives in the tricorder workspace cache root — never inside the
+    # scanned repo.
     if args.init:
         init_root = Path(args.root).resolve()
-        init_db = init_root / ".tricorder" / "db" / f"{init_root.name}.db"
+        init_db = get_cache_root() / "db" / f"{init_root.name}.db"
         init_db.parent.mkdir(parents=True, exist_ok=True)
         if args.wipe and init_db.exists():
             try:
@@ -484,13 +489,11 @@ Examples:
     if args.db_coverage:
         _cov_root = Path(args.root).resolve()
         _cov_name = _cov_root.name + ".db"
-        # (candidate, repo_local): the repo-local DB needs no ownership check —
-        # its location inside the root already proves it belongs to this root.
-        # A shared-cache candidate is keyed by directory basename, so a
+        # The shared-cache candidate is keyed by directory basename, so a
         # same-named repo elsewhere collides; only a DB whose meta.root is
         # this root may report coverage (otherwise repo B would inherit
         # repo A's "mapped" claim and turn-0 steering would skip a rescan).
-        _cov_cands = [(_cov_root / ".tricorder" / "db" / _cov_name, True)]
+        _cov_cands = []
         try:
             _cov_cands.append((get_cache_root() / "db" / _cov_name, False))
         except Exception:

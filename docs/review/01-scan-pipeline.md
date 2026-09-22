@@ -95,9 +95,11 @@ Mechanics:
   (`tricorder.py:296-300`). `--force-refresh` refreshes only the map
   render cache; it does not reparse.
 
-Canonical home: `<root>/.tricorder/db/<name>.db` (`--init --root`
-prints it). The MCP server tries that path first, then the central
-cache (`tricorder_server._canonical_db_for`).
+Canonical home: `<cache>/db/<name>.db` (`--init --root`
+prints it), where `<cache>` is `TRICORDER_CACHE_HOME` or
+`<workspace>/.tricorder` — never inside the scanned repo. The MCP
+server uses the same canonical path
+(`tricorder_server._canonical_db_for`).
 
 ## 4. Rank — which tags survive the token budget
 

@@ -117,11 +117,13 @@ def test_tier_history_concurrent_access_no_crash(monkeypatch):
 # detect the replacement (dev+ino change) and rebuild instead of serving
 # the stale handle.
 
-def test_get_tricorder_rebuilds_when_db_file_replaced(tmp_path):
+def test_get_tricorder_rebuilds_when_db_file_replaced(tmp_path, monkeypatch):
     root = tmp_path / "proj"
-    dbdir = root / ".tricorder" / "db"
-    dbdir.mkdir(parents=True)
-    dbpath = dbdir / "proj.db"
+    root.mkdir()
+    cachedb = tmp_path / "cachedb"
+    cachedb.mkdir()
+    monkeypatch.setattr(srv, "PRE_SCAN_DB_DIR", cachedb)
+    dbpath = cachedb / "proj.db"
     _make_db(dbpath, root, ["a.py"])
     srv._tricorder_cache.clear()
     try:
@@ -148,8 +150,13 @@ def test_init_wipe_locked_db_clean_error(tmp_path, monkeypatch, capsys):
     """Windows: unlink fails when the server holds the DB open. Must be a
     clean parser error, not a traceback."""
     import tricorder as cli_mod
+    import utils
     root = tmp_path / "proj"
-    dbdir = root / ".tricorder" / "db"
+    root.mkdir()
+    cache = tmp_path / "tcache"
+    monkeypatch.setattr(utils, "_CACHE_ROOT", None)
+    monkeypatch.setenv("TRICORDER_CACHE_HOME", str(cache))
+    dbdir = cache / "db"
     dbdir.mkdir(parents=True)
     (dbdir / "proj.db").touch()  # --wipe only unlinks an existing DB
     real_unlink = Path.unlink
@@ -174,9 +181,14 @@ def test_init_wipe_locked_db_clean_error(tmp_path, monkeypatch, capsys):
 # The plugin can't import tricorder in-process, so it inlines the URI form;
 # that inline copy had no regression test.
 
-def test_plugin_db_uri_survives_special_chars(tmp_path):
+def test_plugin_db_uri_survives_special_chars(tmp_path, monkeypatch):
+    import utils
     root = tmp_path / "we#ird?repo"
-    dbdir = root / ".tricorder" / "db"
+    root.mkdir()
+    cache = tmp_path / "tcache"
+    monkeypatch.setattr(utils, "_CACHE_ROOT", None)
+    monkeypatch.setenv("TRICORDER_CACHE_HOME", str(cache))
+    dbdir = cache / "db"
     dbdir.mkdir(parents=True)
     dbpath = dbdir / "we#ird?repo.db"
     _make_db(dbpath, root, ["a.py"])

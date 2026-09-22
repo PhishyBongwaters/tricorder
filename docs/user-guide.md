@@ -232,7 +232,7 @@ Useful commands:
 tricorder /path/to/repo --signature-only   # 16-char content signature
 tricorder /path/to/repo --force-refresh    # bust all caches, rescan
 tricorder /path/to/repo --db-coverage      # mapped-DB coverage line
-tricorder /path/to/repo --init             # canonical DB at <root>/.tricorder/db/
+tricorder /path/to/repo --init             # canonical DB at <cache>/db/ (never in the repo)
 ```
 
 **First-query cost on a fresh repo.** The first `detail` / `graph_query`

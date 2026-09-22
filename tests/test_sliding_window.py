@@ -1,5 +1,6 @@
 """Tests for the prefix-cap resume path: drop_mapped_files, --init
 ownership stamping, and canonical-DB resumption without --db-path."""
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -85,14 +86,16 @@ class TestCliCanonicalResume(unittest.TestCase):
         for i in range(6):
             (self.tmp / f"f{i}.py").write_text(
                 f"def f{i}():\n    return {i}\n", encoding="utf-8")
+        self.cache = self.tmp / "tcache"
+        self.env = dict(os.environ, TRICORDER_CACHE_HOME=str(self.cache))
 
     def _run(self, *args):
         return subprocess.run(
             [PY, CLI, "--root", str(self.tmp), *args],
-            capture_output=True, text=True, timeout=180)
+            capture_output=True, text=True, timeout=180, env=self.env)
 
     def _canonical(self):
-        return self.tmp / ".tricorder" / "db" / f"{self.tmp.name}.db"
+        return self.cache / "db" / f"{self.tmp.name}.db"
 
     def _file_state_count(self):
         db = self._canonical()
@@ -116,7 +119,19 @@ class TestCliCanonicalResume(unittest.TestCase):
         self.assertIsNotNone(row, "--init must stamp meta.root")
         # And the canonical lookup must now see the DB (previously: None
         # until a scan wrote meta, silently disabling resumption).
-        self.assertEqual(_canonical_db_for(str(self.tmp)), str(self._canonical()))
+        # Point the in-process cache at the test's hermetic cache root.
+        import utils
+        saved_root, saved_home = utils._CACHE_ROOT, os.environ.get("TRICORDER_CACHE_HOME")
+        try:
+            utils._CACHE_ROOT = None
+            os.environ["TRICORDER_CACHE_HOME"] = str(self.cache)
+            self.assertEqual(_canonical_db_for(str(self.tmp)), str(self._canonical()))
+        finally:
+            utils._CACHE_ROOT = saved_root
+            if saved_home is None:
+                os.environ.pop("TRICORDER_CACHE_HOME", None)
+            else:
+                os.environ["TRICORDER_CACHE_HOME"] = saved_home
 
     def test_rising_caps_resume_into_canonical(self):
         # --max-files is a prefix cap (house rule): a fixed-cap rerun adds
@@ -190,8 +205,16 @@ class TestUnwritableCanonical(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="ro_canonical_"))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
-        # Canonical DB with stamped ownership (what --init now produces).
-        dbdir = self.tmp / ".tricorder" / "db"
+        # Canonical DB with stamped ownership (what --init now produces),
+        # in a hermetic cache root — never inside the scanned repo.
+        import utils
+        self._saved_cache_root = utils._CACHE_ROOT
+        utils._CACHE_ROOT = None
+        self._saved_cache_home = os.environ.get("TRICORDER_CACHE_HOME")
+        cache = self.tmp / "tcache"
+        os.environ["TRICORDER_CACHE_HOME"] = str(cache)
+        self.addCleanup(self._restore_cache)
+        dbdir = cache / "db"
         dbdir.mkdir(parents=True)
         self.db = dbdir / f"{self.tmp.name}.db"
         store = DBStore(str(self.db))
@@ -200,6 +223,14 @@ class TestUnwritableCanonical(unittest.TestCase):
             store.commit()
         finally:
             store.close()
+
+    def _restore_cache(self):
+        import utils
+        utils._CACHE_ROOT = self._saved_cache_root
+        if self._saved_cache_home is None:
+            os.environ.pop("TRICORDER_CACHE_HOME", None)
+        else:
+            os.environ["TRICORDER_CACHE_HOME"] = self._saved_cache_home
 
     def _patch_unwritable(self):
         # os.access reports writable as root; simulate the non-root

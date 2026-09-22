@@ -33,9 +33,13 @@ class TestMcpUnwritableDbGuard(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="mcp_ro_db_"))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         (self.tmp / "a.py").write_text("x = 1\n", encoding="utf-8")
-        dbdir = self.tmp / ".tricorder" / "db"
-        dbdir.mkdir(parents=True)
-        self.db = dbdir / f"{self.tmp.name}.db"
+        import tricorder_server as _srv
+        cachedb = self.tmp / "cachedb"
+        cachedb.mkdir(parents=True)
+        self._saved_pre_scan = _srv.PRE_SCAN_DB_DIR
+        _srv.PRE_SCAN_DB_DIR = cachedb
+        self.addCleanup(setattr, _srv, "PRE_SCAN_DB_DIR", self._saved_pre_scan)
+        self.db = cachedb / f"{self.tmp.name}.db"
         store = DBStore(str(self.db))
         try:
             store.set_meta(str(self.tmp), "", 0)

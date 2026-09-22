@@ -174,7 +174,7 @@ def test_keyboard_interrupt_clean_exit(monkeypatch):
     assert exc.value.code == 130
 
 
-def test_db_coverage_never_tags_distinct(monkeypatch, capsys):
+def test_db_coverage_never_tags_distinct(monkeypatch, capsys, tmp_path):
     """House rule: coverage = COUNT(*) FROM file_state, never tags-distinct.
 
     A pre-Goal-3 DB (tags but no file_state table) must report unmapped
@@ -182,8 +182,12 @@ def test_db_coverage_never_tags_distinct(monkeypatch, capsys):
     """
     import sqlite3
     import tricorder as cli
+    import utils
     d = _repo(1)
-    dbdir = d / ".tricorder" / "db"
+    cache = tmp_path / "tcache"
+    monkeypatch.setattr(utils, "_CACHE_ROOT", None)
+    monkeypatch.setenv("TRICORDER_CACHE_HOME", str(cache))
+    dbdir = cache / "db"
     dbdir.mkdir(parents=True)
     p = dbdir / (d.name + ".db")
     con = sqlite3.connect(str(p))

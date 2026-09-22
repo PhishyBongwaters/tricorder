@@ -329,6 +329,32 @@ def _list_cached_projects() -> list:
 # Core: produce the map
 # ---------------------------------------------------------------------------
 
+def _canonical_db_path(cli: str, project_root: str) -> Optional[str]:
+    """Canonical index-DB path for project_root, via `tricorder --init`.
+
+    --init is idempotent (creates the DB in the tricorder workspace cache
+    root — never inside the scanned repo — and prints its path). Using it
+    keeps the plugin on the same single source of truth as the CLI and the
+    MCP server instead of reimplementing the cache-root convention.
+    Returns the path, or None on failure."""
+    try:
+        r = subprocess.run(
+            [cli, "--root", project_root, "--init"],
+            capture_output=True, text=True, timeout=120,
+        )
+    except Exception as exc:
+        logger.debug("tricorder: --init failed: %s", exc)
+        return None
+    if r.returncode != 0:
+        logger.debug("tricorder: --init failed: %s", r.stderr[-300:])
+        return None
+    lines = [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+    if not lines:
+        logger.debug("tricorder: --init printed no path")
+        return None
+    return lines[-1]
+
+
 def build_map(project_root: str) -> Optional[dict]:
     """Run tricorder scan for project_root into the cache. Returns meta dict
     (map_file, token_estimate, symbol counts) or None on failure. Best-effort,
@@ -339,11 +365,14 @@ def build_map(project_root: str) -> Optional[dict]:
         logger.debug("tricorder: CLI not found; skipping map")
         return None
     out = _cache_file(project_root)
-    # Canonical in-repo DB: slash scans populate the same sqlite that turn-0,
-    # MCP tools, and chunk_resume.py read (same convention as --init).
-    _root = Path(project_root).resolve()
-    _db = _root / ".tricorder" / "db" / (_root.name + ".db")
-    _db.parent.mkdir(parents=True, exist_ok=True)  # DBStore won't create dirs
+    # Canonical DB in the tricorder workspace cache root (never inside the
+    # scanned repo): `tricorder --init` prints its path and is the single
+    # source of truth, so slash scans populate the same sqlite that turn-0,
+    # MCP tools, and chunk_resume.py read.
+    _db = _canonical_db_path(cli, project_root)
+    if not _db:
+        logger.debug("tricorder: --init failed; skipping map")
+        return None
     cmd = [
         cli, "--root", project_root,
         "--tier", "0",
@@ -458,8 +487,8 @@ def _tricorder_db_for(root: str) -> Optional[str]:
     """
     import sqlite3 as _sq
     name = Path(root).name + ".db"
-    # In-repo canonical (--init) first, cache-root homes as fallback.
-    candidates = [Path(root) / ".tricorder" / "db" / name]
+    # Cache-root homes only — state never lives inside the scanned repo.
+    candidates = []
     env = os.environ.get("TRICORDER_CACHE_HOME")
     if env:
         candidates.append(Path(env) / "db" / name)

@@ -44,8 +44,8 @@ def test_canonical_db_for_picks_up_late_created_db(tmp_path, monkeypatch):
     assert srv._canonical_db_for(str(root)) is None
 
     # Create the canonical DB afterwards (meta root must match).
-    db_dir = root / ".tricorder" / "db"
-    db_dir.mkdir(parents=True)
+    db_dir = tmp_path / "cachedb"
+    db_dir.mkdir(parents=True, exist_ok=True)
     db_path = db_dir / "myrepo.db"
     db = DBStore(str(db_path))
     try:
@@ -70,8 +70,8 @@ def test_get_tricorder_rebuilds_when_db_appears(tmp_path, monkeypatch):
     first = srv._get_tricorder(str(root))
     assert first._db_path is None  # no DB yet -> in-memory
 
-    db_dir = root / ".tricorder" / "db"
-    db_dir.mkdir(parents=True)
+    db_dir = tmp_path / "cachedb2"
+    db_dir.mkdir(parents=True, exist_ok=True)
     db_path = db_dir / "myrepo2.db"
     db = DBStore(str(db_path))
     try:

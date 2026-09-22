@@ -17,8 +17,12 @@ _PYBIN = sys.executable
 
 
 def _cli_run(root, *args):
+    # Hermetic cache root: the canonical DB now lives in the cache, and the
+    # default cache is shared across tests — "proj.db" would collide.
+    cache = Path(root).parent / "tcache"
+    env = dict(os.environ, TRICORDER_CACHE_HOME=str(cache))
     return subprocess.run([_PYBIN, _CLI, "--root", str(root), "--quiet", *args],
-                          capture_output=True, text=True, timeout=180)
+                          capture_output=True, text=True, timeout=180, env=env)
 
 
 def test_diff_symlink_not_phantom_added(tmp_path):

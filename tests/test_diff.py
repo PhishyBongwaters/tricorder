@@ -309,8 +309,9 @@ class TestCanonicalDbRootGuard(unittest.TestCase):
 
     def test_scan_db_resolution_is_canonical(self):
         # tricorder_scan must use the same canonical lookup as the other
-        # tools: an in-repo .tricorder/db/<name>.db wins over the shared
-        # cache, and a colliding cache DB is still rejected for repo B.
+        # tools: only the shared-cache DB is consulted — a stale in-repo
+        # .tricorder/db/<name>.db (legacy --init layout) is ignored, and a
+        # colliding cache DB is still rejected for repo B.
         import tricorder_server as srv
         in_repo = self.repo_a / ".tricorder" / "db" / "proj.db"
         in_repo.parent.mkdir(parents=True, exist_ok=True)
@@ -320,7 +321,7 @@ class TestCanonicalDbRootGuard(unittest.TestCase):
         db.conn.close()
         # _canonical_db_for is uncached (round 8): no cache_clear needed.
         self.assertEqual(srv._canonical_db_for(str(self.repo_a)),
-                         str(in_repo))
+                         str(self.cache_db))
         self.assertIsNone(srv._canonical_db_for(str(self.repo_b)))
 
 

@@ -54,10 +54,13 @@ def test_db_coverage_rejects_shared_cache_collision(tmp_path):
 
 def test_db_coverage_counts_file_state_not_tags(tmp_path):
     root = (tmp_path / "repo").resolve()
-    (root / ".tricorder" / "db").mkdir(parents=True)
+    root.mkdir(parents=True)
+    cache = tmp_path / "cache"
+    (cache / "db").mkdir(parents=True)
     # tagless files own zero tag rows, but the repo is still mapped
-    _make_db(root / ".tricorder" / "db" / "repo.db", root, ["a.py", "data.json"])
-    r = _run(root)
+    _make_db(cache / "db" / "repo.db", root, ["a.py", "data.json"])
+    env = dict(os.environ, TRICORDER_CACHE_HOME=str(cache))
+    r = _run(root, env)
     assert r.returncode == 0, r.stderr
     assert "mapped: 2 files, 0 tags" in r.stdout
 

@@ -33,16 +33,16 @@ def _cli(*args, env=None):
         [PY, CLI, *args], capture_output=True, text=True, timeout=180, env=e)
 
 
-def _make_canonical_db(tmp, files):
+def _make_canonical_db(tmp, files, db_parent):
     """Write files, then build a populated canonical index DB for the repo
     (like a finished scan would leave it): meta stamped, file_state set
     from real file stats, checkpointed on close so immutable=1 readers
-    see everything."""
+    see everything. The DB is created under db_parent (a cache-root "db"
+    dir) — never inside the scanned repo."""
     for name, text in files.items():
         (tmp / name).write_text(text, encoding="utf-8")
-    dbdir = tmp / ".tricorder" / "db"
-    dbdir.mkdir(parents=True, exist_ok=True)
-    db = dbdir / f"{tmp.name}.db"
+    db_parent.mkdir(parents=True, exist_ok=True)
+    db = db_parent / f"{tmp.name}.db"
     store = DBStore(str(db))
     try:
         store.set_meta(str(tmp), "", 0)
@@ -116,9 +116,13 @@ class TestMcpScanUnwritableGuard(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="mcp6_"))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         (self.tmp / "a.py").write_text("x = 1\n", encoding="utf-8")
-        dbdir = self.tmp / ".tricorder" / "db"
-        dbdir.mkdir(parents=True)
-        self.db = dbdir / f"{self.tmp.name}.db"
+        import tricorder_server as _srv
+        self._cachedb = self.tmp / "cachedb"
+        self._cachedb.mkdir(parents=True)
+        self._saved_pre_scan = _srv.PRE_SCAN_DB_DIR
+        _srv.PRE_SCAN_DB_DIR = self._cachedb
+        self.addCleanup(setattr, _srv, "PRE_SCAN_DB_DIR", self._saved_pre_scan)
+        self.db = self._cachedb / f"{self.tmp.name}.db"
         store = DBStore(str(self.db))
         try:
             store.set_meta(str(self.tmp), "", 0)
@@ -155,12 +159,16 @@ class TestMcpDiffReadOnly(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="mcpdiff6_"))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        import tricorder_server as _srv
+        cachedb = self.tmp / "cachedb"
         self.db = _make_canonical_db(
-            self.tmp, {"a.py": "def foo():\n    return 1\n"})
+            self.tmp, {"a.py": "def foo():\n    return 1\n"}, cachedb)
+        _saved = _srv.PRE_SCAN_DB_DIR
+        _srv.PRE_SCAN_DB_DIR = cachedb
+        self.addCleanup(setattr, _srv, "PRE_SCAN_DB_DIR", _saved)
         (self.tmp / "a.py").write_text(
             "def foo():\n    return 1\n\n\ndef bar():\n    return 2\n",
             encoding="utf-8")
-        import tricorder_server as _srv
         _srv._tricorder_cache.clear()
         self.addCleanup(_srv._tricorder_cache.clear)
 
@@ -192,7 +200,12 @@ class TestDiffCliHardening(unittest.TestCase):
     def test_diff_against_read_only_canonical_db(self):
         tmp = Path(tempfile.mkdtemp(prefix="diffro6_"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        db = _make_canonical_db(tmp, {"a.py": "def foo():\n    return 1\n"})
+        home = tmp / "nobody_home"
+        home.mkdir(mode=0o777, exist_ok=True)
+        cache = tmp / "nobody_cache"
+        cache.mkdir(mode=0o777, exist_ok=True)
+        db = _make_canonical_db(tmp, {"a.py": "def foo():\n    return 1\n"},
+                                cache / "db")
         (tmp / "a.py").write_text(
             "def foo():\n    return 1\n\n\ndef bar():\n    return 2\n",
             encoding="utf-8")
@@ -205,10 +218,6 @@ class TestDiffCliHardening(unittest.TestCase):
                        check=True)
         subprocess.run(["chmod", "-R", "a+rX", str(REPO.parent), str(venv)],
                        check=True)
-        home = tmp / "nobody_home"
-        home.mkdir(mode=0o777, exist_ok=True)
-        cache = tmp / "nobody_cache"
-        cache.mkdir(mode=0o777, exist_ok=True)
 
         r = subprocess.run(
             ["runuser", "-u", "nobody", "--", "env",
