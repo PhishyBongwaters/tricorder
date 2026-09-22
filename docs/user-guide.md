@@ -235,6 +235,17 @@ tricorder /path/to/repo --db-coverage      # mapped-DB coverage line
 tricorder /path/to/repo --init             # canonical DB at <root>/.tricorder/db/
 ```
 
+**First-query cost on a fresh repo.** The first `detail` / `graph_query`
+(or MCP `tricorder_detail`) against a repo builds the cross-ref index with
+two serial passes over every file: one for imports, one for symbols and
+references. This is *time*, not tokens — parsing is local, nothing is sent
+to the model, and your token budget is unaffected. The index is what lets a
+"who calls this?" answer come back as a tight list of callers instead of
+whole dumped files, which is where the token savings come from. The built
+index is cached on disk (fingerprint-invalidated), so you pay this once per
+repo; later queries reuse it. On very large trees (10k+ files) expect the
+first query to take minutes — that is the index building, not a hang.
+
 ## Configuration reference
 
 All optional env vars:
