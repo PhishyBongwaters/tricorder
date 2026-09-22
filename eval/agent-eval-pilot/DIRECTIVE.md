@@ -38,3 +38,12 @@ warm DB (see below) and say so in the prompt.
   returned junk JS hits costing 58,624 tokens — 50× the leg's clean cost
   (1,093) and the costliest step in the pilot. Same crowding class as
   Swift Q4, at the query-formulation layer.
+
+## v1.3 (query formulation: exact-first, capped first passes)
+
+- **Exact symbol guess first, NL only as fallback.** Every exact query in
+  the pilot cost 150–1,150 tokens; every NL-first query risked five
+  figures. Guess the likeliest identifier (`buildssa`, not "build SSA
+  form for function") before spending an NL query.
+- **Cap first passes:** NL queries run with `--max-results 5`. Widen to 10
+  only when the narrow pass returns nothing usable.
