@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 import fnmatch
+import re
+import tempfile
 import time
 import sys
 from pathlib import Path
@@ -61,6 +63,107 @@ def get_cache_root() -> Path:
     return base
 
 
+def resolve_or_none(path: str) -> Optional[str]:
+    """Resolve a path, returning None when it cannot be resolved.
+
+    Symlink loops raise RuntimeError from Path.resolve(); dangling
+    links and permission errors raise OSError. Per-file call sites must
+    skip such files with a warning instead of crashing the whole scan.
+    """
+    try:
+        return str(Path(path).resolve())
+    except (OSError, RuntimeError):
+        return None
+
+
+def stat_fingerprint(st) -> tuple:
+    """(size, mtime_ns) stat fingerprint for change detection.
+
+    mtime is kept at nanosecond resolution on purpose: truncating to
+    whole seconds (int(st.st_mtime)) makes a same-second, same-size edit
+    invisible to the dirty-diff, so incremental rescans and --diff would
+    serve stale tags forever with no signal. SQLite INTEGER holds ns
+    values fine (~1.8e18 < 9.2e18 max).
+    DBs written by older versions store whole-second mtimes; those
+    compare unequal to ns values, so the first scan after upgrade
+    re-parses everything once (self-healing, no migration needed).
+    """
+    return (st.st_size, st.st_mtime_ns)
+
+
+def read_only_connect(db_path: str):
+    """Open a sqlite DB read-only; never creates the file.
+
+    immutable=1 matters: every file DB uses WAL journal mode, and a
+    plain mode=ro open of a WAL DB fails ("unable to open database
+    file") when the -shm/-wal sidecars can't be created — exactly the
+    read-only-checkout case these probes target. immutable=1 tells
+    sqlite to read the main file only, skipping sidecar access (the
+    caller must not need uncheckpointed WAL rows, and must hold the
+    connection only briefly — the file is assumed frozen meanwhile).
+
+    The path is percent-encoded into the URI (Path.as_uri) so DBs under
+    directories containing '#' or '?' (e.g. Windows `C:\\dev\\proj#2\\`)
+    open correctly instead of silently targeting a truncated path.
+    """
+    import sqlite3 as _sq
+    uri = Path(os.path.abspath(db_path)).as_uri() + "?mode=ro&immutable=1"
+    return _sq.connect(uri, uri=True)
+
+
+def _db_writable(db_path: str) -> bool:
+    """True when the process can write the DB file and its directory.
+
+    SQLite needs the directory too (WAL -shm/-wal sidecars). A canonical
+    DB that exists but isn't writable (read-only checkout, foreign owner)
+    can't back a map scan — the extractor gate does DELETEs on first use.
+
+    The directory check is a create+delete probe file, not
+    os.access(dir, W_OK): on Windows os.access uses MSVC _waccess, which
+    for directories checks existence only, never ACLs. The file check
+    keeps os.access — it honors ACLs on files on Windows.
+    """
+    p = Path(db_path)
+    if p.exists() and not os.access(str(p), os.W_OK):
+        return False
+    try:
+        fd, probe = tempfile.mkstemp(dir=str(p.parent),
+                                     prefix=".tricorder-wprobe-")
+        try:
+            os.close(fd)
+        finally:
+            os.unlink(probe)
+        return True
+    except OSError:
+        return False
+
+
+def db_root_matches(db_path: str, root: str) -> bool:
+    """True when the DB's meta.root is the same directory as root.
+
+    Canonical-DB lookup is by directory basename, so two repos that share a
+    folder name collide in the shared cache dir. Serving the wrong repo's
+    index would silently corrupt diff/detect/detail answers — a mismatched
+    DB is treated as absent instead. Read-only; never creates the DB.
+    """
+    try:
+        con = read_only_connect(db_path)
+        try:
+            row = con.execute(
+                "SELECT root FROM meta ORDER BY rowid DESC LIMIT 1").fetchone()
+        finally:
+            con.close()
+    except Exception:
+        return False
+    if not row or not row[0]:
+        return False
+    try:
+        return (os.path.normcase(os.path.abspath(row[0]))
+                == os.path.normcase(os.path.abspath(root)))
+    except Exception:
+        return False
+
+
 def safe_write(path, text, *, allow_escape=False, encoding="utf-8") -> Path:
     """Write text to a Tricorder-managed path. Structural guard for the
     never-write-to-scanned-repo invariant (TC-006/TC-008).
@@ -101,6 +204,8 @@ class SymbolRecord:
     body: str = ""     # code body, first 500 chars (get_symbol_details)
     callers: list = None  # list of {file, line} dicts (get_symbol_details)
     callees: list = None  # list of {name, file, line} dicts (get_symbol_details)
+    stop_note: str = ""  # set when name is a stop-name: cross-file callers
+                         # intentionally unresolved (def in >50 files)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -129,6 +234,55 @@ def count_tokens(text: str, model_name: str = "gpt-4") -> int:
         encoding = _tiktoken.get_encoding("cl100k_base")
 
     return len(encoding.encode(text))
+
+
+def enforce_search_budget(items, max_tokens):
+    """Trim a ranked search-result list to a token budget (in place-safe).
+
+    Trim order mirrors the detail budgetter: drop per-hit bulk first
+    (`context`, else `docstring`) from the lowest-ranked hits upward, then
+    drop lowest-ranked hits entirely. Identity (`file`/`line`/`name`) of
+    the head hit always survives (best-effort under the floor, same
+    convention as the detail budget).
+
+    items: list of result dicts, best first. max_tokens None or <= 0
+    disables trimming (current unbounded behavior).
+    Returns (items, truncated, omitted) where omitted counts dropped hits
+    (context-stripped survivors are still listed, not omitted).
+    """
+    if not items:
+        return items, False, 0
+    if max_tokens is None or max_tokens <= 0:
+        return items, False, 0
+
+    def _cost(rs):
+        return count_tokens(json.dumps(rs), "gpt-4")
+
+    original = len(items)
+    out = [dict(h) for h in items]
+    truncated = False
+    if _cost(out) <= max_tokens:
+        return out, False, 0
+
+    # Phase 1: strip bulk text tail-up (context for detect hits,
+    # docstring for symbol records).
+    for h in reversed(out):
+        if _cost(out) <= max_tokens:
+            break
+        for key in ("context", "docstring"):
+            if h.get(key):
+                h[key] = ""
+                truncated = True
+                break
+
+    # Phase 2: drop tail hits until the serialized total holds or one
+    # identity hit remains (measured each step — tokenizers aren't
+    # additive across edits, so the loop itself is the guarantee).
+    while len(out) > 1 and _cost(out) > max_tokens:
+        out.pop()
+        truncated = True
+
+    return out, True, original - len(out)
 
 
 def read_text(filename: str, encoding: str = "utf-8", silent: bool = False, 
@@ -202,8 +356,8 @@ _MAX_SOURCE_FILE_SIZE = 1024 * 1024
 _MAX_SCAN_FILES = 0  # 0 = unlimited; env TRICORDER_MAX_SCAN_FILES to cap
 # TC-002: missing envelope pieces — directory-depth, total-byte, and scan-time
 # budgets so a hostile repo can't drive unbounded CPU/memory/disk. All
-# overridable via env; discovery already early-stops at _MAX_SCAN_FILES.
-_MAX_SCAN_DEPTH = 25
+# overridable via env; discovery early-stops at _MAX_SCAN_FILES only when set
+# (0 = unlimited by default so full-repo maps are never truncated).
 _MAX_SCAN_DEPTH = 25
 _MAX_TOTAL_BYTES = 0  # 0 = unlimited; env TRICORDER_MAX_TOTAL_BYTES to cap
 _MAX_SCAN_TIME_S = 0.0  # 0 = unlimited; env TRICORDER_MAX_SCAN_TIME_S to cap
@@ -232,6 +386,158 @@ def _env_float(name: str, default: float) -> float:
         except (TypeError, ValueError):
             pass
     return default
+
+
+def _discover_src_files_threaded(directory, skip_dirs, exclude_globs, report,
+                                 workers, max_scan_depth, max_total_bytes,
+                                 max_scan_files, max_scan_time_s,
+                                 max_source_file_size, root_depth, start):
+    """Bounded-pool directory walk. Same filters/budgets as the serial path.
+
+    Controls: fixed worker count, one lock around budget counters, stop
+    flag checked per directory, reservations made before appends (budgets
+    can never overshoot), output sorted for determinism.
+    """
+    import queue as _queue
+    import threading as _threading
+
+    if report is not None:
+        report.clear()
+    lock = _threading.Lock()
+    stop = {"reason": None}
+    # state: files, total_bytes, oversized_skipped, depth_skipped, pending
+    st = {"files": [], "bytes": 0, "oversized": 0, "depth": 0, "pending": 1}
+    q: _queue.Queue = _queue.Queue()
+    _root_resolved = str(Path(directory).resolve())
+    q.put(_root_resolved)
+
+    def process_dir(d):
+        try:
+            entries = list(os.scandir(d))
+        except OSError:
+            return []
+        depth = len(Path(d).parts) - root_depth
+        subdirs = []
+        if depth <= max_scan_depth:
+            for e in entries:
+                try:
+                    if not e.is_dir(follow_symlinks=False):
+                        continue
+                except OSError:
+                    continue
+                if e.name.startswith('.') or e.name in skip_dirs:
+                    continue
+                if depth + 1 > max_scan_depth:
+                    with lock:
+                        st["depth"] += 1
+                    continue
+                subdirs.append(e.path)
+        else:
+            with lock:
+                st["depth"] += len([e for e in entries
+                                    if e.is_dir(follow_symlinks=False)])
+        for e in entries:
+            if stop["reason"]:
+                return subdirs
+            try:
+                if e.is_dir(follow_symlinks=False) or e.name.startswith('.'):
+                    continue
+            except OSError:
+                continue
+            low = e.name.lower()
+            if any(low.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS | _ARCHIVE_EXTS | _DATA_EXTS):
+                continue
+            try:
+                sz = e.stat(follow_symlinks=False).st_size
+            except OSError:
+                sz = 0
+            if sz > max_source_file_size:
+                with lock:
+                    st["oversized"] += 1
+                continue
+            if exclude_globs:
+                try:
+                    rel = os.path.relpath(e.path, directory).replace(os.sep, '/')
+                    if any(fnmatch.fnmatch(rel, pat) for pat in exclude_globs):
+                        continue
+                except ValueError:
+                    continue
+            with lock:
+                if stop["reason"]:
+                    return subdirs
+                if max_scan_files > 0 and len(st["files"]) >= max_scan_files:
+                    stop["reason"] = f"reached file-count limit ({max_scan_files})"
+                    return subdirs
+                if max_total_bytes > 0 and st["bytes"] + sz >= max_total_bytes:
+                    stop["reason"] = f"reached total-byte limit ({max_total_bytes} bytes)"
+                    return subdirs
+                if max_scan_time_s > 0 and (time.monotonic() - start) >= max_scan_time_s:
+                    stop["reason"] = f"reached scan-time limit ({max_scan_time_s}s)"
+                    return subdirs
+                # Emit in serial-path format (os.path.join off the as-given
+                # root) so threaded/serial runs are byte-identical inputs
+                # downstream — DB rel keys and cap prefixes must not shift.
+                st["files"].append(os.path.join(
+                    directory, os.path.relpath(e.path, _root_resolved)))
+                st["bytes"] += sz
+        return subdirs
+
+    def worker():
+        while True:
+            if stop["reason"]:
+                # Drain without processing; pending handled by main loop below.
+                try:
+                    d = q.get(timeout=0.1)
+                except _queue.Empty:
+                    return
+                if d is None:
+                    q.task_done()
+                    return
+                with lock:
+                    st["pending"] -= 1
+                    if st["pending"] == 0:
+                        for _ in range(workers):
+                            q.put(None)
+                q.task_done()
+                continue
+            try:
+                d = q.get(timeout=0.5)
+            except _queue.Empty:
+                with lock:
+                    if st["pending"] == 0:
+                        return
+                continue
+            if d is None:
+                q.task_done()
+                return
+            for sub in process_dir(d):
+                q.put(sub)
+                with lock:
+                    st["pending"] += 1
+            with lock:
+                st["pending"] -= 1
+                if st["pending"] == 0:
+                    for _ in range(workers):
+                        q.put(None)
+            q.task_done()
+
+    threads = [_threading.Thread(target=worker, daemon=True) for _ in range(workers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    files = sorted(st["files"])
+    if report is not None:
+        report["files_considered"] = len(files)
+        report["oversized_skipped"] = st["oversized"]
+        report["depth_skipped"] = st["depth"]
+        if stop["reason"]:
+            report["warning"] = (
+                f"Scan completed with limits: skipped {st['oversized']} "
+                f"oversized files, {st['depth']} files beyond depth "
+                f"{max_scan_depth}; {stop['reason']}."
+            )
+    return files
 
 
 def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs: Optional[List[str]] = None, report: Optional[dict] = None) -> List[str]:
@@ -267,18 +573,36 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
             p = p.parent
         gitignore_dirs = parse_gitignore(git_root or directory)
     skip_dirs = gitignore_dirs | _BUILTIN_SKIP_DIRS | {'vendor'}
-    src_files = []
-    total_bytes = 0
-    oversized_skipped = 0
-    depth_skipped = 0
-    start = time.monotonic()
-    root_depth = Path(directory).resolve().parts.__len__()
     # TC-002: read envelope budgets at call time so env overrides (incl. tests) work.
     max_scan_depth = _env_int("TRICORDER_MAX_SCAN_DEPTH", _MAX_SCAN_DEPTH)
     max_total_bytes = _env_int("TRICORDER_MAX_TOTAL_BYTES", _MAX_TOTAL_BYTES)
     max_scan_files = _env_int("TRICORDER_MAX_SCAN_FILES", _MAX_SCAN_FILES)
     max_scan_time_s = _env_float("TRICORDER_MAX_SCAN_TIME_S", _MAX_SCAN_TIME_S)
     max_source_file_size = _env_int("TRICORDER_MAX_SOURCE_FILE_SIZE", _MAX_SOURCE_FILE_SIZE)
+    start = time.monotonic()
+    root_depth = Path(directory).resolve().parts.__len__()
+    # Threaded walk: directory listing on Windows is latency-bound, so a
+    # small bounded pool beats a serial walk 3-5x. Controls against flood:
+    # fixed worker count (env TRICORDER_WALK_WORKERS, default min(8, cpu)),
+    # one shared lock for budget counters + stop flag, deterministic sorted
+    # output. 0/1 = serial legacy path.
+    import concurrent.futures as _cf
+    try:
+        _workers = int(os.environ.get("TRICORDER_WALK_WORKERS", "0"))
+    except ValueError:
+        _workers = 0
+    if _workers <= 0:
+        _workers = min(8, os.cpu_count() or 4)
+    if _workers > 1:
+        return _discover_src_files_threaded(
+            directory, skip_dirs, exclude_globs, report, _workers,
+            max_scan_depth, max_total_bytes, max_scan_files,
+            max_scan_time_s, max_source_file_size, root_depth, start,
+        )
+    src_files = []
+    total_bytes = 0
+    oversized_skipped = 0
+    depth_skipped = 0
     for r, d, f_list in os.walk(directory):
         # TC-002: directory-depth budget.
         depth = Path(r).resolve().parts.__len__() - root_depth
@@ -334,6 +658,9 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
                     report["oversized_skipped"] = oversized_skipped
                     report["depth_skipped"] = depth_skipped
                 return src_files
+    # Deterministic order: window stability across runs requires the walk
+    # prefix to be stable, so the serial path sorts like the threaded one.
+    src_files.sort()
     if report is not None:
         report["files_considered"] = len(src_files)
         report["oversized_skipped"] = oversized_skipped
@@ -404,6 +731,36 @@ def detect_lang(fname: str) -> Optional[str]:
     patterns (struct, function, enum, typedef) are all in cpp-tags.scm.
     """
     from grep_ast import filename_to_lang
+    # Local extension table, checked BEFORE grep-ast: grammars the pack
+    # ships but filename_to_lang doesn't map. Colliding extensions
+    # (.fs forth/fsharp, .v verilog/V, .m matlab/objc) stay unmapped
+    # here — ambiguity needs content sniffing, not a coin flip.
+    _LOCAL_EXTS = {
+        ".nim": "nim", ".nims": "nim",
+        ".vb": "vb",
+        ".mojo": "mojo",
+        ".cr": "crystal",
+        ".awk": "awk",
+        ".pyx": "cython", ".pxd": "cython",
+        ".st": "smalltalk",
+        ".sml": "sml",
+        ".vala": "vala", ".vapi": "vala",
+        ".graphql": "graphql", ".gql": "graphql",
+        ".lean": "lean",
+        ".ql": "ql", ".qll": "ql",
+        ".wast": "wast", ".wat": "wat",
+        ".fsi": "fsharp", ".fsx": "fsharp",
+        ".mo": "motoko",
+        ".re": "reason", ".rei": "reason",
+        ".res": "rescript",
+        ".sw": "sway",
+        ".tact": "tact",
+        ".yang": "yang",
+        ".yul": "yul",
+    }
+    for ext, lang in _LOCAL_EXTS.items():
+        if fname.endswith(ext):
+            return lang
     lang = filename_to_lang(fname)
     if lang == "c" and fname.endswith((".h", ".H")):
         return "cpp"
@@ -653,7 +1010,7 @@ class QueryModifiers:
 @dataclass
 class TraversalStep:
     """A single traversal step in the query."""
-    kind: str  # "callers", "callees", "refs", "defs"
+    kind: str  # "callers", "callees", "refs", "defs", "tests_for"
     target: str  # symbol name to start from
     modifiers: QueryModifiers
 
@@ -664,23 +1021,241 @@ class ParsedQuery:
     steps: List[TraversalStep]
 
 
+TEST_FILE_GLOBS = (
+    "*/tests/*",
+    "*/test/*",
+    "*/__tests__/*",
+    "test_*",
+    "*_test.*",
+    "*.test.*",
+    "*_spec.*",
+)
+"""Path patterns (POSIX, matched against full path and basename) that identify
+test files across common layouts: pytest/unittest (test_*.py, *_test.py,
+tests/), Go (*_test.go), JS/TS (*.test.js, __tests__/), RSpec (*_spec.rb)."""
+
+
+def is_test_file(path: str) -> bool:
+    """Return True if path looks like a test file.
+
+    Used by the tests_for graph traversal to restrict callers to test files.
+    Matches against both the full POSIX path and the basename so bare
+    filenames (no directory) work too.
+    """
+    name = path.replace("\\", "/")
+    base = name.rsplit("/", 1)[-1]
+    # The "/" + name probe lets "*/tests/*"-style globs match bare paths
+    # like "tests/test_a.py" (fnmatch '*' can match empty, but the literal
+    # '/' in the pattern still needs a character to anchor against).
+    candidates = (name, "/" + name, base)
+    return any(
+        fnmatch.fnmatchcase(cand, pat)
+        for cand in candidates
+        for pat in TEST_FILE_GLOBS
+    )
+
+
+_WORD_SPLIT = re.compile(r"[_\-\s\./]+")
+
+
+def _camel_split(word: str):
+    """Split a camelCase/CamelCase/screaming token into words. Deterministic."""
+    return [w for w in re.split(
+        r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", word) if w]
+
+
+# Small verb synonym groups for deterministic query expansion (no ML).
+# Each group lists interchangeable verbs commonly swapped in identifiers
+# (get/fetch, set/store...). Expansion is single-word substitution only.
+_SYNONYM_GROUPS = (
+    ("get", "fetch", "load", "retrieve", "read"),
+    ("set", "store", "write", "save", "put"),
+    ("create", "make", "build", "new"),
+    ("delete", "remove", "drop", "clear"),
+    ("find", "search", "lookup", "locate"),
+    ("pack", "dump", "serialize"),
+    ("unpack", "parse", "deserialize"),
+)
+_SYN_MAP = {}
+for _g in _SYNONYM_GROUPS:
+    for _w in _g:
+        _SYN_MAP.setdefault(_w, set()).update(x for x in _g if x != _w)
+
+
+def query_variants(query: str):
+    """Deterministic orthographic variants for a retrieve-0 rescue (no LLM).
+
+    Strips C++-style decorations off a query (template args, parens, namespace
+    qualifier) and re-joins the word parts under every separator/case form so a
+    dead-end exact lookup like `PCM::AddToBuffer<128,128>` or `Add_To_buffer`
+    still resolves to the base symbol name. Results of a rescue are flagged
+    'fuzzy' downstream so the agent/judge know they are not exact-name hits.
+    ponytail: case fold + separator + camel split only; no stemmer, add one if
+    plural/tense variants measurably miss.
+    """
+    q = query.strip()
+    core = re.sub(r"<[^<>]*>", "", q)      # strip template args <128,128>
+    core = re.sub(r"[()]", "", core)       # strip parens (incl. std::map<int>)
+    core = core.split("::")[-1]            # namespace -> basename
+    # Dot-qualified idiom (Python/JS: Model.save) -> stored :: form.
+    # Qualified tags are stored as Class::method, so a natural "Model.save"
+    # query could never hit the real tag and fell through to fuzzy junk.
+    # Seed the :: form (and lowercase) as top-ranked variants.
+    q_cc = q.replace(".", "::") if "." in q else None
+    words = [w for part in _WORD_SPLIT.split(core) for w in _camel_split(part) if w]
+    if not words:
+        words = [core]
+    variants = {q, q.lower()}
+    if q_cc:
+        variants.add(q_cc)
+        variants.add(q_cc.lower())
+    for sep in ("_", "-", "", " "):
+        variants.add(sep.join(words))
+        variants.add(sep.join(words).lower())
+    variants.add("".join(w.lower() for w in words))
+    # Synonym-swapped forms: single-word substitution from _SYN_MAP, joined
+    # forms only (bounded: one substitution per variant, cap extras).
+    wl = [w.lower() for w in words]
+    extra = 0
+    for i, w in enumerate(wl):
+        for syn in sorted(_SYN_MAP.get(w, ())):
+            if extra >= 20:
+                break
+            swapped = list(wl)
+            swapped[i] = syn
+            variants.add("_".join(swapped))
+            variants.add("".join(swapped))
+            extra += 1
+    variants.discard("")
+    # Prefer the base-name/joined forms, NEVER bare word fragments (a bare
+    # 'get' over-matches every get_* symbol and caps the rescue before the
+    # specific base arrives). Keep the raw-decorated forms last — they should
+    # only win when nothing else did. ponytail: no stemming.
+    def _rank(v):
+        base_l = "".join(w.lower() for w in words)
+        if q_cc and v.lower() == q_cc.lower():
+            return -1  # dotted query's :: reading outranks the joined base
+        if v.lower() == base_l:
+            return 0
+        if v.lower() == "".join(words).lower():
+            return 1
+        if v == q:
+            return 3
+        return 2
+    return sorted(variants, key=lambda s: (_rank(s), len(s), s))
+
+
+def tokenize_identifier(name: str):
+    """Split an identifier into lowercase word tokens (separators + camel)."""
+    return [w.lower() for part in _WORD_SPLIT.split(name)
+            for w in _camel_split(part) if w]
+
+
+# Filler words in natural-language detect queries ("which function", "the",
+# "into"). Applied to the QUERY side only: short code tokens like "is"/"in"
+# keep their meaning inside identifier spans and are never stripped there.
+NL_QUERY_STOPWORDS = frozenset(
+    "a an the and or as at by for from in into of on to with "
+    "is are was were be been being do does did done have has had "
+    "that this these those it its which what when where how why "
+    "then than so such no nor own same too very can will just shall may "
+    "i me my we our you your he him his she her they them their "
+    "s t ve re ll d m".split()
+)
+
+# Synonym groups for the content-backed detect tier, canonicalized to the
+# first element so "arguments" (query) meets "args" (identifier). Verb
+# groups mirror _SYNONYM_GROUPS; noun groups bridge NL plurals/abstractions
+# to the terse names code actually uses.
+_CONTENT_SYNONYM_GROUPS = _SYNONYM_GROUPS + (
+    ("args", "argument", "arguments"),
+    ("params", "parameter", "parameters"),
+    # Q1 pilot: the NL query says "dependency" while the code says
+    # "dependant" (_solve_generator's parameter). Nominal/adjectival
+    # forms of the same root must meet, or the token can never match.
+    ("depend", "dependency", "dependencies", "dependant", "dependants",
+     "dependent", "dependents"),
+    # Q3 pilot: the NL query says "dictionary" while the code says
+    # "dict". The ubiquitous code abbreviation must meet its NL
+    # expansion.
+    ("dict", "dictionary", "dictionaries"),
+)
+_CONTENT_CANON = {}
+for _g in _CONTENT_SYNONYM_GROUPS:
+    for _w in _g:
+        _CONTENT_CANON.setdefault(_w, _g[0])
+
+# Words whose trailing "s" is not a plural: the inflection strip in
+# canonical_token must leave them alone ("news" is not "new").
+_INFLECTION_EXCEPTIONS = frozenset({"news"})
+
+
+def canonical_token(tok: str) -> str:
+    """Map a token to its synonym-group canonical form, else itself.
+
+    Inflection-aware: "builds" folds to "build" first so it meets the
+    ("create","make","build","new") group. The strip only applies when the
+    stripped form is actually a group member, so non-group words like
+    "responses" or "status" pass through unchanged (their plural handling
+    stays in the caller's plural-insensitive matcher). A tiny exception
+    list covers words whose trailing "s" is not a plural ("news" is not
+    "new").
+    """
+    hit = _CONTENT_CANON.get(tok)
+    if hit is not None:
+        return hit
+    if (len(tok) > 3 and tok.endswith("s") and not tok.endswith("ss")
+            and tok not in _INFLECTION_EXCEPTIONS):
+        hit = _CONTENT_CANON.get(tok[:-1])
+        if hit is not None:
+            return hit
+    return tok
+
+
+def levenshtein(a: str, b: str, max_dist: int = 2) -> int:
+    """Edit distance with early exit past max_dist (stdlib only)."""
+    if a == b:
+        return 0
+    if abs(len(a) - len(b)) > max_dist:
+        return max_dist + 1
+    if len(a) > len(b):
+        a, b = b, a
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        row_min = i
+        for j, cb in enumerate(b, 1):
+            d = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb))
+            cur.append(d)
+            if d < row_min:
+                row_min = d
+        if row_min > max_dist:
+            return max_dist + 1
+        prev = cur
+    return prev[-1]
+
+
 def parse_query_dsl(dsl: str) -> ParsedQuery:
     """Parse graph query DSL into structured form.
 
     Grammar:
         query := traversal (pipe traversal)*
         traversal := kind '(' target ')' modifiers?
-        kind := "callers" | "callees" | "refs" | "defs"
+        kind := "callers" | "callees" | "refs" | "defs" | "tests_for"
         target := quoted string (single or double quotes)
         modifiers := (modifier)*
         modifier := "depth=" INT | "exclude=" GLOB | "include=" GLOB
                   | "type=" ("function"|"class"|"method"|"variable") | "limit=" INT
         pipe := "|"
 
+    tests_for('name') is callers('name') restricted to test files — it answers
+    "which tests exercise this symbol?".
+
     Examples:
         "callers('authenticate') depth=2"
         "callees('main') depth=1 exclude=tests/**"
         "refs('Config') type=class limit=50"
+        "tests_for('authenticate')"                    # tests calling authenticate
         "callers('foo') | callees('bar') depth=3"
     """
     if not dsl or not dsl.strip():
@@ -695,7 +1270,7 @@ def parse_query_dsl(dsl: str) -> ParsedQuery:
             continue
 
         # Match kind and target: kind('target') or kind("target")
-        match = re.match(r'^(callers|callees|refs|defs)\s*\(\s*([\'"])(.*?)\2\s*\)(.*)$', trav_str)
+        match = re.match(r'^(callers|callees|refs|defs|tests_for)\s*\(\s*([\'"])(.*?)\2\s*\)(.*)$', trav_str)
         if not match:
             raise ValueError(f"Invalid traversal syntax: {trav_str}")
 
@@ -739,4 +1314,41 @@ def parse_query_dsl(dsl: str) -> ParsedQuery:
     return ParsedQuery(steps=steps)
 
 
-import re
+def _base(name: str) -> str:
+    """Strip namespace prefix and signature suffix from a symbol name.
+
+    Used for fuzzy matching between qualified query strings (e.g.
+    'PCM::GetFrameAudioData') and stored symbol keys (e.g.
+    'PCM::GetFrameAudioData() const -> FrameAudioData').
+    """
+    if '::' in name:
+        name = name.split('::', 1)[-1]
+    if '(' in name:
+        name = name.split('(', 1)[0]
+    elif name.endswith('()'):
+        name = name[:-2]
+    return name
+
+
+def _qual(name: str) -> str:
+    """Strip signature suffix but keep namespace scope.
+
+    Companion to _base(): 'PCM::GetFrameAudioData() const -> FrameAudioData'
+    becomes 'PCM::GetFrameAudioData', whereas _base() gives
+    'GetFrameAudioData'. Used for graph traversal keys so a qualified query
+    keeps its identity instead of degrading to the bare name (F1).
+    """
+    if '(' in name:
+        name = name.split('(', 1)[0]
+    return name
+
+
+def _scope(name: str) -> Optional[str]:
+    """Namespace scope of a symbol name, or None if unqualified.
+
+    'A::B::run' -> 'A::B'; 'run' -> None. Signature text is ignored.
+    """
+    q = _qual(name)
+    if '::' in q:
+        return q.rsplit('::', 1)[0]
+    return None

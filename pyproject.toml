@@ -9,7 +9,8 @@ description = "Tricorder — Star Trek-inspired code intelligence. Scans codebas
 requires-python = ">=3.11"
 dependencies = [
     "diskcache>=5.6.0",
-    "fastmcp>=2.11.3",
+    "fastmcp>=4.0.0",
+    "mcp>=2.0.0",
     "grep-ast>=0.3.0",
     "networkx>=3.0",
     "pygments>=2.14.0",
@@ -28,7 +29,7 @@ tricorder = "tricorder:main"
 tricorder-mcp = "tricorder_server:main"
 
 [tool.setuptools]
-py-modules = ["tricorder", "tricorder_server", "core", "utils", "importance", "scm", "name_resolver", "import_parser"]
+py-modules = ["tricorder", "tricorder_server", "core", "utils", "importance", "scm", "name_resolver", "import_parser", "cache", "chunk_resume", "ctags_probe", "database", "graph", "parser", "pre_scan", "ranking", "render", "report", "tricorder_client", "tricorder_inject"]
 
 [tool.pytest.ini_options]
 norecursedirs = ["tests/fixtures"]

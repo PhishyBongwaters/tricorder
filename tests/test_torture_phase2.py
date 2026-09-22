@@ -17,13 +17,36 @@ from tricorder_server import (
 )
 
 
-REPOS = [
-    ("linux", r"D:\Projects\Tricorder-Testing-Repos\linux"),
-    ("LibreChat", r"D:\Projects\Tricorder-Testing-Repos\LibreChat"),
-    ("vaultwarden", r"D:\Projects\Tricorder-Testing-Repos\vaultwarden"),
-    ("rails", r"D:\Projects\Tricorder-Testing-Repos\rails"),
-    ("spring-boot", r"D:\Projects\Tricorder-Testing-Repos\spring-boot"),
-]
+def _default_repos():
+    """Repo list for the torture script.
+
+    Transportable: override with TRICORDER_TORTURE_REPOS (os.pathsep-separated
+    "<name>=<path>" or bare "<path>" entries). Defaults keep the original
+    Windows testbed layout; missing repos are skipped gracefully in main().
+    """
+    env = os.environ.get("TRICORDER_TORTURE_REPOS")
+    if env:
+        repos = []
+        for entry in env.split(os.pathsep):
+            entry = entry.strip()
+            if not entry:
+                continue
+            if "=" in entry:
+                name, path = entry.split("=", 1)
+            else:
+                name, path = Path(entry).name, entry
+            repos.append((name.strip(), path.strip()))
+        return repos
+    return [
+        ("linux", r"D:\Projects\Tricorder-Testing-Repos\linux"),
+        ("LibreChat", r"D:\Projects\Tricorder-Testing-Repos\LibreChat"),
+        ("vaultwarden", r"D:\Projects\Tricorder-Testing-Repos\vaultwarden"),
+        ("rails", r"D:\Projects\Tricorder-Testing-Repos\rails"),
+        ("spring-boot", r"D:\Projects\Tricorder-Testing-Repos\spring-boot"),
+    ]
+
+
+REPOS = _default_repos()
 
 
 def measure_discovery(repo_root: str, name: str) -> dict:

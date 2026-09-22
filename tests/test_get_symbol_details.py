@@ -1,6 +1,8 @@
 """Tests for tricorder_detail MCP tool (Milestone 3)."""
 import asyncio
+import shutil
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -32,7 +34,7 @@ class TestGetSymbolDetails(unittest.TestCase):
         """Body is truncated to 500 chars."""
         result = asyncio.run(tricorder_detail(
             project_root=self.project_root,
-            file="core.py",
+            file="ranking.py",
             name="get_ranked_tags"
         ))
         self.assertNotIn("error", result)
@@ -62,7 +64,7 @@ class TestGetSymbolDetails(unittest.TestCase):
         """Callers and callees are populated from in-file references."""
         result = asyncio.run(tricorder_detail(
             project_root=self.project_root,
-            file="core.py",
+            file="graph.py",
             name="get_symbol_detail"
         ))
         self.assertNotIn("error", result)
@@ -96,18 +98,22 @@ class TestGetSymbolDetails(unittest.TestCase):
 
     def test_cross_file_callees(self):
         """Cross-file callees are detected when a symbol calls something defined elsewhere."""
-        # get_symbol_detail in core.py calls read_text (defined in utils.py)
+        # CacheMixin.get_tags in cache.py calls ParserMixin helpers
+        # (get_tags_raw, _add_class_context_to_tags in parser.py). Verified
+        # live: the old graph.py/get_symbol_detail example went stale after
+        # refactors (it now only calls self.* helpers, which resolve
+        # in-file), so the test pins a currently-true cross-file edge.
         result = asyncio.run(tricorder_detail(
             project_root=self.project_root,
-            file="core.py",
-            name="get_symbol_detail"
+            file="cache.py",
+            name="get_tags"
         ))
         self.assertNotIn("error", result)
         sym = result["symbol"]
-        # Should have cross-file callees (e.g., read_text from utils.py)
+        # Should have cross-file callees (e.g., get_tags_raw from parser.py)
         cross_file_callees = [c for c in sym["callees"] if c.get("cross_file")]
         self.assertGreater(len(cross_file_callees), 0,
-                           "Expected cross-file callees (e.g., read_text from utils.py)")
+                           "Expected cross-file callees (e.g., get_tags_raw from parser.py)")
         for callee in cross_file_callees:
             self.assertIn("name", callee)
             self.assertIn("file", callee)
@@ -145,63 +151,6 @@ class TestGetSymbolDetails(unittest.TestCase):
         self.assertNotIn("error", result)
         self.assertEqual(result["symbol"]["name"], "count_tokens")
 
-    def test_cpp_symbol_with_trailing_parens(self):
-        """C/C++ tree-sitter queries yield names with trailing '()'; tricorder_detail
-        must still match a clean name. Regression for stretchMonitors() in projectM."""
-        import os
-        header = r"D:\Projects\projectm\src\sdl-test-ui\pmSDL.hpp"
-        if not os.path.isfile(header):
-            self.skipTest(f"projectM header not found: {header}")
-        result = asyncio.run(tricorder_detail(
-            project_root=r"D:\Projects\projectm",
-            file=r"src\sdl-test-ui\pmSDL.hpp",
-            name="stretchMonitors"
-        ))
-        self.assertNotIn("error", result)
-        # C++ methods are now scoped (Class::method); the base name must match.
-        returned = result["symbol"]["name"].rstrip("()")
-        self.assertTrue(
-            returned == "stretchMonitors" or returned.endswith("::stretchMonitors"),
-            f"expected stretchMonitors (scoped or bare), got {returned!r}",
-        )
-
-    def test_function_scope_isolation(self):
-        """Callees and callers are scoped to the function body, not the whole file.
-
-        PCM.cpp has sibling functions with overlapping call targets (e.g.
-        UpdateSpectrum, Align, CopyNewWaveformData).  GetFrameAudioData must
-        NOT list callees from UpdateFrameAudioData or CopyNewWaveformData.
-        """
-        import os
-        pcm = r"D:\Projects\projectm\src\libprojectM\Audio\PCM.cpp"
-        if not os.path.isfile(pcm):
-            self.skipTest(f"PCM.cpp not found: {pcm}")
-
-        result = asyncio.run(tricorder_detail(
-            project_root=r"D:\Projects\projectm",
-            file=r"src\libprojectM\Audio\PCM.cpp",
-            name="GetFrameAudioData"
-        ))
-        self.assertNotIn("error", result)
-        sym = result["symbol"]
-
-        # end_line must cover the body, not just the declarator
-        self.assertGreaterEqual(sym["end_line"], 97,
-                                "end_line should cover the full function body")
-
-        # Collect callee names
-        callee_names = {c["name"] for c in sym["callees"]}
-
-        # These are defined in PCM.cpp but belong to OTHER functions —
-        # they must NOT appear as callees of GetFrameAudioData.
-        false_positives = callee_names & {"CopyNewWaveformData", "UpdateSpectrum", "Align"}
-        self.assertFalse(false_positives,
-                         f"GetFrameAudioData should not see callees from sibling functions: {false_positives}")
-
-        # Verify end_line is correct (PCM.cpp GetFrameAudioData body is L76-97)
-        self.assertEqual(sym["end_line"], 97,
-                         "end_line must match the actual closing brace of the function body")
-
     def test_performance(self):
         """Single symbol lookup returns in <1s."""
         start = time.time()
@@ -213,6 +162,136 @@ class TestGetSymbolDetails(unittest.TestCase):
         elapsed = time.time() - start
         self.assertNotIn("error", result)
         self.assertLess(elapsed, 1.0, f"Took {elapsed:.2f}s, expected <1s")
+
+
+class TestCppSymbolDetailsSynthetic(unittest.TestCase):
+    """Portable replacements for the projectM-dependent tests.
+
+    Synthesizes a small C++ project in a temp dir exercising the same code
+    paths (scoped-name matching, function-scope callee isolation) without
+    the D:\\Projects\\projectm checkout.
+    """
+
+    HEADER = '''#pragma once
+class Monitor {
+public:
+    void stretchMonitors();
+    int width();
+};
+'''
+
+    IMPL = '''#include "monitor.hpp"
+
+void UpdateSpectrum() {}
+void Align() {}
+void CopyNewWaveformData() {}
+
+void GetFrameAudioData() {
+    UpdateSpectrum();
+}
+
+void UpdateFrameAudioData() {
+    CopyNewWaveformData();
+    Align();
+}
+
+void Monitor::stretchMonitors() {
+    width();
+}
+'''
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="cpp_detail_"))
+        (self.tmp / "monitor.hpp").write_text(self.HEADER, encoding="utf-8")
+        (self.tmp / "audio.cpp").write_text(self.IMPL, encoding="utf-8")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_cpp_scoped_name_match(self):
+        """tricorder_detail matches a clean name against a scoped C++ symbol
+        (Monitor::stretchMonitors). Portable version of the projectM
+        stretchMonitors() regression test."""
+        result = asyncio.run(tricorder_detail(
+            project_root=str(self.tmp),
+            file="monitor.hpp",
+            name="stretchMonitors",
+        ))
+        self.assertNotIn("error", result)
+        # C++ methods are scoped (Class::method); the base name must match.
+        returned = result["symbol"]["name"].rstrip("()")
+        self.assertTrue(
+            returned == "stretchMonitors" or returned.endswith("::stretchMonitors"),
+            f"expected stretchMonitors (scoped or bare), got {returned!r}",
+        )
+
+    def test_function_scope_isolation(self):
+        """Callees are scoped to the function body, not the whole file.
+
+        audio.cpp has sibling functions with overlapping call targets
+        (UpdateSpectrum, Align, CopyNewWaveformData). GetFrameAudioData must
+        NOT list callees belonging to UpdateFrameAudioData.
+        """
+        result = asyncio.run(tricorder_detail(
+            project_root=str(self.tmp),
+            file="audio.cpp",
+            name="GetFrameAudioData",
+        ))
+        self.assertNotIn("error", result)
+        sym = result["symbol"]
+
+        # end_line must cover the body, not just the declarator
+        self.assertGreaterEqual(sym["end_line"], 9,
+                                "end_line should cover the full function body")
+
+        callee_names = {c["name"] for c in sym["callees"]}
+        self.assertIn("UpdateSpectrum", callee_names,
+                      "the function's own callee must be listed")
+        # Defined in audio.cpp but belonging to a SIBLING function —
+        # they must NOT appear as callees of GetFrameAudioData.
+        false_positives = callee_names & {"CopyNewWaveformData", "Align"}
+        self.assertFalse(false_positives,
+                         f"GetFrameAudioData should not see callees from sibling functions: {false_positives}")
+
+    def test_qualified_query_resolves_correct_class(self):
+        """A qualified query (Renderer::render) must return Renderer::render,
+        not the first substring match in file order.
+
+        Regression: exact match compared _base(sym.name) == symbol_name
+        (only the symbol side based), so a qualified query never hit exact
+        and the fuzzy fallback returned class Renderer (via
+        "renderer" in "renderer::render") instead of the requested method.
+        """
+        (self.tmp / "render.cpp").write_text(
+            "class Previewer {\npublic:\n    void render();\n};\n\n"
+            "class Renderer {\npublic:\n    void render();\n};\n\n"
+            "void Previewer::render() {}\n"
+            "void Renderer::render() {}\n",
+            encoding="utf-8",
+        )
+        result = asyncio.run(tricorder_detail(
+            project_root=str(self.tmp),
+            file="render.cpp",
+            name="Renderer::render",
+        ))
+        self.assertNotIn("error", result)
+        sym = result["symbol"]
+        self.assertEqual(sym["name"], "Renderer::render")
+        self.assertEqual(sym["type"], "function")
+
+    def test_qualified_query_python_base_match(self):
+        """A qualified query against Python (bare symbol names) resolves via
+        base-name exact match instead of falling through to fuzzy."""
+        (self.tmp / "widget.py").write_text(
+            "class Widget:\n    def render(self):\n        return 1\n",
+            encoding="utf-8",
+        )
+        result = asyncio.run(tricorder_detail(
+            project_root=str(self.tmp),
+            file="widget.py",
+            name="Widget::render",
+        ))
+        self.assertNotIn("error", result)
+        sym = result["symbol"]
+        self.assertEqual(sym["name"], "render")
 
 
 if __name__ == '__main__':

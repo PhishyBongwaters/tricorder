@@ -1,4 +1,5 @@
 """Tests for MCP server path handling and token limit enforcement."""
+import os
 import sys
 import unittest
 sys.path.insert(0, '.')
@@ -23,10 +24,17 @@ class TestMCPPathHandling(unittest.TestCase):
         self.assertEqual(str(rel), 'file.py')
 
     def test_path_normalize_consistency(self):
-        """Multiple relative paths resolve consistently."""
-        paths = ['./utils.py', 'utils.py', '.\\\\utils.py']
+        """Multiple relative paths resolve consistently (portable forms)."""
+        paths = ['./utils.py', 'utils.py']
         resolved = [str(Path(p).resolve()) for p in paths]
         self.assertEqual(len(set(resolved)), 1, "All relative paths should resolve to same absolute path")
+
+    @unittest.skipUnless(os.name == 'nt', "backslash separators only normalize on Windows")
+    def test_path_normalize_windows_backslash(self):
+        """Windows: '.\\utils.py' resolves like './utils.py'."""
+        paths = ['./utils.py', '.\\utils.py']
+        resolved = [str(Path(p).resolve()) for p in paths]
+        self.assertEqual(len(set(resolved)), 1, "Backslash relative path should resolve consistently")
 
 
 class TestMCPTokenLimit(unittest.TestCase):
@@ -51,14 +59,23 @@ class TestMCPTokenLimit(unittest.TestCase):
 
     def test_max_files_cap(self):
         """Auto-scan respects max_files limit."""
-        from tricorder_server import find_src_files
+        import asyncio
+        from tricorder_server import find_src_files, tricorder_scan
         all_files = find_src_files(self.project_root)
         max_files = 10
-        if len(all_files) > max_files:
-            capped = all_files[:max_files]
-            self.assertEqual(len(capped), max_files)
-        else:
-            self.assertLessEqual(len(all_files), max_files)
+        self.assertGreater(len(all_files), max_files,
+                           "fixture must exceed the cap for the test to mean anything")
+        result = asyncio.run(tricorder_scan(
+            project_root=self.project_root,
+            token_limit=2048,
+            tier=0,
+            max_files=max_files,
+            output_format="text",
+        ))
+        self.assertNotIn("error", result)
+        self.assertLessEqual(
+            result["report"]["total_files_considered"], max_files,
+            "auto-scan must honor the max_files prefix cap")
 
 
 class TestMCPTierContext(unittest.TestCase):
@@ -72,6 +89,8 @@ class TestMCPTierContext(unittest.TestCase):
         rm_small = Tricorder(root=self.project_root, context_lines=2)
         rm_large = Tricorder(root=self.project_root, context_lines=5)
         ranked_tags, _ = rm_small.get_ranked_tags([class_path], [])
+        # Guarded assertions below would pass silently on empty results.
+        self.assertTrue(ranked_tags, "fixture must yield tags for the comparison")
         if ranked_tags:
             tree_small = rm_small.to_tree(ranked_tags[:3], set())
             tree_large = rm_large.to_tree(ranked_tags[:3], set())
@@ -183,6 +202,7 @@ class TestMCPOutputFile(unittest.TestCase):
 
         self.assertIn("map", result, "Without output_file, 'map' key should be present")
         self.assertNotIn("map_file", result)
+        self.assertNotIn("error", result, "dry_run=False stdout scan must succeed")
         if "error" not in result:
             self.assertIsInstance(result["map"], str)
         # TC-005: trust metadata on stdout success responses
@@ -249,8 +269,19 @@ class TestMCPMaxFilesClamp(unittest.TestCase):
     def test_max_files_clamped_to_server_limit(self):
         """A caller passing max_files=999999999 is clamped to MAX_ALLOWED_FILES."""
         import asyncio
-        from tricorder_server import tricorder_scan
-        # Request absurd size — should be clamped, not honored
+        from tricorder_server import tricorder_scan, _clamp_max_files
+        # Unit-level: the TC-007 clamp itself (a full scan can't observe it —
+        # no test repo has 10000+ files, so the server limit is unreachable
+        # end-to-end). Pin the env so the default is exercised.
+        import os
+        saved = os.environ.pop("TRICORDER_MAX_ALLOWED_FILES", None)
+        try:
+            self.assertEqual(_clamp_max_files(999999999), 10000)
+            self.assertEqual(_clamp_max_files(10), 10)
+        finally:
+            if saved is not None:
+                os.environ["TRICORDER_MAX_ALLOWED_FILES"] = saved
+        # End-to-end: an absurd max_files still completes a valid scan.
         result = asyncio.run(tricorder_scan(
             project_root=self.project_root,
             token_limit=2048,
@@ -259,8 +290,6 @@ class TestMCPMaxFilesClamp(unittest.TestCase):
             output_format="text",
         ))
         self.assertNotIn("error", result)
-        # If there are files, the result should still be bounded (not crash)
-        # The clamp guarantees the scan never processes more than MAX_ALLOWED_FILES
         if "tags" in result:
             self.assertIsInstance(result["tags"], int)
 
@@ -323,6 +352,7 @@ class TestMCPTrustMetadata(unittest.TestCase):
             query="Tricorder",
             max_results=5,
         ))
+        self.assertNotIn("error", result, "tool call must succeed for trust-metadata assertions")
         if "error" not in result:
             self.assertEqual(result.get("source"), "scanned_repository")
             self.assertEqual(result.get("trust"), "untrusted_repository_content")
@@ -336,6 +366,7 @@ class TestMCPTrustMetadata(unittest.TestCase):
             query="Tricorder",
             limit=5,
         ))
+        self.assertNotIn("error", result, "tool call must succeed for trust-metadata assertions")
         if "error" not in result:
             self.assertEqual(result.get("source"), "scanned_repository")
             self.assertEqual(result.get("trust"), "untrusted_repository_content")
@@ -380,9 +411,64 @@ class TestMCPTrustMetadata(unittest.TestCase):
             query='defs("Tricorder") depth=1 limit=10',
             token_limit=2048,
         ))
+        self.assertNotIn("error", result, "tool call must succeed for trust-metadata assertions")
         if "error" not in result:
             self.assertEqual(result.get("source"), "scanned_repository")
             self.assertEqual(result.get("trust"), "untrusted_repository_content")
+
+
+class TestMCPValidationUnify(unittest.TestCase):
+    """tricorder_detail must use the shared _validate_project_root like the
+    other six MCP tools (strict resolve, is-dir check, readability).
+
+    8375d81 unified tricorder_query but missed tricorder_detail, which kept
+    the weaker inline isdir check: a path that exists-but-is-a-file got the
+    misleading "not found" message, and unreadable roots slipped through to
+    fail obscurely later.
+    """
+
+    def setUp(self):
+        import tempfile
+        import shutil
+        self.tmpdir = tempfile.mkdtemp(prefix="tricorder_val_")
+        self.addCleanup(shutil.rmtree, self.tmpdir, True)
+
+    def test_detail_missing_root_uses_unified_message(self):
+        """Missing root -> unified 'not found or inaccessible' message."""
+        import asyncio
+        from tricorder_server import tricorder_detail
+        bad_root = str(Path(self.tmpdir) / "does-not-exist")
+        result = asyncio.run(tricorder_detail(
+            project_root=bad_root, file="x.py", name="x"))
+        self.assertIn("error", result)
+        self.assertEqual(result["error"],
+                         f"Project root not found or inaccessible: {bad_root}")
+
+    def test_detail_file_not_dir_uses_unified_message(self):
+        """Existing file (not a dir) -> unified 'not a directory' message,
+        not the misleading 'not found' the old inline check produced."""
+        import asyncio
+        from tricorder_server import tricorder_detail
+        not_a_dir = str(Path(self.tmpdir) / "afile.txt")
+        Path(not_a_dir).write_text("x", encoding="utf-8")
+        result = asyncio.run(tricorder_detail(
+            project_root=not_a_dir, file="x.py", name="x"))
+        self.assertIn("error", result)
+        self.assertEqual(result["error"],
+                         f"Project root is not a directory: {not_a_dir}")
+
+    def test_detail_bad_root_parity_with_detect(self):
+        """detail and detect reject the same bad root with the same error."""
+        import asyncio
+        from tricorder_server import tricorder_detail, tricorder_detect
+        bad_root = str(Path(self.tmpdir) / "does-not-exist")
+        d1 = asyncio.run(tricorder_detail(
+            project_root=bad_root, file="x.py", name="x"))
+        d2 = asyncio.run(tricorder_detect(
+            project_root=bad_root, query="x"))
+        self.assertIn("error", d1)
+        self.assertIn("error", d2)
+        self.assertEqual(d1["error"], d2["error"])
 
 
 if __name__ == '__main__':

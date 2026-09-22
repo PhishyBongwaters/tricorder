@@ -1,0 +1,1174 @@
+"""
+Ranking mixin — DB-backed ranking + map (from core.py, DB-only).
+"""
+import os, sys, hashlib, threading, concurrent.futures
+import networkx as nx
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from typing import List, Dict, Set, Tuple, Optional, Any
+from utils import Tag, SymbolRecord, resolve_or_none, stat_fingerprint
+from report import FileReport
+from parser import qualify_with_class_context
+_COVERAGE_WARN_THRESHOLD = 60.0
+from database import DBStore, EXTRACTOR_VERSION
+from importance import filter_important_files
+from render import render_tree, to_tree
+from collections import defaultdict
+from utils import Tag
+from report import FileReport
+_COVERAGE_WARN_THRESHOLD = 60.0
+
+
+# Skip list mirrors ParserMixin._SKIP_EXTS / CacheMixin.get_tags early-out.
+# Kept here (not imported) so _parse_worker stays picklable without a self.
+_WORKER_SKIP_SUFFIXES = {'.frag', '.vert', '.inc', '.icns', '.plist', '.entitlements'}
+_WORKER_SKIP_ENDINGS = ('.cmake.in', '.h.in', '.cpp.in', '.hpp.in')
+
+
+def _apply_class_context_to_rows(rows):
+    """Pure, picklable version of ParserMixin._add_class_context_to_tags.
+
+    rows: list of (fname, rel_fname, line, name, kind) -> same shape, with
+    method names qualified as Class::method where the heuristic applies.
+
+    Must stay in sync with ParserMixin._add_class_context_to_tags in parser.py
+    (issue #46). The worker can't call the mixin method (no self, must stay
+    picklable), so the heuristic is duplicated here on tuples.
+    """
+    if not rows:
+        return rows
+    # Sort by line to process in source order, same as the mixin.
+    sorted_rows = sorted(rows, key=lambda r: r[2])
+    result = []
+    current_class = None
+    for fname, rel_fname, line, name, kind in sorted_rows:
+        if kind == "def" and name and name[0].isupper():
+            if '(' not in name and '::' not in name:
+                current_class = name
+                result.append((fname, rel_fname, line, name, kind))
+                continue
+        if kind == "def" and current_class and '(' in name and '::' not in name:
+            result.append((fname, rel_fname, line, f"{current_class}::{name}", kind))
+        else:
+            result.append((fname, rel_fname, line, name, kind))
+    return result
+
+
+# Tier 2 — ProcessPool worker (pure, picklable). Runs in child process, no DB.
+def _parse_worker(args):
+    """Parse one file, return [(fname, rel_fname, line, name, kind), ...]. Top-level for pickle."""
+    fname, rel_fname = args
+    # Mirror get_tags() early-out: skip files that can't have tree-sitter symbols.
+    if fname.endswith(_WORKER_SKIP_ENDINGS) or os.path.splitext(fname)[1] in _WORKER_SKIP_SUFFIXES:
+        return []
+    try:
+        from utils import detect_lang, read_text
+        from scm import get_scm_fname
+        from grep_ast.tsl import get_language, get_parser
+        from tree_sitter import Query, QueryCursor
+        import threading
+        _PARSER_TIMEOUT_S = float(os.environ.get("TRICORDER_PARSER_TIMEOUT_S", "5"))
+        # per-worker parser cache (Tier 1)
+        cache = getattr(_parse_worker, "_cache", None)
+        if cache is None:
+            cache = {}
+            _parse_worker._cache = cache  # type: ignore[attr-defined]
+        lang = detect_lang(fname)
+        if not lang:
+            return []
+        try:
+            cached = cache.get(lang)
+            if cached is not None:
+                language, parser = cached
+            else:
+                language = get_language(lang)
+                parser = get_parser(lang)
+                cache[lang] = (language, parser)
+        except Exception:
+            return []
+        scm_fname = get_scm_fname(lang)
+        if not scm_fname:
+            return []
+        code = read_text(fname)
+        if not code or not code.strip():
+            return []
+        # parse with timeout thread (isolated per worker)
+        result = {}
+        def _run():
+            try:
+                result["tree"] = parser.parse(bytes(code, "utf-8"))
+            except Exception as e:
+                result["err"] = e
+        th = threading.Thread(target=_run, daemon=True)
+        th.start()
+        th.join(_PARSER_TIMEOUT_S)
+        if th.is_alive() or "err" in result:
+            return []
+        tree = result.get("tree")
+        if tree is None:
+            return []
+        query_text = read_text(scm_fname, silent=True)
+        if not query_text:
+            return []
+        query = Query(language, query_text)
+        cursor = QueryCursor(query)
+        captures = cursor.captures(tree.root_node)
+        out = []
+        for cap_name, nodes in captures.items():
+            if "name.definition" in cap_name:
+                kind = "def"
+            elif "name.reference" in cap_name:
+                kind = "ref"
+            else:
+                continue
+            for node in nodes:
+                try:
+                    line = node.start_point[0] + 1
+                    name = node.text.decode("utf-8") if node.text else ""
+                    # Structural class-context qualification (Class::method),
+                    # mirroring ParserMixin.get_tags_raw. Covers Python and
+                    # other languages where the name heuristic never fires.
+                    if kind == "def":
+                        name = qualify_with_class_context(name, node, cap_name)
+                    out.append((fname, rel_fname, line, name, kind))
+                except Exception:
+                    continue
+        # Qualify method names with class context so the parallel fresh-scan
+        # path matches the sequential/incremental paths (issue #46).
+        return _apply_class_context_to_rows(out)
+    except Exception:
+        return []
+
+
+class RankingMixin:
+    def _db_signature(self, included: List[str]) -> str:
+        """Stat-based content signature from the walked files (meta.signature).
+
+        Matches incremental (Goal 6) needs cheaply: (rel, size, mtime_ns).
+        Exact contents hashing is deferred; sizes+ns-mtimes catch edited
+        files, including same-second same-size edits (review round 16).
+        """
+        parts = []
+        for fname in sorted(included):
+            try:
+                st = os.stat(fname)
+                parts.append(f"{self.get_rel_fname(fname)}:{st.st_size}:{st.st_mtime_ns}")
+            except OSError:
+                parts.append(self.get_rel_fname(fname))
+        return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()[:16]
+
+    def _get_ranked_tags_db(
+        self,
+        chat_fnames: List[str],
+        other_fnames: List[str],
+        mentioned_fnames: Set[str],
+        mentioned_idents: Set[str],
+    ) -> Tuple[List[Tuple[float, Tag]], FileReport]:
+        """Flat-memory tree walk: each file's tags go to the DB, AST is dropped.
+
+        Does NOT build the whole-repo defines/references/definitions dicts or
+        the nx.MultiDiGraph the default path builds for PageRank — those are the
+        memory blowup at scale (SPEC_db_map Goal 3). Rank order uses on-disk
+        SQL power-iteration PageRank (Goal 4). Boosts/exclusion/sort match the
+        default exactly. ponytail: single-shot full scan; incremental recompute
+        is Goal 6.
+        """
+        def normalize_path(path):
+            # Symlink loops / dangling links resolve to None and are
+            # dropped below instead of crashing the scan.
+            return resolve_or_none(path)
+
+        chat_fnames = [f for f in (normalize_path(p) for p in chat_fnames) if f]
+        other_fnames = [f for f in (normalize_path(p) for p in other_fnames) if f]
+        if mentioned_fnames is None:
+            mentioned_fnames = set()
+        if mentioned_idents is None:
+            mentioned_idents = set()
+
+        included: List[str] = []
+        excluded: Dict[str, str] = {}
+        chat_rel_fnames = set(self.get_rel_fname(f) for f in chat_fnames)
+        all_fnames = list(set(chat_fnames + other_fnames))
+
+        db = self._db_store
+        
+        # Files that resolve outside the repo root (symlinks pointing
+        # elsewhere, or explicit paths) must never enter the DB: their
+        # "rel" would be an absolute host path, leaking into stored rels
+        # and every map served from the index. Skip with a warning.
+        escaped = [f for f in all_fnames if not self._within_root(f)]
+        if escaped:
+            self.output_handlers['warning'](
+                f"Skipping {len(escaped)} file(s) that resolve outside the "
+                f"repo root: {', '.join(sorted(os.path.basename(f) for f in escaped)[:5])}")
+            excluded.update({f: "resolves outside repo root" for f in escaped})
+            all_fnames = [f for f in all_fnames if self._within_root(f)]
+
+        # Check if DB already has valid data for the requested files
+        # (Pre-scan case: db_path was provided and DB already populated)
+        needed_rels = {self.get_rel_fname(f) for f in all_fnames}
+        meta = db.get_meta()
+
+        # Extractor staleness gate: if the tag extractor changed since this DB
+        # was built (e.g. class-context qualification rules), the stored tags
+        # are stale regardless of file mtimes. Force a full rescan; the fresh
+        # scan below re-stamps with the current EXTRACTOR_VERSION.
+        if meta and meta[3] != EXTRACTOR_VERSION:
+            self.output_handlers['info'](
+                f"Extractor v{meta[3]} != v{EXTRACTOR_VERSION}: "
+                f"stored tags are stale, forcing full rescan")
+            db.reset()
+            meta = None
+        
+        if meta and meta[0] == 1:  # schema_version == 1
+            stored_root, stored_sig = meta[1], meta[2]
+            stored_rels = db.stored_files()
+            if stored_root == str(self.root):
+                # Handles dirty-file incremental and resume of partial scans
+                # (missing = not yet in DB). ponytail: one dirty set covers both.
+                file_state = db.get_file_state()
+                # Old DB without file_state: fall back to signature check (subset only)
+                if not file_state:
+                    if needed_rels.issubset(stored_rels):
+                        current_sig = self._db_signature(all_fnames)
+                        if current_sig == stored_sig:
+                            for fname in all_fnames:
+                                included.append(fname)
+                            # Backfill file_state so future edits are incremental
+                            for fname in all_fnames:
+                                rel = self.get_rel_fname(fname)
+                                try:
+                                    st = os.stat(fname)
+                                    db.set_file_state(rel, *stat_fingerprint(st))
+                                except OSError:
+                                    pass
+                            db.commit()
+                            self.output_handlers['info'](
+                                f"Pre-scan DB hit: {len(needed_rels)} files covered, skipping parse")
+                        else:
+                            # Signature mismatch but no per-file state -> full rescan
+                            db.reset()
+                            for fname in all_fnames:
+                                rel_fname = self.get_rel_fname(fname)
+                                if not os.path.exists(fname):
+                                    excluded[fname] = "File not found"
+                                    self.output_handlers['warning'](
+                                        f"Repo-map can't include {fname}: File not found")
+                                    continue
+                                included.append(fname)
+                                tags = self.get_tags(fname, rel_fname)
+                                if tags:
+                                    db.insert_tags(
+                                        (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
+                                try:
+                                    st = os.stat(fname)
+                                    db.set_file_state(rel_fname, *stat_fingerprint(st))
+                                except OSError:
+                                    pass
+                            db.commit()
+                            # Full reparse after reset: stamp the extractor.
+                            db.set_meta(str(self.root), self._db_signature(included),
+                                        EXTRACTOR_VERSION)
+                    else:  # superset + empty file_state (old partial DB) -> full rescan
+                        db.reset()
+                        for fname in all_fnames:
+                            rel_fname = self.get_rel_fname(fname)
+                            if not os.path.exists(fname):
+                                excluded[fname] = "File not found"
+                                self.output_handlers['warning'](
+                                    f"Repo-map can't include {fname}: File not found")
+                                continue
+                            included.append(fname)
+                            tags = self.get_tags(fname, rel_fname)
+                            if tags:
+                                db.insert_tags(
+                                    (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
+                            try:
+                                st = os.stat(fname)
+                                db.set_file_state(rel_fname, *stat_fingerprint(st))
+                            except OSError:
+                                pass
+                        db.commit()
+                        # Full reparse after reset: stamp the extractor.
+                        db.set_meta(str(self.root), self._db_signature(included),
+                                    EXTRACTOR_VERSION)
+                else:  # file_state present -> dirty/missing diff covers resume
+                    dirty_rels = set()
+                    rel_to_fname = {self.get_rel_fname(f): f for f in all_fnames}
+                    for rel in needed_rels:
+                        fname = rel_to_fname[rel]
+                        try:
+                            st = os.stat(fname)
+                            cur = stat_fingerprint(st)
+                        except OSError:
+                            # Deleted/missing -> treat as dirty (will be excluded)
+                            dirty_rels.add(rel)
+                            continue
+                        stored = file_state.get(rel)
+                        if stored is None or stored != cur:
+                            dirty_rels.add(rel)
+                    # Deleted files that were in DB but file gone (should not happen
+                    # since needed_rels is subset, but guard anyway)
+                    for fname in all_fnames:
+                        if not os.path.exists(fname):
+                            excluded[fname] = "File not found"
+                            dirty_rels.discard(self.get_rel_fname(fname))
+
+                    if not dirty_rels:
+                        # Every needed rel is covered by file_state here
+                        # (anything missing, added, or changed would be
+                        # dirty). Keep ALL non-excluded files in `included`:
+                        # the old stored_rels filter kept only files owning
+                        # tag rows, silently dropping tagless files from
+                        # untagged_files and the map's "Other files" section
+                        # on every scan after the first.
+                        for fname in all_fnames:
+                            if fname not in excluded:
+                                included.append(fname)
+                        self.output_handlers['info'](
+                            f"Pre-scan DB hit: {len(needed_rels)} files covered, skipping parse")
+                    else:
+                        # Incremental: re-parse only dirty files — parallel when large (Tier 2)
+                        # ponytail: ProcessPool, chunk 200, batch commit 100. Ceiling: spawn overhead ~0.5s.
+                        use_parallel = len(dirty_rels) >= 200 and (os.cpu_count() or 1) > 1
+                        if use_parallel:
+                            # Prepare work list for dirty files that exist
+                            work = []
+                            rel_to_fname = {self.get_rel_fname(f): f for f in all_fnames}
+                            for rel in dirty_rels:
+                                fname = rel_to_fname.get(rel)
+                                if fname and os.path.exists(fname):
+                                    work.append((fname, rel))
+                                else:
+                                    # Missing file — delete tags, mark excluded
+                                    if rel in rel_to_fname:
+                                        excluded[rel_to_fname[rel]] = "File not found"
+                                    db.delete_tags_for_file(rel)
+                            # Clear dirty tags before re-insert (avoid dup)
+                            for _, rel in work:
+                                db.delete_tags_for_file(rel)
+                            # Parse in workers
+                            batch = 0
+                            with concurrent.futures.ProcessPoolExecutor(max_workers=(2 if len(all_fnames) > 15000 or len(dirty_rels) > 10000 else min(4, os.cpu_count() or 4))) as ex:
+                                # chunk 200 via executor.map with timeout per future
+                                futures = {ex.submit(_parse_worker, w): w for w in work}
+                                for fut in concurrent.futures.as_completed(futures):
+                                    fname, rel = futures[fut]
+                                    try:
+                                        rows = fut.result(timeout=10)
+                                    except Exception:
+                                        rows = []
+                                    if rows:
+                                        db.insert_tags(rows)
+                                    try:
+                                        st = os.stat(fname)
+                                        db.set_file_state(rel, *stat_fingerprint(st))
+                                    except OSError:
+                                        pass
+                                    included.append(fname)
+                                    batch += 1
+                                    if batch % 50 == 0:
+                                        db.commit()
+                                        db.checkpoint()
+                            # Cache hits for non-dirty
+                            for fname in all_fnames:
+                                rel = self.get_rel_fname(fname)
+                                if rel not in dirty_rels:
+                                    included.append(fname)
+                        else:
+                            for fname in all_fnames:
+                                rel = self.get_rel_fname(fname)
+                                if rel in dirty_rels:
+                                    if not os.path.exists(fname):
+                                        excluded[fname] = "File not found"
+                                        self.output_handlers['warning'](
+                                            f"Repo-map can't include {fname}: File not found")
+                                        db.delete_tags_for_file(rel)
+                                        continue
+                                    db.delete_tags_for_file(rel)
+                                    included.append(fname)
+                                    tags = self.get_tags(fname, rel)
+                                    if tags:
+                                        db.insert_tags(
+                                            (fname, rel, t.line, t.name, t.kind) for t in tags)
+                                    try:
+                                        st = os.stat(fname)
+                                        db.set_file_state(rel, *stat_fingerprint(st))
+                                    except OSError:
+                                        pass
+                                else:
+                                    # Cache hit — keep existing tags
+                                    included.append(fname)
+                        db.commit()
+                        # Incremental: re-parsed dirty files only — preserve
+                        # the stored stamp, don't certify untouched tags.
+                        db.set_meta(str(self.root), self._db_signature(included))
+                        self.output_handlers['info'](
+                            f"Incremental: {len(dirty_rels)} dirty, {len(needed_rels)-len(dirty_rels)} cache hits{' [parallel]' if use_parallel else ''}")
+            else:
+                # Fresh scan: never stack onto a previous run's rows in this file.
+                db.reset()
+                # Tier 2: parallel when large, else sequential with batch commit
+                use_parallel_fresh = len(all_fnames) >= 200 and (os.cpu_count() or 1) > 1
+                if use_parallel_fresh:
+                    work_fresh = [(f, self.get_rel_fname(f)) for f in all_fnames if os.path.exists(f)]
+                    # Mark excluded for missing
+                    for f in all_fnames:
+                        if not os.path.exists(f):
+                            excluded[f] = "File not found"
+                            self.output_handlers['warning'](f"Repo-map can't include {f}: File not found")
+                        else:
+                            included.append(f)
+                    batch = 0
+                    with concurrent.futures.ProcessPoolExecutor(max_workers=(2 if len(all_fnames) > 15000 else min(4, os.cpu_count() or 4))) as ex:
+                        futures = {ex.submit(_parse_worker, w): w for w in work_fresh}
+                        for fut in concurrent.futures.as_completed(futures):
+                            fname, rel_fname = futures[fut]
+                            try:
+                                rows = fut.result(timeout=10)
+                            except Exception:
+                                rows = []
+                            if rows:
+                                db.insert_tags(rows)
+                            try:
+                                st = os.stat(fname)
+                                db.set_file_state(rel_fname, *stat_fingerprint(st))
+                            except OSError:
+                                pass
+                            batch += 1
+                            if batch % 50 == 0:
+                                db.commit()
+                                db.checkpoint()
+                else:
+                    batch = 0
+                    for fname in all_fnames:
+                        rel_fname = self.get_rel_fname(fname)
+                        if not os.path.exists(fname):
+                            excluded[fname] = "File not found"
+                            self.output_handlers['warning'](
+                                f"Repo-map can't include {fname}: File not found")
+                            continue
+                        included.append(fname)
+                        tags = self.get_tags(fname, rel_fname)
+                        if tags:
+                            db.insert_tags(
+                                (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
+                        try:
+                            st = os.stat(fname)
+                            db.set_file_state(rel_fname, *stat_fingerprint(st))
+                        except OSError:
+                            pass
+                        batch += 1
+                        if batch % 50 == 0:
+                            db.commit()
+                db.commit()
+                db.checkpoint()
+                # Fresh scan after reset: stamp the extractor.
+                db.set_meta(str(self.root), self._db_signature(included),
+                            EXTRACTOR_VERSION)
+        else:
+            # No meta or wrong schema — fresh scan (Tier 2: parallel when large)
+            db.reset()
+            # Tier 2: parallel when large, else sequential with batch commit
+            use_parallel_fresh = len(all_fnames) >= 200 and (os.cpu_count() or 1) > 1
+            if use_parallel_fresh:
+                work_fresh = [(f, self.get_rel_fname(f)) for f in all_fnames if os.path.exists(f)]
+                # Mark excluded for missing
+                for f in all_fnames:
+                    if not os.path.exists(f):
+                        excluded[f] = "File not found"
+                        self.output_handlers['warning'](f"Repo-map can't include {f}: File not found")
+                    else:
+                        included.append(f)
+                batch = 0
+                with concurrent.futures.ProcessPoolExecutor(max_workers=(2 if len(all_fnames) > 15000 else min(4, os.cpu_count() or 4))) as ex:
+                    futures = {ex.submit(_parse_worker, w): w for w in work_fresh}
+                    for fut in concurrent.futures.as_completed(futures):
+                        fname, rel_fname = futures[fut]
+                        try:
+                            rows = fut.result(timeout=10)
+                        except Exception:
+                            rows = []
+                        if rows:
+                            db.insert_tags(rows)
+                        try:
+                            st = os.stat(fname)
+                            db.set_file_state(rel_fname, *stat_fingerprint(st))
+                        except OSError:
+                            pass
+                        batch += 1
+                        if batch % 50 == 0:
+                            db.commit()
+            else:
+                batch = 0
+                for fname in all_fnames:
+                    rel_fname = self.get_rel_fname(fname)
+                    if not os.path.exists(fname):
+                        excluded[fname] = "File not found"
+                        self.output_handlers['warning'](
+                            f"Repo-map can't include {fname}: File not found")
+                        continue
+                    included.append(fname)
+                    tags = self.get_tags(fname, rel_fname)
+                    if tags:
+                        db.insert_tags(
+                            (fname, rel_fname, t.line, t.name, t.kind) for t in tags)
+                    try:
+                        st = os.stat(fname)
+                        db.set_file_state(rel_fname, *stat_fingerprint(st))
+                    except OSError:
+                        pass
+                    batch += 1
+                    if batch % 50 == 0:
+                        db.commit()
+            db.commit()
+            # Fresh scan after reset: stamp the extractor.
+            db.set_meta(str(self.root), self._db_signature(included),
+                        EXTRACTOR_VERSION)
+
+        # Cross defs x refs into the refs edge table (on disk, not RAM).
+        db.populate_refs()
+        db.commit()
+        # Checkpoint the WAL: frozen readers (CLI --diff, --db-coverage,
+        # tricorder_diff, turn-0 injectors) open the DB with immutable=1 and
+        # can only see checkpointed rows. Without this, a completed scan was
+        # invisible to the very next --diff (which then reported every file
+        # as added). Cheap relative to the parse; idempotent.
+        db.checkpoint()
+
+        # file_flags sync — single point for all scan branches (no per-loop
+        # edits): tagless scanned files record their reason (no-grammar,
+        # empty, parsed-zero-tags...); newly-tagged files clear stale flags.
+        # Note: "tagless" = zero tags of any kind, while FileReport untagged
+        # below means no DEF tag. Different questions, both answered.
+        try:
+            _tagged = {r[0] for r in
+                       db.conn.execute("SELECT DISTINCT rel_file FROM tags")}
+            _reasons = {}
+            for _f in included:
+                _rel = self.get_rel_fname(_f)
+                if _rel not in _tagged:
+                    try:
+                        _reasons[_rel] = self.untagged_reason(_f)
+                    except Exception:
+                        continue
+            db.sync_file_flags(_tagged, _reasons)
+        except Exception:
+            pass
+
+        total_definitions = db.count_tags("def")
+        total_references = db.count_tags("ref")
+
+        # Untagged files = included files with no def tag (matches default).
+        tagged_rel_fnames = set(db.def_files())
+        untagged = sorted(
+            rel for fname in included
+            for rel in [self.get_rel_fname(fname)]
+            if rel not in tagged_rel_fnames
+        )
+
+        file_report = FileReport(
+            excluded=excluded,
+            definition_matches=total_definitions,
+            reference_matches=total_references,
+            total_files_considered=len(all_fnames),
+            untagged_files=untagged
+        )
+
+        # Rank: on-disk PageRank via SQL power iteration (Goal 4).
+        # Replaces the uniform 1.0 fallback — real PageRank now runs on-disk
+        # without building an in-memory nx.MultiDiGraph.
+        included_rels = {self.get_rel_fname(f) for f in included}
+        chat_rel_set = chat_rel_fnames  # already a set of rel_fnames
+
+        # Build personalization dict for the DB pagerank (same semantics as default).
+        personalization = {}
+        if chat_rel_set:
+            for rel in chat_rel_set:
+                personalization[rel] = 100.0
+
+        # Get all included rel_files as nodes for PageRank.
+        all_nodes = list(included_rels)
+        ranks = db.pagerank(iter(all_nodes), alpha=0.85, personalization=personalization or None)
+
+        ranked_tags: List[Tuple[float, Tag]] = []
+        for fname, rel, line, name, _kind in db.def_rows():
+            if rel not in included_rels:
+                continue
+            file_rank = ranks.get(rel, 0.0)
+
+            # Exclude files with low Page Rank if exclude_unranked is True
+            if self.exclude_unranked and file_rank <= 0.0001:
+                continue
+
+            boost = 1.0
+            if name in mentioned_idents:
+                boost *= 10.0
+            if rel in mentioned_fnames:
+                boost *= 5.0
+            if rel in chat_rel_fnames:
+                boost *= 20.0
+
+            ranked_tags.append((file_rank * boost, Tag(rel, fname, line, name, "def")))
+
+        ranked_tags.sort(key=lambda x: (-x[0], self.get_rel_fname(x[1].fname), x[1].line))
+        return ranked_tags, file_report
+
+    def get_ranked_tags(
+        self,
+        chat_fnames: List[str],
+        other_fnames: List[str],
+        mentioned_fnames: Optional[Set[str]] = None,
+        mentioned_idents: Optional[Set[str]] = None
+    ) -> Tuple[List[Tuple[float, Tag]], FileReport]:
+        """Get ranked tags using PageRank algorithm with file report."""
+        # Return empty list and empty report if no files
+        if not chat_fnames and not other_fnames:
+            return [], FileReport({}, 0, 0, 0, untagged_files=[])
+        
+        # SPEC_db_map Goal 3: flat-memory DB path (tags/refs persisted per
+        # file, AST dropped immediately, no whole-repo dicts or nx graph).
+        if self._db_active:
+            return self._get_ranked_tags_db(
+                chat_fnames, other_fnames, mentioned_fnames or set(),
+                mentioned_idents or set())
+            
+        if mentioned_fnames is None:
+            mentioned_fnames = set()
+        if mentioned_idents is None:
+            mentioned_idents = set()
+        
+        # Normalize paths to absolute
+        def normalize_path(path):
+            # Symlink loops / dangling links resolve to None and are
+            # dropped below instead of crashing the scan.
+            return resolve_or_none(path)
+
+        chat_fnames = [f for f in (normalize_path(p) for p in chat_fnames) if f]
+        other_fnames = [f for f in (normalize_path(p) for p in other_fnames) if f]
+
+        
+        # Initialize file report
+        included: List[str] = []
+        excluded: Dict[str, str] = {}
+        input_files: Dict[str, Dict] = {}
+        total_definitions = 0
+        total_references = 0
+        
+        # Collect all tags
+        defines = defaultdict(set)
+        references = defaultdict(set)
+        definitions = defaultdict(set)
+        
+        personalization = {}
+        chat_rel_fnames = set(self.get_rel_fname(f) for f in chat_fnames)
+        
+        all_fnames = list(set(chat_fnames + other_fnames))
+        
+        for fname in all_fnames:
+            rel_fname = self.get_rel_fname(fname)
+            
+            if not os.path.exists(fname):
+                reason = "File not found"
+                excluded[fname] = reason
+                self.output_handlers['warning'](f"Repo-map can't include {fname}: {reason}")
+                continue
+                
+            included.append(fname)
+            
+            tags = self.get_tags(fname, rel_fname)
+            
+            for tag in tags:
+                if tag.kind == "def":
+                    defines[tag.name].add(rel_fname)
+                    definitions[rel_fname].add(tag.name)
+                    total_definitions += 1
+                elif tag.kind == "ref":
+                    references[tag.name].add(rel_fname)
+                    total_references += 1
+            
+            # Set personalization for chat files
+            if fname in chat_fnames:
+                personalization[rel_fname] = 100.0
+        
+        # Build graph
+        G = nx.MultiDiGraph()
+        
+        # Add nodes
+        for fname in all_fnames:
+            rel_fname = self.get_rel_fname(fname)
+            G.add_node(rel_fname)
+        
+        # Add edges based on references
+        for name, ref_fnames in references.items():
+            def_fnames = defines.get(name, set())
+            for ref_fname in ref_fnames:
+                for def_fname in def_fnames:
+                    if ref_fname != def_fname:
+                        G.add_edge(ref_fname, def_fname, name=name)
+        
+        if not G.nodes():
+            return [], FileReport({}, 0, 0, 0, untagged_files=[])
+        
+        # Run PageRank
+        try:
+            if personalization:
+                ranks = nx.pagerank(G, personalization=personalization, alpha=0.85)
+            else:
+                ranks = {node: 1.0 for node in G.nodes()}
+        except:
+            # Fallback to uniform ranking
+            ranks = {node: 1.0 for node in G.nodes()}
+        
+        # Update excluded dictionary with status information
+        for fname in set(chat_fnames + other_fnames):
+            if fname in excluded:
+                # Add status prefix to existing exclusion reason
+                excluded[fname] = f"[EXCLUDED] {excluded[fname]}"
+            elif fname not in included:
+                excluded[fname] = "[NOT PROCESSED] File not included in final processing"
+        
+        # Compute untagged files (included but no tree-sitter symbols)
+        tagged_rel_fnames = set(definitions.keys())
+        untagged = sorted(
+            rel for fname in included
+            for rel in [self.get_rel_fname(fname)]
+            if rel not in tagged_rel_fnames
+        )
+        
+        # Create file report
+        file_report = FileReport(
+            excluded=excluded,
+            definition_matches=total_definitions,
+            reference_matches=total_references,
+            total_files_considered=len(all_fnames),
+            untagged_files=untagged
+        )
+        
+        # Collect and rank tags
+        ranked_tags = []
+        
+        for fname in included:
+            rel_fname = self.get_rel_fname(fname)
+            file_rank = ranks.get(rel_fname, 0.0)
+
+            # Exclude files with low Page Rank if exclude_unranked is True
+            if self.exclude_unranked and file_rank <= 0.0001:  # Use a small threshold to exclude near-zero ranks
+                continue
+            
+            tags = self.get_tags(fname, rel_fname)
+            for tag in tags:
+                if tag.kind == "def":
+                    # Boost for mentioned identifiers
+                    boost = 1.0
+                    if tag.name in mentioned_idents:
+                        boost *= 10.0
+                    if rel_fname in mentioned_fnames:
+                        boost *= 5.0
+                    if rel_fname in chat_rel_fnames:
+                        boost *= 20.0
+                    
+                    final_rank = file_rank * boost
+                    ranked_tags.append((final_rank, tag))
+        
+        # Sort by rank (descending), then filename, line for determinism
+        ranked_tags.sort(key=lambda x: (-x[0], self.get_rel_fname(x[1].fname), x[1].line))
+        
+        return ranked_tags, file_report
+    
+    # render_tree and to_tree are delegated to render.py (SPEC_db_map Goal 5a).
+    # These thin wrappers keep the public API intact for tricorder.py,
+    # tricorder_server.py, tests, and mem_probe.py.
+    render_tree = render_tree
+    to_tree = to_tree
+    
+    def to_mermaid(self, chat_fnames: List[str], other_fnames: List[str],
+                   mentioned_fnames: Optional[Set[str]] = None,
+                   mentioned_idents: Optional[Set[str]] = None,
+                   ranked_tags: Optional[List[Tuple[float, Tag]]] = None,
+                   max_nodes: Optional[int] = None) -> str:
+        """Render the dependency graph as a Mermaid flowchart."""
+        if ranked_tags is None:
+            ranked_tags, _ = self.get_ranked_tags(
+                chat_fnames, other_fnames, mentioned_fnames, mentioned_idents
+            )
+        if not ranked_tags:
+            return ""
+
+        # Rebuild the graph (same logic as get_ranked_tags)
+        defines = defaultdict(set)
+        references = defaultdict(set)
+        personalization = {}
+        chat_rel_fnames = set(self.get_rel_fname(f) for f in chat_fnames)
+        all_fnames = list(set(chat_fnames + other_fnames))
+
+        for fname in all_fnames:
+            rel_fname = self.get_rel_fname(fname)
+            if not os.path.exists(fname):
+                continue
+            tags = self.get_tags(fname, rel_fname)
+            for tag in tags:
+                if tag.kind == "def":
+                    defines[tag.name].add(rel_fname)
+                elif tag.kind == "ref":
+                    references[tag.name].add(rel_fname)
+            if fname in chat_fnames:
+                personalization[rel_fname] = 100.0
+        
+        G = nx.MultiDiGraph()
+        # Only include files that actually contribute symbols (appear in
+        # defines or references). Files with zero tags (README.md, .png, etc.)
+        # would otherwise clutter the graph as isolated nodes.
+        tagged_fnames = set()
+        for rel_fnames in references.values():
+            tagged_fnames |= rel_fnames
+        for def_fnames in defines.values():
+            tagged_fnames |= def_fnames
+        for fname in all_fnames:
+            rel_fname = self.get_rel_fname(fname)
+            if rel_fname in tagged_fnames or fname in chat_fnames:
+                G.add_node(rel_fname)
+        for name, ref_fnames in references.items():
+            def_fnames = defines.get(name, set())
+            for ref_fname in ref_fnames:
+                for def_fname in def_fnames:
+                    if ref_fname != def_fname:
+                        G.add_edge(ref_fname, def_fname, name=name)
+        
+        # Rank nodes
+        try:
+            if personalization:
+                ranks = nx.pagerank(G, personalization=personalization, alpha=0.85)
+            else:
+                ranks = {node: 1.0 for node in G.nodes()}
+        except Exception:
+            ranks = {node: 1.0 for node in G.nodes()}
+        
+        # Cap nodes by max_nodes if specified
+        if max_nodes is not None and max_nodes < len(ranks):
+            top_nodes = set(n for n, _ in sorted(ranks.items(), key=lambda x: x[1], reverse=True)[:max_nodes])
+            # Filter graph to top nodes only
+            G = nx.MultiDiGraph(G.subgraph(top_nodes))
+        
+        # Build Mermaid output.
+        # Node IDs are positional (n0, n1, ...) rather than sanitized
+        # paths: the old path.replace(".","_").replace("/","_") scheme
+        # collided ('a.b/c.py' and 'a/b.c.py' both became 'a_b_c_py'),
+        # merging two nodes into one and collapsing their edges. The real
+        # path lives only in the quoted label, with quotes/newlines
+        # escaped so a hostile filename can't break out of the label
+        # (mermaid renders #34; / #124; as " and |).
+        def _label(text):
+            return (str(text).replace('"', '#34;')
+                    .replace('\r', ' ').replace('\n', ' '))
+        lines = ["graph TD"]
+        node_ids = {}
+        for i, node in enumerate(sorted(G.nodes())):
+            node_ids[node] = f"n{i}"
+            if node in chat_rel_fnames:
+                lines.append(f'    n{i}["{_label(node)}"] :::chat')
+            else:
+                lines.append(f'    n{i}["{_label(node)}"]')
+
+        # Edges
+        for src, dst, data in G.edges(data=True):
+            edge_name = _label(data.get("name", "")).replace("|", "#124;")
+            lines.append(f'    {node_ids[src]} -->|{edge_name}| {node_ids[dst]}')
+        
+        # Styling
+        lines.append("")
+        lines.append("    classDef chat fill:#f9f,stroke:#333,stroke-width:2px")
+        
+        return "\n".join(lines)
+    
+    def get_ranked_tags_map(
+        self,
+        chat_fnames: List[str],
+        other_fnames: List[str],
+        max_map_tokens: int,
+        mentioned_fnames: Optional[Set[str]] = None,
+        mentioned_idents: Optional[Set[str]] = None,
+        force_refresh: bool = False,
+        output_writer=None,
+    ) -> Optional[str]:
+        """Get the ranked tags map with persistent disk caching."""
+        # Streaming bypasses cache (output goes to writer, not returned)
+        if output_writer is not None or force_refresh:
+            return self.get_ranked_tags_map_uncached(
+                chat_fnames, other_fnames, max_map_tokens,
+                mentioned_fnames, mentioned_idents, output_writer=output_writer
+            )
+
+        # Content fingerprint in the key: without it a rescan after editing
+        # a file served the previous render (the DB dirty-diff re-parsed,
+        # but the map came from cache). Stat-based like meta.signature —
+        # cheap, and size+mtime catch edits/adds/deletes.
+        content_sig = self._db_signature(
+            sorted(set(chat_fnames) | set(other_fnames)))
+        cache_key = (
+            tuple(sorted(chat_fnames)),
+            tuple(sorted(other_fnames)),
+            max_map_tokens,
+            tuple(sorted(mentioned_fnames or [])),
+            tuple(sorted(mentioned_idents or [])),
+            self.full_map,
+            content_sig,
+        )
+        
+        if not force_refresh:
+            with self._tags_cache_lock:
+                try:
+                    cached = self.TAGS_CACHE.get(str(cache_key))
+                    if cached is not None:
+                        try:
+                            with open(os.path.join(self._cache_dir(), "hits.log"), "a") as _hf:
+                                _hf.write(f"hit\tranked_tags_map\n")
+                        except Exception:
+                            pass
+                        return cached
+                except Exception:
+                    pass
+        
+        result = self.get_ranked_tags_map_uncached(
+            chat_fnames, other_fnames, max_map_tokens,
+            mentioned_fnames, mentioned_idents
+        )
+        
+        if not force_refresh:
+            with self._tags_cache_lock:
+                try:
+                    self.TAGS_CACHE[str(cache_key)] = result
+                except Exception:
+                    pass
+        return result
+    
+    def get_ranked_tags_map_uncached(
+        self,
+        chat_fnames: List[str],
+        other_fnames: List[str],
+        max_map_tokens: int,
+        mentioned_fnames: Optional[Set[str]] = None,
+        mentioned_idents: Optional[Set[str]] = None,
+        output_writer=None,
+    ) -> Tuple[Optional[str], FileReport]:
+        """Generate the ranked tags map without caching."""
+        ranked_tags, file_report = self.get_ranked_tags(
+            chat_fnames, other_fnames, mentioned_fnames, mentioned_idents
+        )
+        
+        if not ranked_tags:
+            return None, file_report
+        
+        # Filter important files
+        important_files = filter_important_files(
+            [self.get_rel_fname(f) for f in other_fnames]
+        )
+        
+        # Binary search to find the right number of tags
+        chat_rel_fnames = set(self.get_rel_fname(f) for f in chat_fnames)
+        
+        # Full map: skip token-budget binary search, emit all ranked tags
+        if self.full_map:
+            if output_writer is not None:
+                self.to_tree(ranked_tags, chat_rel_fnames, important_files, writer=output_writer)
+                best_tree = None
+            else:
+                best_tree = self.to_tree(ranked_tags, chat_rel_fnames, important_files)
+            best_num = len(ranked_tags)
+            file_report.total_files_considered = len(other_fnames)
+            return best_tree, file_report
+        
+        def try_tags(num_tags: int) -> Tuple[Optional[str], int]:
+            if num_tags <= 0:
+                return None, 0
+            
+            selected_tags = ranked_tags[:num_tags]
+            # Binary search measures tag cost only — untagged files are
+            # metadata added once to the final output, not per-iteration.
+            tree_output = self.to_tree(selected_tags, chat_rel_fnames, [])
+            
+            if not tree_output:
+                return None, 0
+            
+            tokens = self.token_count(tree_output)
+            return tree_output, tokens
+        
+        # Binary search for optimal number of tags. left starts at 1:
+        # probing num_tags=0 can never yield a tree, and starting at 0
+        # meant a single-tag map took mid=0 on the first probe and never
+        # rendered at all ("No map content generated" for one-def repos).
+        left, right = 1, len(ranked_tags)
+        best_tree = None
+        best_num = 0
+        # Fallback: track the smallest tree even if it exceeds budget
+        fallback_tree = None
+        fallback_num = 0
+        fallback_tokens = float('inf')
+
+        while left <= right:
+            mid = (left + right) // 2
+            tree_output, tokens = try_tags(mid)
+
+            if tree_output and tokens <= max_map_tokens:
+                best_tree = tree_output
+                best_num = mid
+                left = mid + 1
+            else:
+                # Track fallback: smallest tree that exceeds budget
+                if tree_output and tokens < fallback_tokens:
+                    fallback_tree = tree_output
+                    fallback_num = mid
+                    fallback_tokens = tokens
+                right = mid - 1
+
+        # Fallback: if no valid tree found, use the smallest one that exceeded budget
+        if best_tree is None and fallback_tree is not None:
+            best_tree = fallback_tree
+            best_num = fallback_num
+            self.output_handlers['warning'](
+                f"Map exceeds token budget ({fallback_tokens} > {max_map_tokens} tokens) "
+                f"with {fallback_num} tag(s). Consider increasing --map-tokens."
+            )
+
+        # Coverage: distinct source files that actually made it into the map,
+        # vs. how many the scanner considered. Low coverage means the token
+        # budget rendered a thin slice --- an agent must NOT mistake it for
+        # the whole repo. Emit a warning so "small map" stays honest (issue
+        # #18). Threshold is a knob (_COVERAGE_WARN_THRESHOLD).
+        tagged_files = set(self.get_rel_fname(t[1].fname) for t in ranked_tags[:best_num])
+        covered = len(tagged_files)
+        total_considered = file_report.total_files_considered
+        coverage_pct = round(covered / total_considered * 100, 1) if total_considered else 100.0
+        self.last_coverage_pct = coverage_pct
+        if coverage_pct < _COVERAGE_WARN_THRESHOLD:
+            self.output_handlers['warning'](
+                f"Low map coverage: {covered}/{total_considered} source files ({coverage_pct}%). "
+                f"The answer to a task may live in an uncovered file — raise --map-tokens "
+                f"or drill in with detect/symbols/query."
+            )
+        
+        # Add untagged files section to final output. The section shares the
+        # map token budget: entries are listed only while they fit in the
+        # remaining budget, and any remainder is reported as an honest
+        # "+N more" tail. Files are never silently dropped (the pre-round-18
+        # bug) and never appended unbounded on top of the budget (the
+        # post-round-18 wart). Raising --map-tokens lists more of them.
+        if best_tree and file_report.untagged_files and not self.exclude_untagged and self.context_lines == 0:
+            other_lines = []
+            for uf in file_report.untagged_files:
+                abs_path = str(self.root / uf)
+                code = self.read_text_func_internal(abs_path)
+                if code:
+                    lc = len(code.splitlines())
+                    other_lines.append(f"{uf} ({lc} lines)")
+                else:
+                    other_lines.append(uf)
+            if other_lines:
+                header = "\n\nOther files:\n"
+
+                def _tail(n):
+                    return (f"... +{n} more untagged file(s) "
+                            f"(raise --map-tokens to list)")
+
+                budget_left = (max_map_tokens - self.token_count(best_tree)
+                               - self.token_count(header))
+                kept = []
+                for line in other_lines:
+                    cost = self.token_count(line + "\n")
+                    if cost <= budget_left:
+                        kept.append(line)
+                        budget_left -= cost
+                    else:
+                        break
+                omitted = len(other_lines) - len(kept)
+
+                def _section():
+                    body = "\n".join(kept)
+                    if omitted:
+                        tail = _tail(omitted)
+                        body = body + "\n" + tail if body else tail
+                    return header + body
+
+                section = _section()
+                # Tokenizers aren't additive: verify the assembled total and
+                # trim until the whole map fits the budget.
+                while kept and self.token_count(best_tree + section) > max_map_tokens:
+                    kept.pop()
+                    omitted += 1
+                    section = _section()
+                # If even the bare header+tail doesn't fit the remaining
+                # budget, drop the section instead of violating the budget.
+                # The low-coverage warning above already tells the user the
+                # map is thin, so the omission isn't silent.
+                if self.token_count(best_tree + section) > max_map_tokens:
+                    section = ""
+                best_tree = best_tree + section
+        
+        # Attach coverage_pct to file_report so MCP/CLI can surface it (issue #18)
+        file_report.coverage_pct = coverage_pct
+        
+        return best_tree, file_report
+    
+    def get_repo_map(
+        self,
+        chat_files: Optional[List[str]] = None,
+        other_files: Optional[List[str]] = None,
+        mentioned_fnames: Optional[Set[str]] = None,
+        mentioned_idents: Optional[Set[str]] = None,
+        force_refresh: bool = False,
+        output_writer=None,
+    ) -> Tuple[Optional[str], FileReport]:
+        """Generate the repository map with file report.
+
+        When output_writer is provided (streaming mode), the map content
+        is written to it and None is returned as the string.
+        """
+        chat_files = chat_files or []
+        other_files = other_files or []
+
+        # Create empty report for error cases
+        empty_report = FileReport({}, 0, 0, 0, untagged_files=[], coverage_pct=100.0)
+
+        if self.max_map_tokens <= 0 or not other_files:
+            return None, empty_report
+
+        # Adjust max_map_tokens if no chat files
+        max_map_tokens = self.max_map_tokens
+        if not chat_files and self.max_context_window:
+            padding = 1024
+            available = self.max_context_window - padding
+            max_map_tokens = min(
+                max_map_tokens * self.map_mul_no_files,
+                available
+            )
+
+        try:
+            # get_ranked_tags_map returns (map_string, file_report)
+            map_string, file_report = self.get_ranked_tags_map(
+                chat_files, other_files, max_map_tokens,
+                mentioned_fnames, mentioned_idents, force_refresh,
+                output_writer=output_writer
+            )
+        except RecursionError:
+            self.output_handlers['error']("Disabling repo map, git repo too large?")
+            self.max_map_tokens = 0
+            return None, FileReport({}, 0, 0, 0, untagged_files=[], coverage_pct=100.0)  # Ensure consistent return type
+
+        if map_string is None:
+            return None, file_report
+
+        if self.verbose:
+            tokens = self.token_count(map_string)
+            self.output_handlers['info'](f"Repo-map: {tokens / 1024:.1f} k-tokens")
+
+        # Format final output
+        other = "other " if chat_files else ""
+
+        if self.repo_content_prefix:
+            repo_content = self.repo_content_prefix.format(other=other)
+        else:
+            repo_content = ""
+
+        repo_content += map_string
+
+        return repo_content, file_report

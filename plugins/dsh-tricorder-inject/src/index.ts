@@ -74,6 +74,22 @@ export class TricorderInjector extends Service {
     }) || 'tricorder'
   }
 
+  /** Mapped-DB coverage line (DB-first turn 0). Empty when unmapped. */
+  async dbCoverage(root: string): Promise<string> {
+    try {
+      const { stdout } = await execFileAsync(this.exe, [
+        '--root', root,
+        '--db-coverage',
+      ], {
+        timeout: 15_000,
+        maxBuffer: 64 * 1024,
+      })
+      return stdout.trim()
+    } catch {
+      return ''
+    }
+  }
+
   /** Emit the shared probe digest (pure CLI passthrough — the digest text is
    * owned by the tricorder CLI so Hermes and DSH stay byte-identical). */
   async probeDigest(root: string): Promise<string> {
@@ -103,8 +119,8 @@ export class TricorderInjector extends Service {
     }
 
     try {
-      // Turn 0 = cheap navigation probe only. Never a full map build.
-      const digestText = await this.probeDigest(cwd)
+      // Turn 0 = navigation only, DB-first. Never a full map build.
+      const digestText = (await this.dbCoverage(cwd)) || await this.probeDigest(cwd)
       if (!digestText) {
         // Empty/tiny/non-code repo (or CLI unavailable) — nothing to inject.
         if (this.config.verbose) this.ctx.logger.debug('[tricorder-inject] empty digest, skipping')

@@ -1,0 +1,11 @@
+question,variant,tokens,calls,pass,gt_existing
+Q1-typecheck-call,baseline,27276,2,1,lib/Sema/CSApply.cpp
+Q1-typecheck-call,branch,2242,2,1,lib/Sema/CSApply.cpp
+Q2-sil-inliner,baseline,2509,2,1,lib/SILOptimizer/Transforms/PerformanceInliner.cpp
+Q2-sil-inliner,branch,1411,2,1,lib/SILOptimizer/Transforms/PerformanceInliner.cpp
+Q3-string-interp,baseline,1859,2,1,include/swift/AST/Expr.h
+Q3-string-interp,branch,1877,2,1,include/swift/AST/Expr.h
+Q4-parse-expr,baseline,18809,2,1,lib/Parse/ParseExpr.cpp
+Q4-parse-expr,branch,2191,2,0,
+Q5-name-lookup,baseline,19422,2,1,lib/AST/NameLookup.cpp
+Q5-name-lookup,branch,2068,2,1,lib/AST/NameLookup.cpp

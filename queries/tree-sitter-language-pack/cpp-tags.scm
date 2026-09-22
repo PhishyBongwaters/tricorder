@@ -16,6 +16,20 @@
 
 (enum_specifier name: (type_identifier) @name.definition.type) @definition.type
 
+; Type aliases: using SpectrumBuffer = std::array<...>;
+(alias_declaration name: (type_identifier) @name.definition.type) @definition.type
+
+; Const/constexpr variable definitions: static constexpr int N = 576;
+; The bare (type_qualifier) constrains the match to qualified declarations
+; only — plain `int x = 5;` and loop counters don't match.
+(declaration
+  (type_qualifier)
+  declarator: (init_declarator
+    declarator: (identifier) @name.definition.constant)) @definition.constant
+
+; Namespaces: namespace Audio { ... } (mapped to type; see kind_map)
+(namespace_definition name: (namespace_identifier) @name.definition.namespace) @definition.namespace
+
 (class_specifier name: (type_identifier) @name.definition.class) @definition.class
 
 ; --- References ---

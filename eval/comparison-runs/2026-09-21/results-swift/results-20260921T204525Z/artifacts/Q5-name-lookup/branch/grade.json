@@ -1,0 +1,9 @@
+{
+ "ground_truth_cited": [
+  "lib/AST/NameLookup.cpp"
+ ],
+ "ground_truth_existing": [
+  "lib/AST/NameLookup.cpp"
+ ],
+ "pass": true
+}

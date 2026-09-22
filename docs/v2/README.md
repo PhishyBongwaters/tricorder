@@ -1,0 +1,69 @@
+# Tricorder — DB-backed repo mapper
+
+Maps a repository (files → symbols → ranked map) without holding the
+whole tree in RAM. Parse results go straight into sqlite; ranking reads
+back out of it.
+
+## Install
+
+```bash
+python -m venv .venv && .venv/Scripts/pip install -e .   # Windows
+# provides: tricorder, tricorder-mcp
+```
+
+Requires Python ≥3.11 and `rg` (ripgrep) on PATH. Full fresh-system guide:
+`05-setup.md`.
+
+## Test
+
+```bash
+.venv/Scripts/python.exe -m pytest tests/ -q -p no:cacheprovider
+```
+
+## Docs
+
+`00-scan-first.md` · `01-pipeline.md` · `02-tiering-and-retrieval.md` ·
+`03-operations.md` · `04-internals.md` · `05-setup.md` ·
+`06-languages.md`
+
+## Use
+
+```bash
+tricorder --init --root /path/to/repo
+python chunk_resume.py /path/to/repo     # to DONE
+tricorder <path> --db-path <db> --tier 0 # orient, defs only
+```
+
+Scan first — everything else reads the DB. Session recipe, tiering,
+and MCP/CLI split: `00-scan-first.md`, `02-tiering-and-retrieval.md`.
+
+## Supported languages
+
+93 validated by `tests/test_language_matrix.py` — C/C++/C#, Java, Go,
+Rust, Swift, Kotlin, Python, JS/TS (incl. TSX), Ruby, PHP, Scala,
+Dart, Erlang, Elixir, Haskell, OCaml, Lua, SQL, Proto, Fortran,
+Nim, Zig, Odin, shell (bash/fish/zsh), Perl, PowerShell, VHDL,
+Verilog, Solidity, and more. Full tiers + how to add one:
+`06-languages.md`.
+
+## How it works
+
+Tree-sitter parse per file → tags into sqlite → name-resolved ref
+edges → SQL PageRank → token-budgeted map. Incremental via per-file
+size+mtime; resume is just re-running. Query-time warmth is layered:
+detect/detail/symbols/query hit the mtime-keyed disk caches (and the
+reused in-process instance), not sqlite — only the ranked map,
+`--diff`, and scan resume read the DB. Full pipeline:
+`01-pipeline.md`, machinery: `04-internals.md`, operations:
+`03-operations.md`.
+
+## Status
+
+`dev/db-map` branch. CLI is the stable surface; the MCP server and
+both turn-0 plugins (Hermes, DSH) are unported — TBD. No usage docs
+for them until the port lands and is verified live. No benchmark
+numbers are claimed on this branch until re-measured.
+
+## License
+
+MIT (see LICENSE). Fork of RepoMapper (RepoMap design from Aider).

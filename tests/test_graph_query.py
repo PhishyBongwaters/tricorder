@@ -128,16 +128,124 @@ class TestGraphQueryIntegration(unittest.TestCase):
         node_names = [(n["name"], n["file"]) for n in result["nodes"]]
         self.assertTrue(any("authenticate" in name for name, _ in node_names))
 
+    def test_callees_uses_innermost_scope(self):
+        # F2: callees('A::m1') must contain m1's own calls (helper) but not
+        # sibling method m2's calls (other). The old code took the first
+        # (outermost) containing symbol — the class — leaking siblings in.
+        tmp = Path(tempfile.mkdtemp(prefix="callees_scope_"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "s.py").write_text(
+            "def helper():\n    return 1\n\n"
+            "def other():\n    return 2\n\n"
+            "class A:\n"
+            "    def m1(self):\n        return helper()\n"
+            "    def m2(self):\n        return other()\n",
+            encoding="utf-8",
+        )
+        t = Tricorder(root=str(tmp), verbose=False)
+        result = t.query_graph(parse_query_dsl("callees('A::m1')"))
+        self.assertTrue(result["nodes"], "fixture def must resolve (no vacuous pass)")
+        seen = {e["to"] for e in result["edges"]} | {n["name"] for n in result["nodes"]}
+        self.assertTrue(any("helper" in s for s in seen),
+                       f"expected helper among callees: {sorted(seen)}")
+        self.assertFalse(any("other" in s for s in seen),
+                        f"sibling method's call leaked into callees: {sorted(seen)}")
+
+    def _write_fixture(self, files):
+        tmp = Path(tempfile.mkdtemp(prefix="f1_qual_"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        for name, text in files.items():
+            (tmp / name).write_text(text, encoding="utf-8")
+        return tmp
+
+    def test_qualified_defs_scope_filtered(self):
+        # F1: defs('A::run') must resolve to A's definition only, not B's
+        # homonym. The old base-name fallback put the bare name in
+        # current_targets, conflating every same-named definition.
+        tmp = self._write_fixture({
+            "a.py": "class A:\n    def run(self):\n        return 1\n",
+            "b.py": "class B:\n    def run(self):\n        return 2\n",
+        })
+        t = Tricorder(root=str(tmp), verbose=False)
+        result = t.query_graph(parse_query_dsl("defs('A::run')"))
+        self.assertTrue(result["nodes"], "A::run must resolve (no vacuous pass)")
+        files = {n["file"] for n in result["nodes"]}
+        self.assertEqual(files, {str(tmp / "a.py")},
+                         f"expected only a.py, got: {sorted(files)}")
+        # Unqualified query keeps the old behavior: both definitions.
+        both = t.query_graph(parse_query_dsl("defs('run')"))
+        self.assertEqual({n["file"] for n in both["nodes"]},
+                         {str(tmp / "a.py"), str(tmp / "b.py")})
+
+    def test_qualified_refs_use_qualified_index(self):
+        # F1: where the index holds qualified refs (Rust `use` bindings),
+        # refs('ops_a::run') must traverse only those — no conflation with
+        # ops_b::run and no bare-name-fallback flag.
+        tmp = self._write_fixture({
+            "ops_a.rs": "pub fn run() -> i32 {\n    1\n}\n",
+            "ops_b.rs": "pub fn run() -> i32 {\n    2\n}\n",
+            "main.rs": ("use crate::ops_a::run as run_a;\n"
+                        "use crate::ops_b::run as run_b;\n\n"
+                        "fn main() {\n    let x = run_a();\n    let y = run_b();\n}\n"),
+        })
+        t = Tricorder(root=str(tmp), verbose=False)
+        result = t.query_graph(parse_query_dsl("refs('ops_a::run')"))
+        self.assertTrue(result["edges"], "qualified ref must resolve (no vacuous pass)")
+        sites = {(e["from_file"], e["from_line"]) for e in result["edges"]}
+        self.assertEqual(sites, {(str(tmp / "main.rs"), 5)},
+                         f"expected only the ops_a call site, got: {sorted(sites)}")
+        self.assertTrue(all("resolution" not in e for e in result["edges"]),
+                        "qualified hit must not be flagged as a fallback")
+        self.assertEqual(result["stats"].get("bare_name_fallbacks"), 0)
+
+    def test_bare_fallback_flagged(self):
+        # F1: where the index only has bare refs (Python attribute calls),
+        # refs('A::run') still traverses them (recall) but every edge is
+        # flagged bare-name-fallback instead of silently conflating.
+        tmp = self._write_fixture({
+            "a.py": "class A:\n    def run(self):\n        return 1\n",
+            "b.py": "class B:\n    def run(self):\n        return 2\n",
+            "c.py": ("from a import A\nfrom b import B\n"
+                     "a = A()\nb = B()\na.run()\nb.run()\n"),
+        })
+        t = Tricorder(root=str(tmp), verbose=False)
+        result = t.query_graph(parse_query_dsl("refs('A::run')"))
+        self.assertTrue(result["edges"], "fallback must still find refs (no vacuous pass)")
+        self.assertTrue(all(e.get("resolution") == "bare-name-fallback"
+                            for e in result["edges"]),
+                        f"all edges must be flagged: {result['edges']}")
+        self.assertGreater(result["stats"].get("bare_name_fallbacks", 0), 0)
+        # The definition side stays precise: only A's def is a node target.
+        def_files = {n["file"] for n in result["nodes"] if n["line"] == 2}
+        self.assertNotIn(str(tmp / "b.py"), def_files)
+        # Unqualified query: no flags, old behavior preserved.
+        plain = t.query_graph(parse_query_dsl("refs('run')"))
+        self.assertTrue(all("resolution" not in e for e in plain["edges"]))
+
     def test_exclude_glob_filter(self):
-        """Test exclude glob filtering."""
+        """Test exclude glob filtering.
+
+        Transportable: globs match project-root-relative paths, so the test
+        asserts on relative paths (the old version asserted on the absolute
+        path, which spuriously contains 'tests/' from the repo layout and
+        passed vacuously on Windows where separators are backslashes).
+        """
         tricorder = Tricorder(root=str(self.project_root), verbose=False)
         from utils import parse_query_dsl
-        parsed = parse_query_dsl("callers('authenticate') depth=2 exclude=tests/**")
+        # Baseline: without exclude, auth.py contributes nodes.
+        parsed_all = parse_query_dsl("callers('authenticate') depth=2")
+        result_all = tricorder.query_graph(parsed_all)
+        files_all = {Path(n["file"]).name for n in result_all["nodes"]}
+        self.assertIn("auth.py", files_all,
+                      "fixture should yield auth.py nodes without exclude")
+        # With exclude, no node may come from auth.py.
+        parsed = parse_query_dsl("callers('authenticate') depth=2 exclude=auth.py")
         result = tricorder.query_graph(parsed)
-
-        # No nodes should be from tests/ directory
+        self.assertTrue(result["nodes"], "excluding auth.py should still leave main.py nodes")
         for node in result["nodes"]:
-            self.assertNotIn("tests/", node["file"])
+            rel = os.path.relpath(node["file"], str(self.project_root))
+            self.assertNotEqual(rel.replace(os.sep, "/"), "auth.py",
+                                f"excluded file leaked into results: {node['file']}")
 
     def test_depth_limiting(self):
         """Test depth limiting."""
@@ -154,8 +262,11 @@ class TestGraphQueryIntegration(unittest.TestCase):
         result2 = tricorder.query_graph(parsed2)
         nodes2 = len(result2["nodes"])
 
-        # Depth 2 should find at least as many (or more) nodes
-        self.assertGreaterEqual(nodes2, nodes1)
+        # Depth 2 should find strictly more nodes than depth 1 (fixture has
+        # caller-of-callers), and depth 1 must find something — otherwise the
+        # depth= parameter is silently ignored and both are 0.
+        self.assertGreater(nodes1, 0, "depth=1 found nothing; fixture or depth broken")
+        self.assertGreater(nodes2, nodes1)
 
     def test_type_filter(self):
         """Test type filter."""
@@ -178,11 +289,44 @@ class TestGraphQueryIntegration(unittest.TestCase):
         result = tricorder.query_graph(parsed, token_limit=100)
 
         self.assertIn("token_estimate", result)
-        if result["token_estimate"] > 100:
-            self.assertIsNotNone(result.get("tier_hint"))
+        self.assertIsNotNone(result.get("tier_hint"),
+                             "over-budget query must carry a tier_hint")
+        # The estimate must describe the payload actually returned,
+        # not the pre-truncation one.
+        import json as _json
+        from utils import count_tokens
+        actual = count_tokens(_json.dumps({"nodes": result["nodes"],
+                                           "edges": result["edges"]}))
+        self.assertEqual(result["token_estimate"], actual)
+        self.assertLessEqual(len(result["nodes"]), max(1, 100 // 50))
+
+    def test_no_truncation_under_budget(self):
+        """Under-budget results are returned whole, with no tier_hint."""
+        tricorder = Tricorder(root=str(self.project_root), verbose=False)
+        from utils import parse_query_dsl
+
+        parsed = parse_query_dsl("callers('authenticate') depth=10")
+        result = tricorder.query_graph(parsed)
+        huge = tricorder.query_graph(parsed, token_limit=10 ** 9)
+
+        self.assertIsNone(result.get("tier_hint"))
+        self.assertEqual(len(result["nodes"]), len(huge["nodes"]))
+        self.assertEqual(len(result["edges"]), len(huge["edges"]))
+
+    def test_nonpositive_token_limit_disables_truncation(self):
+        """token_limit <= 0 must not produce empty/negative slices."""
+        tricorder = Tricorder(root=str(self.project_root), verbose=False)
+        from utils import parse_query_dsl
+
+        parsed = parse_query_dsl("callers('authenticate') depth=10")
+        full = tricorder.query_graph(parsed, token_limit=10 ** 9)
+        for lim in (0, -5):
+            result = tricorder.query_graph(parsed, token_limit=lim)
+            self.assertEqual(len(result["nodes"]), len(full["nodes"]))
+            self.assertEqual(len(result["edges"]), len(full["edges"]))
 
     def test_not_found(self):
-        """Test unknown symbol returns empty result."""
+        """Test unknown symbol returns empty result with symbol_not_found flag."""
         tricorder = Tricorder(root=str(self.project_root), verbose=False)
         from utils import parse_query_dsl
         parsed = parse_query_dsl("callers('nonexistent_function_xyz')")
@@ -191,6 +335,17 @@ class TestGraphQueryIntegration(unittest.TestCase):
         # Should return empty nodes/edges without error
         self.assertEqual(result["nodes"], [])
         self.assertEqual(result["edges"], [])
+        # And explicitly flag that the symbol was not found (not "no callers")
+        self.assertTrue(result["symbol_not_found"])
+
+    def test_found_clears_flag(self):
+        """Test symbol_not_found is False when symbol exists."""
+        tricorder = Tricorder(root=str(self.project_root), verbose=False)
+        from utils import parse_query_dsl
+        parsed = parse_query_dsl("callers('authenticate')")
+        result = tricorder.query_graph(parsed)
+
+        self.assertFalse(result["symbol_not_found"])
 
     def test_cross_file_edges(self):
         """Test cross-file edges are marked correctly."""
@@ -230,8 +385,10 @@ class TestGraphQueryIntegration(unittest.TestCase):
         result = tricorder.query_graph(parsed)
         elapsed = time.time() - start
 
-        # Should complete in under 500ms for small repo
-        self.assertLess(elapsed, 0.5)
+        # Completes well within a generous bound for a small repo. (Was 0.5s —
+        # that tight a bound flakes under CI load; the intent is guarding
+        # against pathological slowness, not 500ms.)
+        self.assertLess(elapsed, 5.0)
 
 
 class TestGraphQueryMCPTool(unittest.TestCase):
@@ -269,6 +426,70 @@ class TestGraphQueryMCPTool(unittest.TestCase):
             self.assertIn("not found", result["error"].lower())
 
         asyncio.run(run())
+
+
+class TestTestsForTraversal(unittest.TestCase):
+    """tests_for('symbol') returns only callers located in test files."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="tests_for_"))
+        (self.tmp / "src").mkdir()
+        (self.tmp / "tests").mkdir()
+        (self.tmp / "src" / "auth.py").write_text(
+            "def authenticate(user, password):\n    return user == 'admin'\n",
+            encoding="utf-8",
+        )
+        (self.tmp / "src" / "main.py").write_text(
+            "from auth import authenticate\n\ndef run():\n    authenticate('admin', 'x')\n",
+            encoding="utf-8",
+        )
+        (self.tmp / "tests" / "test_auth.py").write_text(
+            "from src.auth import authenticate\n\n"
+            "def test_login():\n    assert authenticate('admin', 'x')\n\n"
+            "def test_bad():\n    assert not authenticate('bob', 'y')\n",
+            encoding="utf-8",
+        )
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_dsl_parses_tests_for(self):
+        parsed = parse_query_dsl("tests_for('authenticate')")
+        self.assertEqual(len(parsed.steps), 1)
+        self.assertEqual(parsed.steps[0].kind, "tests_for")
+        self.assertEqual(parsed.steps[0].target, "authenticate")
+
+    def test_is_test_file(self):
+        from utils import is_test_file
+        for p in ("tests/test_auth.py", "src/tests/test_a.py", "x_test.go",
+                  "foo.test.js", "__tests__/a.js", "a_spec.rb", "test_x.py"):
+            self.assertTrue(is_test_file(p), p)
+        for p in ("src/auth.py", "testing.py", "latest.py", "contest.py"):
+            self.assertFalse(is_test_file(p), p)
+
+    def test_only_test_callers_returned(self):
+        tricorder = Tricorder(root=str(self.tmp), verbose=False)
+        result = tricorder.query_graph(parse_query_dsl("tests_for('authenticate')"))
+        self.assertNotIn("error", result)
+        node_names = {n["name"] for n in result["nodes"]}
+        self.assertIn("test_login", node_names)
+        self.assertIn("test_bad", node_names)
+        # Non-test caller must be excluded even though it calls authenticate.
+        self.assertNotIn("run", node_names)
+        for node in result["nodes"]:
+            if node["name"] == "authenticate":
+                continue
+            self.assertIn("tests", node["file"].replace("\\", "/"),
+                          f"non-test file leaked: {node['file']}")
+        for edge in result["edges"]:
+            self.assertEqual(edge["type"], "tests")
+
+    def test_no_tests_found(self):
+        tricorder = Tricorder(root=str(self.tmp), verbose=False)
+        result = tricorder.query_graph(parse_query_dsl("tests_for('run')"))
+        self.assertNotIn("error", result)
+        # 'run' is only called from non-test code (nothing calls it here at
+        # all) — no test callers expected.
+        callers = [n for n in result["nodes"] if n["name"] != "run"]
+        self.assertEqual(callers, [])
 
 
 if __name__ == "__main__":

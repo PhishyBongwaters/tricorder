@@ -215,26 +215,18 @@ def _get_repo_hash(project_root: str) -> str:
 
 def _get_tags_cache_path(project_root: str) -> Path:
     """Get the external cache path for the ctags index."""
-    from utils import get_cache_root, safe_write
-    cache_root = get_cache_root()
-    if cache_root is None:
-        # No writable cache root -- return a path under the project root
-        # as a last resort (caller should handle the failure case)
-        cache_dir = Path(project_root) / ".tricorder" / "indexes" / _get_repo_hash(project_root)
-    else:
-        cache_dir = cache_root / "indexes" / _get_repo_hash(project_root)
+    from utils import get_cache_root
+    # get_cache_root() never returns None — it mkdirs and returns a Path —
+    # so there is no None fallback here.
+    cache_dir = get_cache_root() / "indexes" / _get_repo_hash(project_root)
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir / "tags"
 
 
 def _get_meta_cache_path(project_root: str) -> Path:
     """Get the external cache path for the ctags index metadata."""
-    from utils import get_cache_root, safe_write
-    cache_root = get_cache_root()
-    if cache_root is None:
-        cache_dir = Path(project_root) / ".tricorder" / "indexes" / _get_repo_hash(project_root)
-    else:
-        cache_dir = cache_root / "indexes" / _get_repo_hash(project_root)
+    from utils import get_cache_root
+    cache_dir = get_cache_root() / "indexes" / _get_repo_hash(project_root)
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir / "tags.meta.json"
 
@@ -439,7 +431,9 @@ def narrow_files(locations: List[Tuple[str, int]], project_root: str, include_pa
                     files.add(_posix(rel.parents[i]))
         except ValueError:
             continue
-    return sorted(files)[:max_files]
+    # max(0, …): a negative cap must not turn sorted(files)[:-n] into a
+    # tail-slice surprise.
+    return sorted(files)[:max(0, max_files)]
 
 def probe_and_narrow(project_root: str, symbol_query: str, max_files: int = 100, include_parents: int = 0, max_index_age_days: int = 7) -> List[str]:
     try:

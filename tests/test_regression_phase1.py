@@ -318,8 +318,8 @@ class TestReadTextStrictMode(unittest.TestCase):
         self.assertIn("Hello", result)
         self.assertIn("world", result)
 
-    def test_strict_true_raises(self):
-        """strict=True should raise UnicodeError."""
+    def test_strict_true_returns_none(self):
+        """strict=True returns None on undecodable input (does not raise)."""
         test_file = self.tmpdir / "invalid.txt"
         test_file.write_bytes(b"Hello \xff\xfe world")
         result = read_text(str(test_file), strict=True)
@@ -392,11 +392,15 @@ class TestLazyTiktoken(unittest.TestCase):
 
     def test_tiktoken_not_imported_at_module_load(self):
         """_tiktoken should be None before first count_tokens call."""
-        import utils
-        # Force reload to test initial state
-        # (can't easily test without complex module manipulation, but we can
-        # verify the pattern is in place)
-        self.assertTrue(hasattr(utils, '_tiktoken'))
+        # Importing utils must not pull tiktoken in. hasattrs are always
+        # true — only a fresh interpreter proves laziness.
+        import subprocess, sys
+        code = ("import sys, utils; "
+                "assert 'tiktoken' not in sys.modules, 'tiktoken imported at load'; "
+                "assert utils._tiktoken is None, '_tiktoken should be None before first use'")
+        subprocess.run([sys.executable, "-c", code],
+                       capture_output=True, text=True, cwd=str(Path(__file__).resolve().parent.parent),
+                       check=True, timeout=60)
 
     def test_count_tokens_works(self):
         """count_tokens should work normally."""
@@ -425,42 +429,45 @@ class TestRepoBudgetCaching(unittest.TestCase):
     """Test repo_budget caching behavior."""
 
     def setUp(self):
-        self.project_root = str(Path(__file__).parent.parent.resolve())
-        # Start clean so tests don't interfere with each other
-        _tr = Path(self.project_root) / ".tricorder"
-        if _tr.exists():
-            import shutil
-            shutil.rmtree(_tr, ignore_errors=True)
+        # NEVER touch the real repo .tricorder (holds multi-GB scan DBs).
+        # Use an isolated temp project root instead.
+        import tempfile
+        self._tmpdir = tempfile.mkdtemp(prefix="tricorder_test_proj_")
+        self.project_root = self._tmpdir
 
     def tearDown(self):
-        _tr = Path(self.project_root) / ".tricorder"
-        if _tr.exists():
-            import shutil
-            shutil.rmtree(_tr, ignore_errors=True)
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_cache_path_under_project_tricorder(self):
-        """Budget cache is written under .tricorder/cache/ in the project root."""
+        """Budget cache is written under .tricorder/cache/ in the cache root."""
+        from utils import _get_budget_cache_path
         repo_budget(self.project_root, 1000)
+        cache_path = _get_budget_cache_path(self.project_root)
+        self.assertIsNotNone(cache_path)
         self.assertTrue(
-            (Path(self.project_root) / ".tricorder" / "cache").exists(),
-            "Cache should be created under project/.tricorder/cache/",
+            Path(cache_path).exists(),
+            "Budget cache file should be created under cache root",
         )
 
     def test_second_call_uses_cache(self):
-        """Second call should use cached value (same result)."""
-        import time
-        t1 = time.time()
-        r1 = repo_budget(self.project_root, 1000)
-        t2 = time.time()
-        r2 = repo_budget(self.project_root, 1000)
-        t3 = time.time()
-        
-        # Results should be identical
+        """Second call should use cached value (compute runs once)."""
+        # Deterministic: the compute path is the only caller of
+        # discover_src_files. If the second repo_budget call recomputes,
+        # the spy fires twice.
+        from unittest import mock
+        import utils
+        cache_path = utils._get_budget_cache_path(self.project_root)
+        if cache_path and cache_path.exists():
+            cache_path.unlink()  # force the first call to compute
+        with mock.patch.object(utils, "discover_src_files",
+                               wraps=utils.discover_src_files) as spy:
+            r1 = repo_budget(self.project_root, 1000)
+            r2 = repo_budget(self.project_root, 1000)
         self.assertEqual(r1["full_repo_estimate"], r2["full_repo_estimate"])
         self.assertEqual(r1["savings_pct"], r2["savings_pct"])
-        
-        # Second call should be faster (using cache)
-        # (Not asserting on time as it's flaky, but logic is correct)
+        self.assertEqual(spy.call_count, 1,
+                         "second repo_budget call recomputed instead of using cache")
 
 
 if __name__ == "__main__":

@@ -22,6 +22,15 @@
 (new_expression
   constructor: (identifier) @name.reference.class) @reference.class
 
+; Free function calls: foo(bar)
+(call_expression
+  function: (identifier) @name.reference.call) @reference.call
+
+; Method calls: obj.method(a)
+(call_expression
+  function: (member_expression
+    property: (property_identifier) @name.reference.call)) @reference.call
+
 (function_declaration
   name: (identifier) @name.definition.function) @definition.function
 

@@ -1,0 +1,64 @@
+rc=0 seconds=240.3
+--- stdout ---
+[DEBUG] Parallel fresh scan: 2324 files, 8 workers
+[DEBUG] ProcessPoolExecutor created
+Pre-scan DB hit: 2324 files covered, skipping parse
+include/swift/AST/
+include/swift/AST/Expr.h (6813 lines)
+
+
+  40: namespace llvm {
+  44: namespace swift {
+  45:   enum class AccessKind : unsigned char;
+  46:   class ArchetypeType;
+  47:   class ASTContext;
+  48:   class AvailabilitySpec;
+  49:   class DeclRefTypeRepr;
+  50:   class Type;
+  51:   class TypeRepr;
+  52:   class ValueDecl;
+  53:   class Decl;
+  54:   class DeclRefExpr;
+  55:   class ExistentialArchetypeType;
+  56:   class ParamDecl;
+  57:   class Pattern;
+  58:   class SubscriptDecl;
+  59:   class Stmt;
+  60:   class BraceStmt;
+  61:   class ASTWalker;
+  62:   class Initializer;
+  63:   class VarDecl;
+  64:   class OpaqueValueExpr;
+  65:   class FuncDecl;
+  66:   class ConstructorDecl;
+  67:   class TypeDecl;
+  68:   class PatternBindingDecl;
+  69:   class ParameterList;
+  70:   class EnumElementDecl;
+  71:   class CallExpr;
+  72:   class KeyPathExpr;
+  73:   class CaptureListExpr;
+  74:   class ThenStmt;
+  75:   class ReturnStmt;
+  84: enum : unsigned { NumExprKindBits =
+  93: enum class CheckedCastKind : unsigned {
+  117: enum class AccessSemantics : uint8_t {
+  142: class alignas(8) Expr : public ASTAllocated<Expr> {
+  143:   Expr(const Expr&) = delete;
+  150:   SWIFT_INLINE_BITFIELD_BASE(Expr, bitmax(NumExprKindBits,8)+1,
+  152:     Kind : bitmax(NumExprKindBits,8),
+  158:   SWIFT_INLINE_BITFIELD_FULL(CollectionExpr, Expr, 64-NumberOfExprBits,
+  169:   SWIFT_INLINE_BITFIELD_EMPTY(LiteralExpr, Expr);
+  170:   SWIFT_INLINE_BITFIELD_EMPTY(IdentityExpr, Expr);
+
+Other files:
+include/swift/Basic/Compiler.h (199 lines)
+include/swift/Basic/NoDiscard.h (24 lines)
+include/swift/Basic/Nullability.h (41 lines)
+include/swift/Basic/SwiftBridging.h (124 lines)
+include/swift/Demangling/ManglingMacros.h (104 lines)
+lib/SILOptimizer/Utils/RegionIsolation.cpp (36 lines)
+
+--- stderr ---
+Warning: Repo-map can't include /home/phishy/tricorder-eval/swift-experimental-string-processing/Sources/_RegexParser: File not found
+Warning: Low map coverage: 1/2324 source files (0.0%). The answer to a task may live in an uncovered file — raise --map-tokens or drill in with detect/symbols/query.
