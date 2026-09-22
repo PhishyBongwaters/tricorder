@@ -2,7 +2,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-420%20passed%2C%201%20skipped-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-462%20passed%2C%201%20skipped-brightgreen.svg)](tests/)
 
 **Turn any codebase into a token-efficient map an LLM agent can actually navigate.**
 
@@ -34,7 +34,7 @@ Three interfaces, one engine: a **CLI** for humans and scripts, an **MCP server*
 | Manual dependency tracing | Automatic call graph + PageRank |
 | Context window overflow | Token-budgeted output (~1.5% of the full repo) |
 
-**Measured (pre-db-map pipeline, Gen 2):** 15/15 benchmarks pass across C++, Rust, TypeScript, Go, and the Linux kernel — 86.7–100% token savings. See [Benchmarks](docs/benchmarks.md). Re-measurement on the db-map branch is pending.
+**Measured (pre-db-map pipeline, Gen 2):** 15/15 benchmarks pass across C++, Rust, TypeScript, Go, and the Linux kernel — 86.7–100% token savings. See [Benchmarks](docs/benchmarks.md). Branch comparison (baseline vs db-map branch, measured response-payload tokens): −76.3% combined across Vaultwarden, Go, and Swift repos (11/12 questions answered on both). See [comparison runs](eval/comparison-runs/2026-09-21/README.md).
 
 ## Quick Start
 
@@ -74,6 +74,7 @@ That's it. No config files, no model keys, no network calls — everything runs 
 | Doc | Contents |
 |---|---|
 | [User Guide](docs/user-guide.md) | Installation, workflows, tiers, pre-index, caching, troubleshooting, FAQ |
+| [How a Scan Works](docs/how-a-scan-works.md) | Plain-language walkthrough of what happens when you scan a repo |
 | [CLI Reference](docs/cli-reference.md) | Every flag, with examples |
 | [MCP Reference](docs/mcp-reference.md) | All 7 tools, parameters, response shapes |
 | [Architecture](docs/architecture.md) | Pipeline, DB design, ranking, graph, caching, security |
@@ -117,12 +118,12 @@ Tricorder treats **repository content as untrusted input**. Every MCP response i
 .venv/Scripts/python -m pytest tests/ -q -p no:cacheprovider   # full suite
 ```
 
-420 tests passing, 1 skipped (Windows-only), 93 subtests. Bug reports and PRs welcome — please include a failing test where practical. See [AGENTS.md](AGENTS.md) for repo conventions.
+462 tests passing, 1 skipped (Windows-only), 96 subtests. Bug reports and PRs welcome — please include a failing test where practical. See [AGENTS.md](AGENTS.md) for repo conventions.
 
 ## Lineage
 
 1. **Gen 1 — Aider `RepoMap`** (Paul Gauthier): tree-sitter + PageRank.
 2. **Gen 2 — RepoMapper** (Paul Davis): standalone CLI + MCP server. Upstream: https://github.com/pdavis68/RepoMapper
-3. **Gen 3 — tricorder**: this fork — 420 tests, 93 validated languages, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, DB-backed ranking with extractor versioning.
+3. **Gen 3 — tricorder**: this fork — 462 tests, 93 validated languages, cross-file call graph, ctags/rg pre-index probe, Windows compatibility, DB-backed ranking with extractor versioning.
 
 Lineage intentionally kept visible. MIT Licensed — see [LICENSE](LICENSE).
