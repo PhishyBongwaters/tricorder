@@ -435,7 +435,7 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         # interleave across files so a single file's many same-name hits
         # (e.g. ten parseExpr* declarations in one header) cannot crowd
         # the definition sites in other files out of the capped budget.
-        matching_tags.sort(key=lambda x: (x.kind != "def", x.name.lower().find(query_lower)))
+        matching_tags.sort(key=lambda x: (x.kind != "def", x.name.lower().find(query_lower), x.rel_fname, x.line))
 
         # Limit results (interleaved: global top hit stays first).
         matching_tags = _interleave_by_file(matching_tags, lambda t: t.rel_fname, max_results)
@@ -482,7 +482,7 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                     overlap = len(qtok & set(tt)) if qtok else 0
                     if d <= 2 or (qtok and overlap * 2 >= len(qtok)):
                         scored.append((d, -overlap, tag.kind != "def", tn, tag))
-                scored.sort(key=lambda s: (s[0], s[1], s[2], s[3]))
+                scored.sort(key=lambda s: (s[0], s[1], s[2], s[3], s[4].rel_fname, s[4].line))
                 matching_tags = [s[4] for s in scored[:max_results * 2]]
             if matching_tags:
                 rescue_used = True
@@ -491,7 +491,7 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 matching_tags.sort(key=lambda t: (
                     min(levenshtein(qcore, t.name.lower()),
                         levenshtein(qcore, "".join(tokenize_identifier(t.name)))),
-                    t.kind != "def", t.name.lower()))
+                    t.kind != "def", t.name.lower(), t.rel_fname, t.line))
                 # Trim the 2x rescue pool back to the caller's cap
                 # (interleaved across files, same as the main path).
                 matching_tags = _interleave_by_file(
@@ -856,8 +856,10 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
 
             results.append(sym.to_dict())
 
-        # Sort: definitions first, then by name
-        results.sort(key=lambda x: (x["type"], x["name"].lower()))
+        # Sort: definitions first, then by name. File+line tie-break keeps
+        # the order independent of file-discovery sequence (filesystems
+        # traverse in different orders per machine).
+        results.sort(key=lambda x: (x["type"], x["name"].lower(), x["file"], x["line"]))
 
         # Retrieve-0 rescue (mirror search_identifiers): retry over orthographic
         # variants when the plain substring query matched nothing, so
@@ -895,7 +897,7 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                     overlap = len(qtok & set(st)) if qtok else 0
                     if d <= 2 or (qtok and overlap * 2 >= len(qtok)):
                         scored.append((d, -overlap, sym.type, sn, sym))
-                scored.sort(key=lambda s: (s[0], s[1], s[2], s[3]))
+                scored.sort(key=lambda s: (s[0], s[1], s[2], s[3], s[4].file, s[4].line))
                 results = [s[4].to_dict() for s in scored[:limit * 2]]
             if results:
                 rescue = True
@@ -905,7 +907,7 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 def _sdist(r_):
                     return min(levenshtein(qcore, r_["name"].lower()),
                                levenshtein(qcore, "".join(tokenize_identifier(r_["name"]))))
-                results.sort(key=lambda r_: (_sdist(r_), r_["type"], r_["name"].lower()))
+                results.sort(key=lambda r_: (_sdist(r_), r_["type"], r_["name"].lower(), r_["file"], r_["line"]))
 
         # Apply limit
         results = results[:limit]
