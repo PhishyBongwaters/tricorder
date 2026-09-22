@@ -6,7 +6,7 @@
 
 **Turn any codebase into a token-efficient map an LLM agent can actually navigate.**
 
-Tricorder scans a repository with tree-sitter, ranks every symbol by importance (PageRank over the call graph), and emits a compact map — definitions, signatures, and cross-file references — sized to fit your context window. Measured on the current pipeline in scripted retrieval runs (fixed detect/symbols/detail rungs, no live agent): Vaultwarden queries cost 8,987 response-payload tokens vs 26,818 for baseline navigation (−66.5%), and 5 Swift queries cost 7,608 tokens where the baseline needs 38,885 (−80.4%).
+Tricorder scans a repository with tree-sitter, ranks every symbol by importance (PageRank over the call graph), and emits a compact map — definitions, signatures, and cross-file references — sized to fit your context window. Measured on the current pipeline in scripted retrieval runs (fixed rung policies per repo, no live agent): Vaultwarden queries cost 8,987 response-payload tokens vs 26,818 for baseline navigation (−66.5%), and 5 Swift queries cost 7,608 tokens where the baseline needs 38,885 (−80.4%).
 
 ```
 $ tricorder /path/to/repo --map-tokens 2048
@@ -34,7 +34,7 @@ Three interfaces, one engine: a **CLI** for humans and scripts, an **MCP server*
 | Manual dependency tracing | Automatic call graph + PageRank |
 | Context window overflow | Token-budgeted output (−55% to −80% per-query payload vs baseline tools, measured) |
 
-**Measured on the current pipeline (response-payload tokens in scripted retrieval runs — fixed detect/symbols/detail rungs, ground-truth citation grading, no live agent):** −70.3% combined across Vaultwarden, Go, and Swift repos — ground truth cited in 12/12 runs on both baseline and branch (Vaultwarden/Go measured 2026-09-21, Swift re-measured 2026-09-22 after the Q4 crowding fix; see [comparison runs](eval/comparison-runs/2026-09-22/README.md)). This is distinct from end-to-end agent eval (`bench/bench_agent_eval.py`, model in the loop) — no agent-eval numbers are quoted here. Older Gen 2 map-vs-blind-repo numbers (86.7–100% across 15 repos) describe a previous pipeline version and are kept for history in [Benchmarks](docs/benchmarks.md).
+**Measured on the current pipeline (response-payload tokens in scripted retrieval runs — fixed rung policies, ground-truth citation grading, no live agent):** −70.3% combined across Vaultwarden, Go, and Swift repos — ground truth cited in 12/12 runs on both baseline and branch (Vaultwarden/Go measured 2026-09-21, Swift re-measured 2026-09-22 after the Q4 crowding fix; see [comparison runs](eval/comparison-runs/2026-09-22/README.md)). This is distinct from end-to-end agent eval (`bench/bench_agent_eval.py`, model in the loop) — no agent-eval numbers are quoted here. Older Gen 2 map-vs-blind-repo numbers (86.7–100% across 15 repos) describe a previous pipeline version and are kept for history in [Benchmarks](docs/benchmarks.md).
 
 ## Quick Start
 
@@ -51,7 +51,7 @@ tricorder /path/to/your/repo          # Map it
 tricorder /path/to/your/repo --mermaid --top 10   # Dependency flowchart
 ```
 
-That's it. No config files, no model keys, no network calls — everything runs locally.
+That's it. No config files, no model keys, no telemetry — everything runs locally. (First install pulls packages from PyPI, and the language pack fetches any missing tree-sitter grammar on first parse.)
 
 ## Features
 
