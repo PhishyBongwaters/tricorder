@@ -22,6 +22,9 @@ branch.
   `cl100k_base`), never estimated.
 - Per question: `detect` (find the symbol) → `symbols` (list candidates)
   → `detail` (fetch the definition).
+- Scripted rung policies throughout (fixed sequences, first-hit detail,
+  citation grading) — no live agent or model. "Answered" in this doc means
+  the ground-truth path was cited in the returned payloads.
 - The initial repo scan is a sunk cost reported separately; a realistic
   short session = scan + questions.
 

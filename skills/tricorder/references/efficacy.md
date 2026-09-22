@@ -5,8 +5,11 @@ branch — see the canonical run records in
 `eval/comparison-runs/2026-09-21/README.md` (Vaultwarden, Go) and
 `eval/comparison-runs/2026-09-22/README.md` (Swift re-measure)
 (tiktoken `cl100k_base`, frozen question corpora with ground-truth
-grading). Do not quote older map-vs-blind percentages; those ran against
-previous pipeline versions.
+grading). All runs use a scripted rung policy (fixed detect/symbols/detail
+sequence, first-hit detail, citation grading) — no live agent or model.
+Do not mix these with end-to-end agent-eval numbers
+(`bench/bench_agent_eval.py`); do not quote older map-vs-blind percentages,
+which ran against previous pipeline versions.
 
 | Repo | Baseline | Branch | Saving | Accuracy |
 |------|----------|--------|--------|----------|
@@ -19,8 +22,8 @@ Caveat (retired 2026-09-22): the 9/21 Swift miss (Q4) was fixed by `090456e`
 and re-measured 5/5 in `eval/comparison-runs/2026-09-22/README.md` — the
 table above carries the fresh numbers.
 
-**RESULT: measured savings hold with answer parity** — the branch answers
-12/12 at under a third of the baseline's tokens.
+**RESULT: measured savings hold with answer parity** — ground truth cited
+in 12/12 scripted runs at under a third of the baseline's tokens.
 
 ## How to Run Comparisons
 

@@ -8,6 +8,8 @@ variant into its own DB (scan paths `lib`+`include`, `--map-tokens` 500,
 cost sunk), then per question 2× `detect(keyword, pre_index=keyword)`,
 tokens via tiktoken `cl100k_base` through tip `utils.count_tokens`,
 same frozen questions/keywords/ground truth and grading as 9/21.
+Scripted rung policy throughout — no live agent or model; "pass" means
+the ground-truth path was cited in the returned payloads.
 
 - Branch measured: `fix/parallel-qualify` @ `202607d`
 - Baseline measured: `dev/db-map` @ `438fd0b` (frozen, same commit as 9/21)
