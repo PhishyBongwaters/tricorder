@@ -9,7 +9,7 @@ Use tricorder when you need `symbols`, `signatures`, `callers/callees`, or a com
 
 It is surfaced two ways:
 
-- **Native MCP tools** (primary): when tricorder is registered as an MCP server, its tools appear as `mcp_tricorder_scan`, `mcp_tricorder_detect`, `mcp_tricorder_symbols`, `mcp_tricorder_detail`.
+- **Native MCP tools** (primary): when tricorder is registered as an MCP server, its tools appear as `mcp_tricorder_scan`, `mcp_tricorder_detect`, `mcp_tricorder_symbols`, `mcp_tricorder_detail`, `mcp_tricorder_query`.
 - **CLI**: `tricorder . --map-tokens <N>` for ad-hoc runs without the MCP server.
 
 ## When to use
@@ -51,12 +51,12 @@ All MCP tools require `project_root` (absolute path) — they route against that
 
 ## tricorder_detect parameters
 
-- `project_root` (required, absolute path), `query` (required — identifier to find, case-insensitive), `max_results` (default 50), `context_lines` (default 2), `include_definitions` (default true), `include_references` (default true).
+- `project_root` (required, absolute path), `query` (required — identifier to find, case-insensitive), `max_results` (default 10), `context_lines` (default 1), `include_definitions` (default true), `include_references` (default true).
 - `pre_index` / `pre_index_max_files` (default 100) / `pre_index_include_parents` (default 0): scope the search to files containing a probe symbol instead of scanning the whole tree. Critical for huge repos — prevents a full-tree walk per query.
 
 ## tricorder_symbols parameters
 
-- `project_root` (required, absolute path), `query` (required — substring match, case-insensitive), `type` (optional), `file` (optional), `limit` (default 50)
+- `project_root` (required, absolute path), `query` (required — substring match, case-insensitive), `type` (optional), `file` (optional), `limit` (default 10)
 
 ## tricorder_detail parameters
 
@@ -77,8 +77,8 @@ All MCP tools require `project_root` (absolute path) — they route against that
 
 ## Pitfalls
 
-- **Stale cache → empty/odd maps**: after installing new tree-sitter parsers or an upgrade, maps can look wrong from a cached parse. Run `--force-refresh` (MCP: `force_refresh: true`) or delete the `.tricorder.tags.cache.v1/` dir.
-- **Cache is per-project**: it lives in the scanned project's root, not tricorder's — don't ship or commit it.
+- **Stale cache → empty/odd maps**: after installing new tree-sitter parsers or an upgrade, maps can look wrong from a cached parse. Run `--force-refresh` (MCP: `force_refresh: true`) to rebuild the DB.
+- **State lives in the tricorder workspace** (`<workspace>/.tricorder/`: `db/`, `cache/`, `indexes/`, `output/`), never in the scanned repo — don't ship or commit it. Override the root via `TRICORDER_CACHE_HOME`.
 - `project_root` must be absolute; relative paths are not trusted.
 - `tricorder_detect` is case-insensitive and token-cheap — prefer it over a full scan to find an identifier.
 - **Arg names are exact** — the tools use strict MCP names, so a wrong guess costs a rejected call before the schema comes back. The ones that bite: `tricorder_scan` takes `project_root` (not `files`/`path`), `tricorder_detect` takes `query` (not `identifier`), `tricorder_detail` takes `name`+`file`+`line` (not `symbol`). Coping them correctly up front skips the round-trip.

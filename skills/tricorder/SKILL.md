@@ -52,7 +52,7 @@ All MCP tools require `project_root` (absolute path) — they route against that
 
 ## tricorder_detect parameters
 
-- `project_root` (required, absolute path), `query` (required — identifier to find, case-insensitive), `max_results` (default 50), `context_lines` (default 2), `include_definitions` (default true), `include_references` (default true).
+- `project_root` (required, absolute path), `query` (required — identifier to find, case-insensitive), `max_results` (default 10), `context_lines` (default 1), `include_definitions` (default true), `include_references` (default true).
 - `pre_index` / `pre_index_max_files` (default 100) / `pre_index_include_parents` (default 0): scope the search to files containing a probe symbol instead of scanning the whole tree. Critical for huge repos — prevents a full-tree walk per query.
 
 ## CLI reference
@@ -80,9 +80,10 @@ override the root via `TRICORDER_CACHE_HOME`).
 
 - The DB is reused across runs — no rebuild when nothing changed.
   `force_refresh: true` (CLI `--force-refresh`) forces a rebuild.
-- `--max-files` caps a scan (default 1000, silently truncates past it with
-  only a warning line); `--max-files 0` = unlimited. Verify coverage before
-  trusting a map.
+- `--max-files` caps a CLI scan (default 1000; `--max-files 0` = unlimited).
+  The MCP `tricorder_scan` `max_files` param instead defaults to 0 (unlimited) —
+  set it explicitly on large repos. Truncation is logged server-side; verify
+  coverage before trusting a map.
 - `pre_index` narrows huge repos to files containing a probe symbol
   (rg fast path, ctags fallback) instead of walking the whole tree.
 
