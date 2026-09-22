@@ -52,6 +52,17 @@ Almost nothing is re-read. Each file's fingerprint (path, size,
 modification time) is checked, and only changed files go through step 2
 again. A second scan of an untouched repo is fast.
 
+## Shortcuts for huge repos
+
+If you already know the symbol you're after, `--pre-index SYMBOL` skips
+the full walk in step 1. It uses `rg` (ripgrep) to find the files
+mentioning that symbol — on something the size of the Linux kernel,
+that narrows millions of lines down to a handful of files in about a
+second — and only those files get scanned. If `rg` finds nothing, it
+falls back to a `ctags` index instead. (Past 20,000 source files it won't
+build a ctags index at all and sticks with `rg` alone.) Same idea on the
+MCP side via `tricorder_scan` / `tricorder_detect`.
+
 ## The first "tell me more" question
 
 Commands like `detail` and `graph_query` ("who calls this function?")
