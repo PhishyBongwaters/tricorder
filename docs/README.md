@@ -3,6 +3,7 @@
 | Doc | For | Contents |
 |---|---|---|
 | [User Guide](user-guide.md) | Everyone | Installation, workflows, tiers, pre-index, caching, troubleshooting, FAQ |
+| [How a Scan Works](how-a-scan-works.md) | Everyone | Plain-language walkthrough of what happens when you scan a repo |
 | [CLI Reference](cli-reference.md) | CLI users | Every flag, with examples |
 | [MCP Reference](mcp-reference.md) | Agent builders | All 7 tools, parameters, response shapes |
 | [Architecture](architecture.md) | Contributors | Pipeline, DB design, ranking, graph, caching, security model |
