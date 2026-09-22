@@ -49,6 +49,39 @@ _PARSER_TIMEOUT_S = float(os.environ.get("TRICORDER_PARSER_TIMEOUT_S", "5"))
 _LISTING_DOCSTRING_CAP = 200
 
 
+def _interleave_by_file(items, key, limit):
+    """Round-robin items across files, preserving in-file order.
+
+    A capped detect list ranked purely by name score can be monopolized by
+    one file (e.g. ten parseExpr* declarations in a header), crowding out
+    the definition sites in other files that an agent actually needs.
+    Interleaving keeps the global top hit first (its file leads the first
+    round) while guaranteeing cross-file recall inside the same result
+    budget — no extra tokens. Deterministic: file order is first-appearance
+    order in the already-ranked input.
+    """
+    buckets = {}
+    order = []
+    for it in items:
+        f = key(it)
+        if f not in buckets:
+            buckets[f] = []
+            order.append(f)
+        buckets[f].append(it)
+    out = []
+    round_i = 0
+    while len(out) < limit:
+        progressed = False
+        for f in order:
+            if round_i < len(buckets[f]) and len(out) < limit:
+                out.append(buckets[f][round_i])
+                progressed = True
+        if not progressed:
+            break
+        round_i += 1
+    return out
+
+
 
 class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
     """Main class for generating repository maps.
@@ -398,11 +431,14 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                    (tag.kind == "ref" and include_references):
                     matching_tags.append(tag)
 
-        # Sort by relevance (definitions first, then references)
+        # Sort by relevance (definitions first, then references), then
+        # interleave across files so a single file's many same-name hits
+        # (e.g. ten parseExpr* declarations in one header) cannot crowd
+        # the definition sites in other files out of the capped budget.
         matching_tags.sort(key=lambda x: (x.kind != "def", x.name.lower().find(query_lower)))
 
-        # Limit results
-        matching_tags = matching_tags[:max_results]
+        # Limit results (interleaved: global top hit stays first).
+        matching_tags = _interleave_by_file(matching_tags, lambda t: t.rel_fname, max_results)
 
         # Retrieve-0 rescue: the substring query matched nothing (e.g. because
         # the agent typed a decorated/qualified/differently-cased name). Retry
@@ -456,8 +492,10 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                     min(levenshtein(qcore, t.name.lower()),
                         levenshtein(qcore, "".join(tokenize_identifier(t.name)))),
                     t.kind != "def", t.name.lower()))
-                # Trim the 2x rescue pool back to the caller's cap.
-                del matching_tags[max_results:]
+                # Trim the 2x rescue pool back to the caller's cap
+                # (interleaved across files, same as the main path).
+                matching_tags = _interleave_by_file(
+                    matching_tags, lambda t: t.rel_fname, max_results)
 
         # Tier 4: content-backed symbol search for natural-language queries.
         # Name-only tiers cannot bridge "enter the exit stack" ->
@@ -766,7 +804,11 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 scored.append((-matched, -score, dtag.name.lower(),
                                dtag.rel_fname, dtag.line, dtag))
         scored.sort(key=lambda s: s[:5])
-        return [s[5] for s in scored[:max_results * 2]][:max_results]
+        # Interleave across files (same recall rationale as search_identifiers)
+        # instead of the old dominated double slice.
+        picked = _interleave_by_file(
+            scored[:max_results * 2], lambda s: s[5].rel_fname, max_results)
+        return [s[5] for s in picked]
 
     def search_symbols(
         self,
