@@ -471,9 +471,15 @@ Examples:
         _init_store = None
         try:
             _init_store = DBStore(str(init_db))
-            if _init_store.get_meta() is None:
+            existing_meta = _init_store.get_meta()
+            if existing_meta is None:
                 _init_store.set_meta(str(init_root), "", 0)
                 _init_store.commit()
+            elif not db_root_matches(str(init_db), str(init_root)):
+                parser.error(
+                    f"canonical cache DB {init_db} is already owned by "
+                    f"{existing_meta[1]!r}; refusing to overwrite it for "
+                    f"{init_root} without --wipe")
         except ValueError as e:
             # Corrupt canonical DB (and no --wipe): message, not traceback.
             parser.error(str(e))

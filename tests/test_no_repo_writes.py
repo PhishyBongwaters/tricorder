@@ -55,3 +55,30 @@ def test_init_then_scan_resumes_from_cache_db(tmp_path, monkeypatch):
     r = _cli_run(root)  # rescan: everything already mapped
     assert r.returncode == 0, r.stderr[-500:]
     assert "def alpha" in r.stdout
+
+
+def test_init_rejects_same_name_cache_db_owned_by_another_root(tmp_path, monkeypatch):
+    """A shared cache must not let one same-named repo take another's DB."""
+    root_a = tmp_path / "one" / "proj"
+    root_b = tmp_path / "two" / "proj"
+    root_a.mkdir(parents=True)
+    root_b.mkdir(parents=True)
+    cache = tmp_path / "tcache"
+    _fresh_cache(monkeypatch, cache)
+
+    first = _cli_run(root_a, "--init")
+    assert first.returncode == 0, first.stderr[-500:]
+
+    second = _cli_run(root_b, "--init")
+    assert second.returncode != 0
+    assert "already owned" in second.stderr
+
+    import sqlite3
+    db = cache / "db" / "proj.db"
+    assert db.exists()
+    con = sqlite3.connect(str(db))
+    try:
+        stored_root = con.execute("SELECT root FROM meta").fetchone()[0]
+    finally:
+        con.close()
+    assert stored_root == str(root_a.resolve())

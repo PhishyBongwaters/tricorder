@@ -14,6 +14,7 @@ fallback in TWO places and was missed:
 Both must treat a pre-file_state DB as unmapped instead.
 """
 import importlib
+import os
 import sqlite3
 import sys
 import tempfile
@@ -147,9 +148,12 @@ _PYBIN = sys.executable
 
 
 def _cli_run(root, *args):
+    # Canonical DB names use the repo basename; isolate every tmp repo's
+    # cache so independent `proj` fixtures cannot collide.
+    env = dict(os.environ, TRICORDER_CACHE_HOME=str(root.parent / "tcache"))
     return _sp.run([_PYBIN, _CLI, "--root", str(root), "--map-tokens",
                     "100000", "--quiet", *args],
-                   capture_output=True, text=True, timeout=180)
+                   capture_output=True, text=True, timeout=180, env=env)
 
 
 def _write(root: Path, name: str, body: str):
