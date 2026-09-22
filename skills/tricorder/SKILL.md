@@ -1,5 +1,5 @@
 ---
-name: codebase-tricorder
+name: tricorder
 description: Use tricorder to map a codebase (symbols, call graphs, signatures) without reading every file. Highest-value when exploring an unfamiliar repo, locating a definition, or summarizing structure.
 ---
 
@@ -7,20 +7,24 @@ description: Use tricorder to map a codebase (symbols, call graphs, signatures) 
 
 Use tricorder when you need `symbols`, `signatures`, `callers/callees`, or a compact **map** of a codebase without reading every file. It scans with tree-sitter, ranks by PageRank, and returns only the important definitions — typically **~1.5% of full-repo token cost**.
 
+## Tool names — match your host's prefix
+
+The server registers its tools as `tricorder_scan`, `tricorder_detect`, `tricorder_symbols`, `tricorder_detail`, `tricorder_query`, `tricorder_locate`, `tricorder_diff`. Hosts add their own prefix — Claude Code/Hermes shows `mcp__tricorder__tricorder_scan`, DSH shows `mcp_tricorder_scan`. This skill uses the bare registered names throughout; apply the prefix style you see in your own tool list.
+
 It is surfaced two ways:
 
-- **Native MCP tools** (primary): when tricorder is registered as an MCP server, its tools appear as `mcp__tricorder__tricorder_scan`, `mcp__tricorder__tricorder_detect`, `mcp__tricorder__tricorder_symbols`, `mcp__tricorder__tricorder_detail`, `mcp__tricorder__tricorder_query`, `mcp__tricorder__tricorder_diff`, `mcp__tricorder__tricorder_locate`.
+- **Native MCP tools** (primary): when tricorder is registered as an MCP server.
 - **CLI**: `tricorder . --map-tokens <N>` for ad-hoc runs without the MCP server.
 
 ## When to use
 
 | Situation | Use |
 |-----------|-----|
-| "How is this project structured?" | `mcp__tricorder__tricorder_scan` (text) |
-| Module/component dependency view | `mcp__tricorder__tricorder_scan` with `output_format: mermaid` |
-| "Where is `<symbol>` defined?" | `mcp__tricorder__tricorder_detect` or `mcp__tricorder__tricorder_symbols` |
-| Callers / callees of one symbol | `mcp__tricorder__tricorder_detail` |
-| Graph traversal: callers/callees up to N hops, filtered | `mcp__tricorder__tricorder_query` — `callers('sym') depth=2 exclude=tests/**` |
+| "How is this project structured?" | `tricorder_scan` (text) |
+| Module/component dependency view | `tricorder_scan` with `output_format: mermaid` |
+| "Where is `<symbol>` defined?" | `tricorder_detect` or `tricorder_symbols` |
+| Callers / callees of one symbol | `tricorder_detail` |
+| Graph traversal: callers/callees up to N hops, filtered | `tricorder_query` — `callers('sym') depth=2 exclude=tests/**` |
 
 Don't scan for a known symbol — go straight to `detect`/`symbols`. Scan only for structure.
 
@@ -29,11 +33,11 @@ Don't scan for a known symbol — go straight to `detect`/`symbols`. Scan only f
 The point of tricorder is to NOT read every file. Climb the ladder; stop at the first rung that answers the question. Pulling a full file is the **last resort, not the default**.
 
 1. **T0 map (auto-injected)** — the `[tricorder]` digest at turn 0 already gives you the repo skeleton: file paths + symbol names + line numbers. Often enough to know *which* file. **Don't re-scan** — the digest is current.
-2. **Locate** — `mcp__tricorder__tricorder_detect {query}` (case-insensitive, token-cheap) or `mcp__tricorder__tricorder_symbols {query, file?, type?}` for a definition + signature + line. Returns the what/where without reading the file. One-call shortcut: `mcp__tricorder__tricorder_locate {query, max_tokens?}` runs detect → detail and returns the best match's body plus alternatives — use it when you already know you'll deep-dive the top hit.
-2b. **Diff** — `mcp__tricorder__tricorder_diff {project_root}` answers "what changed since the last scan?" (added/modified/deleted + tags for changed files). Read-only.
-3. **Graph query** — need callers/callees up to N hops? `mcp__tricorder__tricorder_query {query: "callers('sym') depth=2 exclude=tests/**"}` returns the exact subgraph in one call (nodes + edges), replacing 5+ round-trips. `tests_for('sym')` restricts to test files ("what tests cover this?").
-4. **Deep-dive** — `mcp__tricorder__tricorder_detail {name, file, line}` returns the **full symbol body** + cross-file callers/callees. For most "how does X work" questions this is enough — you get the implementation, not just the signature, at a fraction of a full-file read.
-5. **Escalate the map tier** — still missing context? `mcp__tricorder__tricorder_scan {project_root, tier: 1, context_lines: 3}` gives definitions + surrounding lines (~350 tokens/tag, ~25x T0). Use `output_format: "mermaid"` for a module dependency graph. Narrow with `chat_files`/`mentioned_files` to keep it small.
+2. **Locate** — `tricorder_detect {query}` (case-insensitive, token-cheap) or `tricorder_symbols {query, file?, type?}` for a definition + signature + line. Returns the what/where without reading the file. One-call shortcut: `tricorder_locate {query, max_tokens?}` runs detect → detail and returns the best match's body plus alternatives — use it when you already know you'll deep-dive the top hit.
+2b. **Diff** — `tricorder_diff {project_root}` answers "what changed since the last scan?" (added/modified/deleted + tags for changed files). Read-only.
+3. **Graph query** — need callers/callees up to N hops? `tricorder_query {query: "callers('sym') depth=2 exclude=tests/**"}` returns the exact subgraph in one call (nodes + edges), replacing 5+ round-trips. `tests_for('sym')` restricts to test files ("what tests cover this?").
+4. **Deep-dive** — `tricorder_detail {name, file, line}` returns the **full symbol body** + cross-file callers/callees. For most "how does X work" questions this is enough — you get the implementation, not just the signature, at a fraction of a full-file read.
+5. **Escalate the map tier** — still missing context? `tricorder_scan {project_root, tier: 1, context_lines: 3}` gives definitions + surrounding lines (~350 tokens/tag, ~25x T0). Use `output_format: "mermaid"` for a module dependency graph. Narrow with `chat_files`/`mentioned_files` to keep it small.
 6. **Full file read — last resort** — `read_file` only when all of the above left genuine ambiguity (a bug spans half a file, you need a comment block far from any symbol, etc). Read the *specific line range* found in step 2/3, not the whole file blindly. A whole-file pull is a confession that the ladder failed.
 
 **Token economics**: T0 ≈ 14 tokens/tag. T1 ≈ 350 tokens/tag. `detail` returns one symbol body (typically 50-400 tokens, capped by its 2048-token default budget on hot symbols). A full file read is thousands. Escalate deliberately.
@@ -54,6 +58,18 @@ All MCP tools require `project_root` (absolute path) — they route against that
 
 - `project_root` (required, absolute path), `query` (required — identifier to find, case-insensitive), `max_results` (default 10), `context_lines` (default 1), `include_definitions` (default true), `include_references` (default true).
 - `pre_index` / `pre_index_max_files` (default 100) / `pre_index_include_parents` (default 0): scope the search to files containing a probe symbol instead of scanning the whole tree. Critical for huge repos — prevents a full-tree walk per query.
+
+## tricorder_symbols parameters
+
+- `project_root` (required, absolute path), `query` (required — substring match, case-insensitive), `type` (optional), `file` (optional), `limit` (default 10)
+
+## tricorder_detail parameters
+
+- `project_root` (required, absolute path), `name` (required), `file` (required), `line` (optional)
+
+## tricorder_query parameters
+
+- `project_root` (required, absolute path), `query` (required — DSL string like `callers('sym') depth=2 exclude=tests/**`)
 
 ## CLI reference
 

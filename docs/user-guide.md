@@ -180,8 +180,8 @@ mcp_servers:
 Then restart Hermes. Requires the `mcp` Python package.
 
 **Agent skill.** `skills/tricorder/SKILL.md` teaches the escalation ladder.
-Copy it where your agent reads skills from. For DSH, use
-`skills/tricorder-dsh/SKILL.md`.
+Copy it where your agent reads skills from — the same file serves DSH
+(the Tool-names section covers the `mcp_tricorder_*` prefix convention).
 
 Full tool reference: [MCP Reference](mcp-reference.md).
 
@@ -207,7 +207,7 @@ Slash commands: `/tricorder root <path>`, `/tricorder scan [path]`,
 **DSH** — two pieces: the turn-0 injector (`plugins/dsh-tricorder-inject/`,
 vendored Cordis plugin → `node_modules/@deepseek-ai/dsh-tricorder-inject`,
 enabled in `cordis.patch.yml`) and the MCP tools + skill
-(`skills/tricorder-dsh/SKILL.md`, server registered as `tricorder` via
+(`skills/tricorder/SKILL.md`, server registered as `tricorder` via
 `dsh-mcp-client`).
 
 **Cache validity** is stat-based, not TTL: the CLI's `--signature-only`

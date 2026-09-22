@@ -14,7 +14,7 @@ mcp_servers:
     command: D:\Projects\tricorder\.venv\Scripts\tricorder-mcp.exe
 ```
 
-Also restored `-s codebase-tricorder` in `bench/bench_agent_eval.py` to match the profile skill slug.
+Also restored `-s tricorder` in `bench/bench_agent_eval.py` to match the profile skill slug.
 
 ## Verification
 Forced chat test (`force_tc.txt`) confirmed `mcp__tricorder__tricorder_detect` successfully executed and returned `PCM::AddToBuffer` from `src/libprojectM/Audio/PCM.cpp`.

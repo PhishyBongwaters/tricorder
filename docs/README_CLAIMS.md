@@ -168,11 +168,11 @@ validation status starts as `pending` and is updated as checks run.
 
 - [pending] Turn-0 probe-digest injector: `plugins/dsh-tricorder-inject/` (vendored Cordis plugin)
 - [pending] Runs `tricorder --root <cwd> --probe-digest`
-- [pending] MCP tools + skill at `skills/tricorder-dsh/SKILL.md`
+- [pending] MCP tools + skill at `skills/tricorder/SKILL.md`
 - [pending] MCP server registered as `tricorder` via `dsh-mcp-client`
 - [pending] `pip install -e "D:/Projects/tricorder"` works
 - [pending] `mkdir -p ~/.dsh/skills/tricorder` works
-- [pending] `cp "D:/Projects/tricorder/skills/tricorder-dsh/SKILL.md" ~/.dsh/skills/tricorder/SKILL.md` works
+- [pending] `cp "D:/Projects/tricorder/skills/tricorder/SKILL.md" ~/.dsh/skills/tricorder/SKILL.md` works
 - [pending] `cordis.patch.yml` example shown works
 
 ## 20. Benchmarks
