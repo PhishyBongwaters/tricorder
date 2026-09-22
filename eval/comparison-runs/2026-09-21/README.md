@@ -67,6 +67,11 @@ hours of re-parsing.
 
 ### Swift (swiftlang/swift, 32,805 files; indexed subset `lib`+`include`, 2,324 files) — complete, 5 questions
 
+> Re-measured 2026-09-22 (both arms fresh, branch tip): 5/5 both arms,
+> 38,885 → 7,608 (−80.4%). See
+> [2026-09-22](../2026-09-22/README.md), which supersedes the Swift numbers
+> below. Vaultwarden and Go rows below stand.
+
 Branch used **9,789 tokens vs baseline 69,875** (−60,086 tokens,
 **−86.0%**). Answer success: 5/5 baseline, 4/5 branch — Q4 is the only
 accuracy regression across all 12 questions (see Caveats).

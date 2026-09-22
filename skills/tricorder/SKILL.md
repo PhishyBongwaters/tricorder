@@ -5,7 +5,7 @@ description: Use tricorder to map a codebase (symbols, call graphs, signatures) 
 
 # Tricorder
 
-Use tricorder when you need `symbols`, `signatures`, `callers/callees`, or a compact **map** of a codebase without reading every file. It scans with tree-sitter, ranks by PageRank, and returns only the important definitions — measured −55% to −86% per-query response-payload tokens vs baseline navigation (see `eval/comparison-runs/2026-09-21/README.md`).
+Use tricorder when you need `symbols`, `signatures`, `callers/callees`, or a compact **map** of a codebase without reading every file. It scans with tree-sitter, ranks by PageRank, and returns only the important definitions — measured −55% to −80% per-query response-payload tokens vs baseline navigation (see `eval/comparison-runs/2026-09-22/README.md`).
 
 ## Tool names — match your host's prefix
 

@@ -28,7 +28,8 @@ Use the repo `.venv` (pytest + grammars). No DB = no map, no tools.
   0-byte stub); check existence first.
 - No destructive commands (rm, wipes) without explicit approval.
 - Savings numbers must cite the committed run that produced them
-  (`eval/comparison-runs/2026-09-21/README.md` is canonical until
+  (`eval/comparison-runs/2026-09-21/README.md` for Vaultwarden/Go,
+  `eval/comparison-runs/2026-09-22/README.md` for Swift — canonical until
   superseded). No version, no quote.
 - Depth: `docs/v2/` (00 scan-first, 01 pipeline, 02 tiering+retrieval,
   03 operations). MCP server + turn-0 plugins are unported — document

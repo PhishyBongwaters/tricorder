@@ -1,0 +1,9 @@
+{
+ "ground_truth_cited": [
+  "lib/SILOptimizer/Transforms/PerformanceInliner.cpp"
+ ],
+ "ground_truth_existing": [
+  "lib/SILOptimizer/Transforms/PerformanceInliner.cpp"
+ ],
+ "pass": true
+}
