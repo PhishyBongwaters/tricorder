@@ -57,6 +57,7 @@ All MCP tools require `project_root` (absolute path) — they route against that
 ## tricorder_detect parameters
 
 - `project_root` (required, absolute path), `query` (required — identifier to find, case-insensitive), `max_results` (default 10), `context_lines` (default 1), `include_definitions` (default true), `include_references` (default true).
+- `search_mode` (default `"substring"`): `"exact"` (whole-word match), `"substring"` (contains), `"regex"` (Python regex, case-insensitive).
 - `pre_index` / `pre_index_max_files` (default 100) / `pre_index_include_parents` (default 0): scope the search to files containing a probe symbol instead of scanning the whole tree. Critical for huge repos — prevents a full-tree walk per query.
 
 ## tricorder_symbols parameters
@@ -122,7 +123,7 @@ override the root via `TRICORDER_CACHE_HOME`).
 - **Arg names are exact** — the tools use strict MCP names, so a wrong guess costs a rejected call before the schema comes back. The ones that bite: `tricorder_scan` takes `project_root` (not `files`/`path`), `tricorder_detect` takes `query` (not `identifier`), `tricorder_detail` takes `name`+`file`+`line` (not `symbol`). Coping them correctly up front skips the round-trip.
 - **Function-scope isolation**: `get_symbol_detail` callers/callees must be scoped to the function body, not the whole file. The cross-file callees loop was missing the line-range guard, leaking sibling function refs. See `references/function-scope-isolation.md` for the bug pattern and fix.
 - **Routing**: call each tool on its own — never batch multiple tools in one call. If a call is rejected, follow the rejection's own direction once instead of abandoning the tool (deferral varies: one setup routes via wrapper, another direct — the error tells you which).
-- **Dead ends stay dead**: a 0-match detect/query, a `not found` detail, or a mangled `search_files` regex (backslash escapes aren't supported — use plain substrings) means move on with a different term on the FIRST failure. Never re-issue the same failing pattern.
+- **Dead ends stay dead**: a 0-match detect/query, a `not found` detail, or a rejected `tricorder_detect` regex (`search_mode="regex"` takes a Python regex — a pattern error means the pattern was mangled) means move on with a different term on the FIRST failure. Never re-issue the same failing pattern.
 - **Symbols dumps are the cost cliff**: an unbounded symbols listing (tens of KB) is the single biggest context bloat. Prefer a targeted `query` edge-trace or one `read_file`; call `symbols` at most once per investigation.
 - **Metadata is direction, not proof**: never assert behavior from signatures/summaries alone — inspect the source lines before claiming what code does.
 
