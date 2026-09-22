@@ -34,7 +34,7 @@ Three interfaces, one engine: a **CLI** for humans and scripts, an **MCP server*
 | Manual dependency tracing | Automatic call graph + PageRank |
 | Context window overflow | Token-budgeted output (~1.5% of the full repo) |
 
-**Measured (pre-db-map pipeline, Gen 2):** 15/15 benchmarks pass across C++, Rust, TypeScript, Go, and the Linux kernel — 86.7–100% token savings. See [Benchmarks](docs/benchmarks.md). Branch comparison (baseline vs db-map branch, measured response-payload tokens): −76.3% combined across Vaultwarden, Go, and Swift repos (11/12 questions answered on both). See [comparison runs](eval/comparison-runs/2026-09-21/README.md).
+**Measured (pre-db-map pipeline, Gen 2):** 15/15 benchmarks pass across C++, Rust, TypeScript, Go, and the Linux kernel — 86.7–100% token savings. See [Benchmarks](docs/benchmarks.md). Branch comparison (baseline vs db-map branch, measured response-payload tokens): −76.3% combined across Vaultwarden, Go, and Swift repos (baseline 12/12 questions answered, branch 11/12). See [comparison runs](eval/comparison-runs/2026-09-21/README.md).
 
 ## Quick Start
 
