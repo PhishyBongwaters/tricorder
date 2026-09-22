@@ -92,6 +92,9 @@ Search identifiers by name — the cheapest way to locate a known symbol.
 | `pre_index` / `pre_index_max_files` / `pre_index_include_parents` | | | Same as `tricorder_scan`. |
 
 **Returns:** list of hits — file, line, def/ref kind, name, context lines.
+Hits are interleaved per file (round-robin) within each match tier before
+the cap is applied, so many same-name hits in one file can't crowd hits in
+other files out of `max_results`.
 Use `search_mode: "exact"` when `"map"` matching `"mapping"`/`"bitmap"` is noise.
 
 ---

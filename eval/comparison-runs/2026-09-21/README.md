@@ -104,10 +104,25 @@ Headline for 16GB VRAM local models:
   `Parser::parseExpr` in the header but missed
   `lib/Parse/ParseExpr.cpp` — a precision/recall tradeoff from
   stricter qualify matching. Only regression in 12 questions.
-- **Pre-existing scalability bug (both arms):** `tricorder_detail`
-  deadlocks building the whole-repo cross-file index (0% CPU, stuck in
-  `do_wait`) on 16k-file repos, so `detail` is unusable there
-  regardless of variant. Not branch-caused; logged for a fix round.
+  *(Follow-up 2026-09-22, commit `090456e`: fixed — detect result
+  tiers now interleave hits per file (round-robin) before applying
+  the result cap, so many same-name hits in one header can no longer
+  crowd definition sites in other files out of the budget. Verified
+  with a red→green regression test; not yet re-measured on the full
+  Swift corpus.)*
+- **Large-repo `detail` slowness, investigated (both arms):** the
+  original report described `tricorder_detail` as deadlocking while
+  building the whole-repo cross-file index (0% CPU, stuck in
+  `do_wait`) on 16k-file repos. Follow-up reproduction on branch
+  `090456e` with the 11.7k-file Go corpus could NOT reproduce any
+  hang: the cross-file index built in 221s with steady progress, and
+  a cold parallel DB build finished `EXIT=0` in ~12.5 min with a
+  valid DB (12,911 files / 1,398,161 tags / 12,278,752 refs). The
+  0%-CPU/`do_wait` signature matches the *parent* harness process
+  waiting on a healthy 10–15-minute child, not a deadlock — first
+  `detail` on a huge repo is slow (then disk-cached), not stuck.
+  No code change was warranted. Repro script and logs:
+  `~/workspace/deadlock-repro/` (outside the repo).
 
 ## Layout
 
