@@ -1096,6 +1096,12 @@ class RankingMixin:
                     kept.pop()
                     omitted += 1
                     section = _section()
+                # If even the bare header+tail doesn't fit the remaining
+                # budget, drop the section instead of violating the budget.
+                # The low-coverage warning above already tells the user the
+                # map is thin, so the omission isn't silent.
+                if self.token_count(best_tree + section) > max_map_tokens:
+                    section = ""
                 best_tree = best_tree + section
         
         # Attach coverage_pct to file_report so MCP/CLI can surface it (issue #18)

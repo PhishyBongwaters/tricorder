@@ -304,7 +304,19 @@ class GraphMixin:
 
         # Build per-file call graphs for in-file traversal
         all_files = self._discover_files()
-        file_graphs = self.build_call_graph(all_files)
+        # Per-file references derived from the index just built. Calling
+        # build_call_graph(all_files) here re-parsed every file
+        # (get_symbols + get_all_references per file) for data the index
+        # already holds from the identical calls — _file_refs_index is
+        # populated on every _build_cross_file_index path (fresh build,
+        # instance cache, disk bundle), keyed by '/'-normalized path.
+        # Only ["references"] is consumed below.
+        _fri = getattr(self, "_file_refs_index", {}) or {}
+        file_graphs = {
+            fpath: {"references": _fri.get(fpath.replace("\\", "/"), [])}
+            for fpath in all_files
+            if os.path.isfile(fpath)
+        }
 
         # Helper: filter file by exclude/include globs
         def file_allowed(filepath: str, mods: QueryModifiers) -> bool:

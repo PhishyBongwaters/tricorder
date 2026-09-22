@@ -583,7 +583,8 @@ class ParserMixin:
         """Extract reference captures from a file's AST.
 
         Returns list of dicts with keys: line, name, capture_type, node_type.
-        capture_type is one of: call, type, class, implementation, module, macro.
+        capture_type is one of: call, argument, type, class, implementation,
+        module, macro.
         ponytail: uses @name.reference.* captures (identifier-only) not the
         full expression node text — tree-sitter captures the whole call
         expression as @reference.call but the identifier is @name.reference.call.
