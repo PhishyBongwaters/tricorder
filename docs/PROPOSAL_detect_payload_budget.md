@@ -1,5 +1,10 @@
 # Proposal: Budget `tricorder_detect` / `--detect` Payloads
 
+> **Implemented.** `max_tokens` on `tricorder_detect`/`tricorder_symbols`
+> (+ CLI `--max-tokens`), backed by `utils.enforce_search_budget`
+> (context/docstring first, then tail hits; `truncated`/`total`/`omitted`).
+> Pinned by `tests/test_detect_budget.py` (8 tests). Kept as design record.
+
 ## Problem
 
 `tricorder_detail` got `max_tokens` (trim body → callees → callers, never

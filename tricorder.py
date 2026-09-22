@@ -270,6 +270,15 @@ Examples:
     )
 
     parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=None,
+        help="Token budget for --detect/--symbols responses: trims per-hit "
+             "context first (identity survives), then lowest-ranked hits. "
+             "Unset (default) is unbounded."
+    )
+
+    parser.add_argument(
         "--top",
         type=int,
         default=None,
@@ -791,8 +800,19 @@ Examples:
             if args.detect is not None:
                 results, _rescue = repo_map.search_identifiers(
                     args.detect, max_results=args.max_results)
+                if args.max_tokens:
+                    from utils import enforce_search_budget
+                    results, truncated, omitted = enforce_search_budget(
+                        results, args.max_tokens)
+                else:
+                    truncated, omitted = False, 0
                 if args.format == "json":
-                    print(_json.dumps({"results": results}, indent=2))
+                    payload = {"results": results}
+                    if truncated:
+                        payload.update({"truncated": True,
+                                        "total": len(results) + omitted,
+                                        "omitted": omitted})
+                    print(_json.dumps(payload, indent=2))
                 else:
                     if not results:
                         print(f"No matches for '{args.detect}'.")
@@ -805,8 +825,19 @@ Examples:
             else:
                 results, _rescue = repo_map.search_symbols(
                     args.symbols, limit=args.max_results)
+                if args.max_tokens:
+                    from utils import enforce_search_budget
+                    results, truncated, omitted = enforce_search_budget(
+                        results, args.max_tokens)
+                else:
+                    truncated, omitted = False, 0
                 if args.format == "json":
-                    print(_json.dumps({"symbols": results}, indent=2))
+                    payload = {"symbols": results}
+                    if truncated:
+                        payload.update({"truncated": True,
+                                        "total": len(results) + omitted,
+                                        "omitted": omitted})
+                    print(_json.dumps(payload, indent=2))
                 else:
                     if not results:
                         print(f"No matches for '{args.symbols}'.")

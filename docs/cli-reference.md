@@ -55,6 +55,7 @@ All honor `--format` (JSON output is machine-clean — no info lines).
 | `--detect QUERY` | — | Identifier search, MCP `tricorder_detect` equivalent: definitions + references with file, line, context. |
 | `--symbols QUERY` | — | Symbol search, MCP `tricorder_symbols` equivalent: name, type, file, line range, signature. |
 | `--max-results N` | `10` | Result cap for `--detect` / `--symbols`. `--detect` interleaves hits per file (round-robin) within each match tier before capping, so one file can't crowd out the rest. |
+| `--max-tokens N` | — | Response budget for `--detect` / `--symbols`: trims per-hit context first (identity survives), then lowest-ranked hits. Unset = unbounded. |
 | `--diff`, `--since` | off | Delta map: added/modified/deleted files since the last scan, plus tags for changed files. Read-only. `--since` is an alias for `--diff`. |
 
 ```bash

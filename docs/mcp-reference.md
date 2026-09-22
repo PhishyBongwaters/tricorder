@@ -90,6 +90,7 @@ Search identifiers by name — the cheapest way to locate a known symbol.
 | `include_references` | bool | `true` | Include reference occurrences. |
 | `search_mode` | string | `"substring"` | `"exact"` (whole word), `"substring"` (contains), `"regex"` (Python regex). Case-insensitive for exact/substring. |
 | `pre_index` / `pre_index_max_files` / `pre_index_include_parents` | | | Same as `tricorder_scan`. |
+| `max_tokens` | int | — | Response budget. Trims per-hit context first (identity survives), then lowest-ranked hits; sets `truncated`/`total`/`omitted`. Unset = unbounded. |
 
 **Returns:** list of hits — file, line, def/ref kind, name, context lines.
 Hits are interleaved per file (round-robin) within each match tier before
@@ -110,6 +111,7 @@ Structured symbol query with type + file filters. Returns full records.
 | `type` | string | — | Filter by symbol type: `function`, `class`, `type`, `variable`, `method`, `import`. Exact match. |
 | `file` | string | — | Filter by file path (substring). |
 | `limit` | int | `10` | Max results (caps at 200). |
+| `max_tokens` | int | — | Response budget. Trims per-hit docstrings first (identity survives), then lowest-ranked hits; sets `truncated`/`omitted`. Unset = unbounded. |
 
 **Returns:** records with `name`, `type`, `file`, line range, `signature`,
 `docstring`, `language`, tree-sitter kind. Note: Python method names are

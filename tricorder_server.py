@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fastmcp import FastMCP, settings
 from core import Tricorder
 from database import drop_mapped_files
-from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write, db_root_matches, _db_writable, resolve_or_none
+from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write, db_root_matches, _db_writable, resolve_or_none, enforce_search_budget
 from scm import get_scm_fname
 from importance import filter_important_files
 from ctags_probe import probe_and_narrow
@@ -1155,6 +1155,7 @@ async def tricorder_detect(
     pre_index_max_files: int = 100,
     pre_index_include_parents: int = 0,
     search_mode: str = "substring",  # "exact", "substring", "regex"
+    max_tokens: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Search for identifiers in code files. Get back a list of matching identifiers with their file, line number, and context.
 
@@ -1170,6 +1171,9 @@ async def tricorder_detect(
         pre_index_max_files: Max files from pre-index
         pre_index_include_parents: Include N parent dirs of matched files
         search_mode: Search mode - "exact" (whole word), "substring" (contains), "regex" (Python regex). Default: "substring".
+        max_tokens: Optional response budget. Trims per-hit context first
+            (identity survives), then lowest-ranked hits; sets
+            truncated/total/omitted. None (default) is unbounded.
     
     Returns:
         Dictionary containing search results or error message
@@ -1218,6 +1222,14 @@ async def tricorder_detect(
             return {"error": str(e)}
 
         resp = {"results": results}
+        if max_tokens is not None and max_tokens > 0 and results:
+            trimmed, truncated, omitted = enforce_search_budget(
+                results, max_tokens)
+            if truncated:
+                resp["results"] = trimmed
+                resp["truncated"] = True
+                resp["total"] = len(results)
+                resp["omitted"] = omitted
         rescue_kind = ("content"
                        if any(r.get("quality") == "content" for r in results)
                        else "fuzzy")
@@ -1239,6 +1251,7 @@ async def tricorder_symbols(
     type: Optional[str] = None,
     file: Optional[str] = None,
     limit: int = 10,
+    max_tokens: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Search for code symbols by name, type, or file path. Returns matching symbols with their name, type, file, line range, signature, docstring, language, and tree-sitter kind.
 
@@ -1252,6 +1265,9 @@ async def tricorder_symbols(
         type: Filter by symbol type — function, class, type, variable, method, or import. Exact match.
         file: Filter by file path — path contains the given string.
         limit: Maximum results to return. Defaults to 10, caps at 200.
+        max_tokens: Optional response budget. Trims per-hit docstrings
+            first (identity survives), then lowest-ranked hits; sets
+            truncated/omitted. None (default) is unbounded.
 
     Returns:
         Dictionary containing 'symbols' (list of symbol records) or 'error' key.
@@ -1270,6 +1286,13 @@ async def tricorder_symbols(
 
         resp = {"symbols": results, "total": len(results),
                 "limit": min(max(limit, 1), 200)}
+        if max_tokens is not None and max_tokens > 0 and results:
+            trimmed, truncated, omitted = enforce_search_budget(
+                results, max_tokens)
+            if truncated:
+                resp["symbols"] = trimmed
+                resp["truncated"] = True
+                resp["omitted"] = omitted
         esc = _escalation_hint("symbols", query, len(results), rescue)
         if esc:
             resp["escalation"] = esc

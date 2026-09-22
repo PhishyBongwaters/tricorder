@@ -236,6 +236,55 @@ def count_tokens(text: str, model_name: str = "gpt-4") -> int:
     return len(encoding.encode(text))
 
 
+def enforce_search_budget(items, max_tokens):
+    """Trim a ranked search-result list to a token budget (in place-safe).
+
+    Trim order mirrors the detail budgetter: drop per-hit bulk first
+    (`context`, else `docstring`) from the lowest-ranked hits upward, then
+    drop lowest-ranked hits entirely. Identity (`file`/`line`/`name`) of
+    the head hit always survives (best-effort under the floor, same
+    convention as the detail budget).
+
+    items: list of result dicts, best first. max_tokens None or <= 0
+    disables trimming (current unbounded behavior).
+    Returns (items, truncated, omitted) where omitted counts dropped hits
+    (context-stripped survivors are still listed, not omitted).
+    """
+    if not items:
+        return items, False, 0
+    if max_tokens is None or max_tokens <= 0:
+        return items, False, 0
+
+    def _cost(rs):
+        return count_tokens(json.dumps(rs), "gpt-4")
+
+    original = len(items)
+    out = [dict(h) for h in items]
+    truncated = False
+    if _cost(out) <= max_tokens:
+        return out, False, 0
+
+    # Phase 1: strip bulk text tail-up (context for detect hits,
+    # docstring for symbol records).
+    for h in reversed(out):
+        if _cost(out) <= max_tokens:
+            break
+        for key in ("context", "docstring"):
+            if h.get(key):
+                h[key] = ""
+                truncated = True
+                break
+
+    # Phase 2: drop tail hits until the serialized total holds or one
+    # identity hit remains (measured each step — tokenizers aren't
+    # additive across edits, so the loop itself is the guarantee).
+    while len(out) > 1 and _cost(out) > max_tokens:
+        out.pop()
+        truncated = True
+
+    return out, True, original - len(out)
+
+
 def read_text(filename: str, encoding: str = "utf-8", silent: bool = False, 
               strict: bool = False) -> Optional[str]:
     """Read text from file with error handling.
