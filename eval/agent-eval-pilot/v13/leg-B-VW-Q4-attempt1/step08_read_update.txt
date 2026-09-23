@@ -1,0 +1,79 @@
+            saved_att.akey = Some(attachment.key);
+            saved_att.file_name = attachment.file_name;
+
+            saved_att.save(conn).await?;
+        }
+    }
+
+    let type_data_opt = match data.r#type {
+        1 => data.login,
+        2 => data.secure_note,
+        3 => data.card,
+        4 => data.identity,
+        5 => data.ssh_key,
+        _ => err!("Invalid type"),
+    };
+
+    let type_data = if let Some(mut data) = type_data_opt {
+        // Remove the 'Response' key from the base object.
+        data.as_object_mut().unwrap().remove("response");
+        // Remove the 'Response' key from every Uri.
+        if data["uris"].is_array() {
+            data["uris"] = clean_cipher_data(data["uris"].clone());
+        }
+        data
+    } else {
+        err!("Data missing")
+    };
+
+    cipher.key = data.key;
+    cipher.name = data.name;
+    cipher.notes = data.notes;
+    cipher.fields = data.fields.map(|f| clean_cipher_data(f).to_string());
+    cipher.data = type_data.to_string();
+    cipher.password_history = data.password_history.map(|f| f.to_string());
+    cipher.reprompt = data.reprompt.filter(|r| *r == RepromptType::None as i32 || *r == RepromptType::Password as i32);
+
+    cipher.save(conn).await?;
+    cipher.move_to_folder(data.folder_id, &headers.user.uuid, conn).await?;
+    cipher.set_favorite(data.favorite, &headers.user.uuid, conn).await?;
+
+    if let Some(dt_str) = data.archived_date {
+        match NaiveDateTime::parse_from_str(&dt_str, "%+") {
+            Ok(dt) => cipher.set_archived_at(dt, &headers.user.uuid, conn).await?,
+            Err(err) => warn!("Error parsing ArchivedDate '{dt_str}': {err}"),
+        }
+    }
+
+    if ut != UpdateType::None {
+        // Only log events for organizational ciphers
+        if let Some(org_id) = &cipher.organization_uuid {
+            let event_type = match (&ut, transfer_cipher) {
+                (UpdateType::SyncCipherCreate, true) => EventType::CipherCreated,
+                (UpdateType::SyncCipherUpdate, true) => EventType::CipherShared,
+                (_, _) => EventType::CipherUpdated,
+            };
+
+            log_event(
+                event_type as i32,
+                &cipher.uuid,
+                org_id,
+                &headers.user.uuid,
+                headers.device.atype,
+                &headers.ip.ip,
+                conn,
+            )
+            .await;
+        }
+        nt.send_cipher_update(
+            ut,
+            cipher,
+            &cipher.update_users_revision(conn).await,
+            &headers.device,
+            shared_to_collections,
+            conn,
+        )
+        .await;
+    }
+    Ok(())
+}

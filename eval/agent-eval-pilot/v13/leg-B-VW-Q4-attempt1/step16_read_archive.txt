@@ -1,0 +1,70 @@
+    if !cipher.is_accessible_to_user(&headers.user.uuid, conn).await {
+        err!("Cipher is not accessible for the current user")
+    }
+
+    cipher.set_archived_at(Utc::now().naive_utc(), &headers.user.uuid, conn).await?;
+
+    if !multi_archive {
+        nt.send_cipher_update(
+            UpdateType::SyncCipherUpdate,
+            &cipher,
+            &cipher.update_users_revision(conn).await,
+            &headers.device,
+            None,
+            conn,
+        )
+        .await;
+    }
+
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await?))
+}
+
+async fn unarchive_cipher(
+    cipher_id: &CipherId,
+    headers: &Headers,
+    multi_unarchive: bool,
+    conn: &DbConn,
+    nt: &Notify<'_>,
+) -> JsonResult {
+    let Some(cipher) = Cipher::find_by_uuid(cipher_id, conn).await else {
+        err!("Cipher doesn't exist")
+    };
+
+    if !cipher.is_accessible_to_user(&headers.user.uuid, conn).await {
+        err!("Cipher is not accessible for the current user")
+    }
+
+    cipher.unarchive(&headers.user.uuid, conn).await?;
+
+    if !multi_unarchive {
+        nt.send_cipher_update(
+            UpdateType::SyncCipherUpdate,
+            &cipher,
+            &cipher.update_users_revision(conn).await,
+            &headers.device,
+            None,
+            conn,
+        )
+        .await;
+    }
+
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await?))
+}
+
+async fn archive_multiple_ciphers(
+    data: Json<CipherIdsData>,
+    headers: &Headers,
+    conn: &DbConn,
+    nt: &Notify<'_>,
+) -> JsonResult {
+    let data = data.into_inner();
+
+    let mut ciphers: Vec<Value> = Vec::new();
+    for cipher_id in data.ids {
+        match archive_cipher(&cipher_id, headers, true, conn, nt).await {
+            Ok(json) => ciphers.push(json.into_inner()),
+            err => return err,
+        }
+    }
+
+    // Multi archive does not send out a push for each cipher, we need to send a general sync here

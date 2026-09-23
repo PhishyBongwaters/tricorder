@@ -1,0 +1,60 @@
+    };
+
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {
+        err!("Cipher cannot be deleted by user")
+    }
+
+    // Delete attachment
+    attachment.delete(conn).await?;
+    nt.send_cipher_update(
+        UpdateType::SyncCipherUpdate,
+        &cipher,
+        &cipher.update_users_revision(conn).await,
+        &headers.device,
+        None,
+        conn,
+    )
+    .await;
+
+    if let Some(ref org_id) = cipher.organization_uuid {
+        log_event(
+            EventType::CipherAttachmentDeleted as i32,
+            &cipher.uuid,
+            org_id,
+            &headers.user.uuid,
+            headers.device.atype,
+            &headers.ip.ip,
+            conn,
+        )
+        .await;
+    }
+    let cipher_json = cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await?;
+    Ok(Json(json!({"cipher":cipher_json})))
+}
+
+async fn archive_cipher(
+    cipher_id: &CipherId,
+    headers: &Headers,
+    multi_archive: bool,
+    conn: &DbConn,
+    nt: &Notify<'_>,
+) -> JsonResult {
+    let Some(cipher) = Cipher::find_by_uuid(cipher_id, conn).await else {
+        err!("Cipher doesn't exist")
+    };
+
+    if !cipher.is_accessible_to_user(&headers.user.uuid, conn).await {
+        err!("Cipher is not accessible for the current user")
+    }
+
+    cipher.set_archived_at(Utc::now().naive_utc(), &headers.user.uuid, conn).await?;
+
+    if !multi_archive {
+        nt.send_cipher_update(
+            UpdateType::SyncCipherUpdate,
+            &cipher,
+            &cipher.update_users_revision(conn).await,
+            &headers.device,
+            None,
+            conn,
+        )

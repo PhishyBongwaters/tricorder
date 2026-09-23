@@ -1,0 +1,60 @@
+    };
+
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {
+        err!("Cipher can't be restored by user")
+    }
+
+    cipher.deleted_at = None;
+    cipher.save(conn).await?;
+
+    if !multi_restore {
+        nt.send_cipher_update(
+            UpdateType::SyncCipherUpdate,
+            &cipher,
+            &cipher.update_users_revision(conn).await,
+            &headers.device,
+            None,
+            conn,
+        )
+        .await;
+    }
+
+    if let Some(org_id) = &cipher.organization_uuid {
+        log_event(
+            EventType::CipherRestored as i32,
+            &cipher.uuid.clone(),
+            org_id,
+            &headers.user.uuid,
+            headers.device.atype,
+            &headers.ip.ip,
+            conn,
+        )
+        .await;
+    }
+
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await?))
+}
+
+async fn restore_multiple_ciphers(
+    data: Json<CipherIdsData>,
+    headers: &Headers,
+    conn: &DbConn,
+    nt: &Notify<'_>,
+) -> JsonResult {
+    let data = data.into_inner();
+
+    let mut ciphers: Vec<Value> = Vec::new();
+    for cipher_id in data.ids {
+        match restore_cipher_by_uuid(&cipher_id, headers, true, conn, nt).await {
+            Ok(json) => ciphers.push(json.into_inner()),
+            err => return err,
+        }
+    }
+
+    // Multi move actions do not send out a push for each cipher, we need to send a general sync here
+    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, headers.device.push_uuid.as_ref(), conn).await;
+
+    Ok(Json(json!({
+      "data": ciphers,
+      "object": "list",
+      "continuationToken": null

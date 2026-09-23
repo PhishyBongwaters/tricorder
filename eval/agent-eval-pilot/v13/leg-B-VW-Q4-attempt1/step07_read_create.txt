@@ -1,0 +1,80 @@
+async fn post_ciphers_admin(data: Json<ShareCipherData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    post_ciphers_create(data, headers, conn, nt).await
+}
+
+/// Called when creating a new org-owned cipher, or cloning a cipher (whether
+/// user- or org-owned). When cloning a cipher to a user-owned cipher,
+/// `organizationId` is null.
+#[post("/ciphers/create", data = "<data>")]
+async fn post_ciphers_create(
+    data: Json<ShareCipherData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
+    let mut data: ShareCipherData = data.into_inner();
+
+    // This check is usually only needed in update_cipher_from_data(), but we
+    // need it here as well to avoid creating an empty cipher in the call to
+    // cipher.save() below.
+    enforce_personal_ownership_policy(Some(&data.cipher), &headers, &conn).await?;
+
+    let mut cipher = Cipher::new(data.cipher.r#type, data.cipher.name.clone());
+    cipher.user_uuid = Some(headers.user.uuid.clone());
+    cipher.save(&conn).await?;
+
+    // When cloning a cipher, the Bitwarden clients seem to set this field
+    // based on the cipher being cloned (when creating a new cipher, it's set
+    // to null as expected). However, `cipher.created_at` is initialized to
+    // the current time, so the stale data check will end up failing down the
+    // line. Since this function only creates new ciphers (whether by cloning
+    // or otherwise), we can just ignore this field entirely.
+    data.cipher.last_known_revision_date = None;
+
+    let res = share_cipher_by_uuid(&cipher.uuid, data, &headers, &conn, &nt, None).await;
+    if res.is_err() {
+        cipher.delete(&conn).await?;
+    }
+    res
+}
+
+/// Called when creating a new user-owned cipher.
+#[post("/ciphers", data = "<data>")]
+async fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    let mut data: CipherData = data.into_inner();
+
+    // The web/browser clients set this field to null as expected, but the
+    // mobile clients seem to set the invalid value `0001-01-01T00:00:00`,
+    // which results in a warning message being logged. This field isn't
+    // needed when creating a new cipher, so just ignore it unconditionally.
+    data.last_known_revision_date = None;
+
+    let mut cipher = Cipher::new(data.r#type, data.name.clone());
+    update_cipher_from_data(&mut cipher, data, &headers, None, &conn, &nt, UpdateType::SyncCipherCreate).await?;
+
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &conn).await?))
+}
+
+/// Enforces the personal ownership policy on user-owned ciphers, if applicable.
+/// A non-owner/admin user belonging to an org with the personal ownership policy
+/// enabled isn't allowed to create new user-owned ciphers or modify existing ones
+/// (that were created before the policy was applicable to the user). The user is
+/// allowed to delete or share such ciphers to an org, however.
+///
+/// Ref: https://bitwarden.com/help/article/policies/#personal-ownership
+async fn enforce_personal_ownership_policy(data: Option<&CipherData>, headers: &Headers, conn: &DbConn) -> EmptyResult {
+    if data.is_none() || data.unwrap().organization_id.is_none() {
+        let user_id = &headers.user.uuid;
+        let policy_type = OrgPolicyType::PersonalOwnership;
+        if OrgPolicy::is_applicable_to_user(user_id, policy_type, None, conn).await {
+            err!("Due to an Enterprise Policy, you are restricted from saving items to your personal vault.")
+        }
+    }
+    Ok(())
+}
+
+pub async fn update_cipher_from_data(
+    cipher: &mut Cipher,
+    data: CipherData,
+    headers: &Headers,
+    shared_to_collections: Option<Vec<CollectionId>>,

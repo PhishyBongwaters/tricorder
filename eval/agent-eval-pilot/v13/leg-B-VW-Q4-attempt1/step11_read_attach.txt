@@ -1,0 +1,50 @@
+        // [0]: https://docs.rs/rocket/latest/rocket/fs/struct.FileName.html#-danger-
+        let encrypted_filename = data.data.raw_name().map(|s| s.dangerous_unsafe_unsanitized_raw().to_string());
+
+        if encrypted_filename.is_none() {
+            err!("No filename provided")
+        }
+        if data.key.is_none() {
+            err!("No attachment key provided")
+        }
+        let attachment =
+            Attachment::new(file_id.clone(), cipher_id.clone(), encrypted_filename.unwrap(), size, data.key);
+        attachment.save(&conn).await.expect("Error saving attachment");
+    }
+
+    save_temp_file(&PathType::Attachments, &format!("{cipher_id}/{file_id}"), data.data, true).await?;
+
+    nt.send_cipher_update(
+        UpdateType::SyncCipherUpdate,
+        &cipher,
+        &cipher.update_users_revision(&conn).await,
+        &headers.device,
+        None,
+        &conn,
+    )
+    .await;
+
+    if let Some(org_id) = &cipher.organization_uuid {
+        log_event(
+            EventType::CipherAttachmentCreated as i32,
+            &cipher.uuid,
+            org_id,
+            &headers.user.uuid,
+            headers.device.atype,
+            &headers.ip.ip,
+            &conn,
+        )
+        .await;
+    }
+
+    Ok((cipher, conn))
+}
+
+/// v2 API for uploading the actual data content of an attachment.
+/// This route needs a rank specified so that Rocket prioritizes the
+/// /ciphers/<cipher_id>/attachment/v2 route, which would otherwise conflict
+/// with this one.
+#[post("/ciphers/<cipher_id>/attachment/<attachment_id>", format = "multipart/form-data", data = "<data>", rank = 1)]
+async fn post_attachment_v2_data(
+    cipher_id: CipherId,
+    attachment_id: AttachmentId,

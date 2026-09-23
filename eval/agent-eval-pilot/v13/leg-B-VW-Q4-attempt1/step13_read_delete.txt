@@ -1,0 +1,80 @@
+    HardSingle,
+    HardMulti,
+}
+
+async fn delete_cipher_by_uuid(
+    cipher_id: &CipherId,
+    headers: &Headers,
+    conn: &DbConn,
+    delete_options: &CipherDeleteOptions,
+    nt: &Notify<'_>,
+) -> EmptyResult {
+    let Some(mut cipher) = Cipher::find_by_uuid(cipher_id, conn).await else {
+        err!("Cipher doesn't exist")
+    };
+
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {
+        err!("Cipher can't be deleted by user")
+    }
+
+    if *delete_options == CipherDeleteOptions::SoftSingle || *delete_options == CipherDeleteOptions::SoftMulti {
+        cipher.deleted_at = Some(Utc::now().naive_utc());
+        cipher.save(conn).await?;
+        if *delete_options == CipherDeleteOptions::SoftSingle {
+            nt.send_cipher_update(
+                UpdateType::SyncCipherUpdate,
+                &cipher,
+                &cipher.update_users_revision(conn).await,
+                &headers.device,
+                None,
+                conn,
+            )
+            .await;
+        }
+    } else {
+        cipher.delete(conn).await?;
+        if *delete_options == CipherDeleteOptions::HardSingle {
+            nt.send_cipher_update(
+                UpdateType::SyncLoginDelete,
+                &cipher,
+                &cipher.update_users_revision(conn).await,
+                &headers.device,
+                None,
+                conn,
+            )
+            .await;
+        }
+    }
+
+    if let Some(org_id) = cipher.organization_uuid {
+        let event_type = if *delete_options == CipherDeleteOptions::SoftSingle
+            || *delete_options == CipherDeleteOptions::SoftMulti
+        {
+            EventType::CipherSoftDeleted as i32
+        } else {
+            EventType::CipherDeleted as i32
+        };
+
+        log_event(event_type, &cipher.uuid, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, conn)
+            .await;
+    }
+
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CipherIdsData {
+    ids: Vec<CipherId>,
+}
+
+async fn delete_multiple_ciphers(
+    data: Json<CipherIdsData>,
+    headers: Headers,
+    conn: DbConn,
+    delete_options: CipherDeleteOptions,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    let data = data.into_inner();
+
+    for cipher_id in data.ids {

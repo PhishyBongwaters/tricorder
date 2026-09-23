@@ -1,0 +1,50 @@
+
+    // TODO: Convert this to use a single query (or at least less) to update all items
+    // Find all ciphers a user has access to, all others will be ignored
+    let accessible_ciphers = Cipher::find_by_user_and_ciphers(user_id, &data.ids, &conn).await;
+    let accessible_ciphers_count = accessible_ciphers.len();
+    for cipher in accessible_ciphers {
+        cipher.move_to_folder(data.folder_id.clone(), user_id, &conn).await?;
+        if cipher_count == 1 {
+            single_cipher = Some(cipher);
+        }
+    }
+
+    if let Some(cipher) = single_cipher {
+        nt.send_cipher_update(
+            UpdateType::SyncCipherUpdate,
+            &cipher,
+            std::slice::from_ref(user_id),
+            &headers.device,
+            None,
+            &conn,
+        )
+        .await;
+    } else {
+        // Multi move actions do not send out a push for each cipher, we need to send a general sync here
+        nt.send_user_update(UpdateType::SyncCiphers, &headers.user, headers.device.push_uuid.as_ref(), &conn).await;
+    }
+
+    if cipher_count != accessible_ciphers_count {
+        err!(format!(
+            "Not all ciphers are moved! {accessible_ciphers_count} of the selected {cipher_count} were moved."
+        ))
+    }
+
+    Ok(())
+}
+
+#[put("/ciphers/move", data = "<data>")]
+async fn move_cipher_selected_put(
+    data: Json<MoveCipherData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    move_cipher_selected(data, headers, conn, nt).await
+}
+
+#[derive(FromForm)]
+struct OrganizationIdData {
+    #[field(name = "organizationId")]
+    org_id: OrganizationId,

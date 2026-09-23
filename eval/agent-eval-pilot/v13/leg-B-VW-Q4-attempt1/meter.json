@@ -1,0 +1,19 @@
+{
+ "step01_ls_root.txt": 101,
+ "step02_ls_src.txt": 49,
+ "step03_ls_api.txt": 22,
+ "step04_ls_core.txt": 32,
+ "step05_read_notif.txt": 5279,
+ "step06_grep_send.txt": 0,
+ "step07_read_create.txt": 899,
+ "step08_read_update.txt": 594,
+ "step09_read_coll.txt": 427,
+ "step10_read_admin.txt": 565,
+ "step11_read_attach.txt": 378,
+ "step12_read_move.txt": 384,
+ "step13_read_delete.txt": 501,
+ "step14_read_restore.txt": 388,
+ "step15_read_attachdel.txt": 373,
+ "step16_read_archive.txt": 476,
+ "step17_read_push.txt": 1622
+}
