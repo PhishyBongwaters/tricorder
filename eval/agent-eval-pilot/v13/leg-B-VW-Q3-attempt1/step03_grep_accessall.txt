@@ -1,0 +1,90 @@
+src/api/core/accounts.rs:294:                if !CONFIG.emergency_access_allowed() {
+src/api/core/accounts.rs:363:                || (CONFIG.emergency_access_allowed()
+src/api/core/accounts.rs:426:    if !CONFIG.mail_enabled() && CONFIG.emergency_access_allowed() {
+src/api/core/emergency_access.rs:50:    let emergency_access_list = if CONFIG.emergency_access_allowed() {
+src/api/core/emergency_access.rs:71:    let emergency_access_list = if CONFIG.emergency_access_allowed() {
+src/api/core/emergency_access.rs:716:    if !CONFIG.emergency_access_allowed() {
+src/api/core/emergency_access.rs:724:    if !CONFIG.emergency_access_allowed() {
+src/api/core/emergency_access.rs:779:    if !CONFIG.emergency_access_allowed() {
+src/api/core/organizations.rs:217:    member.access_all = true;
+src/api/core/organizations.rs:509:    if headers.membership.atype == MembershipType::Manager && !headers.membership.access_all {
+src/api/core/organizations.rs:538:        if member.access_all {
+src/api/core/organizations.rs:623:            if member.access_all {
+src/api/core/organizations.rs:702:        if member.access_all {
+src/api/core/organizations.rs:1055:    // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
+src/api/core/organizations.rs:1069:    // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
+src/api/core/organizations.rs:1071:    // If the box is not checked, the user will still be a manager, but not with the access_all permission
+src/api/core/organizations.rs:1072:    let access_all = new_type >= MembershipType::Admin
+src/api/core/organizations.rs:1118:        new_member.access_all = access_all;
+src/api/core/organizations.rs:1162:        if !access_all {
+src/api/core/organizations.rs:1555:    // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
+src/api/core/organizations.rs:1563:    // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
+src/api/core/organizations.rs:1565:    // If the box is not checked, the user will still be a manager, but not with the access_all permission
+src/api/core/organizations.rs:1566:    let access_all = new_type >= MembershipType::Admin
+src/api/core/organizations.rs:1597:    member_to_edit.access_all = access_all;
+src/api/core/organizations.rs:1610:    if !access_all {
+src/api/core/organizations.rs:2524:    access_all: bool,
+src/api/core/organizations.rs:2532:        Group::new(org_uuid.clone(), self.name.clone(), self.access_all, self.external_id.clone())
+src/api/core/organizations.rs:2537:        group.access_all = self.access_all;
+src/api/core/organizations.rs:2697:        "accessAll": group.access_all,
+src/api/core/public.rs:128:            new_member.access_all = false;
+src/api/web.rs:92:        "emergency_access_allowed": CONFIG.emergency_access_allowed(),
+src/config.rs:639:        emergency_access_allowed:    bool,   true,   def,    true;
+src/db/models/cipher.rs:841:                    .or_filter(users_organizations::access_all.eq(true)) // access_all in org
+src/db/models/cipher.rs:843:                    .or_filter(groups::access_all.eq(true)) // Access via groups
+src/db/models/cipher.rs:878:                    .or_filter(users_organizations::access_all.eq(true)) // access_all in org
+src/db/models/cipher.rs:1001:                        users_organizations::access_all
+src/db/models/cipher.rs:1006:                            .or(groups::access_all.eq(true)) // Access via groups
+src/db/models/cipher.rs:1032:                        users_organizations::access_all
+src/db/models/cipher.rs:1076:                        users_organizations::access_all
+src/db/models/cipher.rs:1081:                            .or(groups::access_all.eq(true)) // Access via groups
+src/db/models/cipher.rs:1108:                        users_organizations::access_all
+src/db/models/cipher.rs:1154:                .or_filter(users_organizations::access_all.eq(true)) // User has access all
+src/db/models/cipher.rs:1156:                .or_filter(groups::access_all.eq(true)) //Access via group
+src/db/models/collection.rs:264:                                users_organizations::access_all.eq(true), // access_all in Organization
+src/db/models/collection.rs:267:                                groups::access_all.eq(true), // access_all in groups
+src/db/models/collection.rs:298:                        users_organizations::access_all.eq(true), // access_all in Organization
+src/db/models/collection.rs:383:                                users_organizations::access_all.eq(true).or(
+src/db/models/collection.rs:384:                                    // access_all in Organization
+src/db/models/collection.rs:389:                                groups::access_all.eq(true), // access_all in groups
+src/db/models/collection.rs:419:                        users_organizations::access_all.eq(true).or(
+src/db/models/collection.rs:420:                            // access_all in Organization
+src/db/models/collection.rs:464:                            .or(users_organizations::access_all.eq(true)) // access_all via membership
+src/db/models/collection.rs:468:                            .or(groups::access_all.eq(true)) // access_all via group
+src/db/models/collection.rs:497:                            .or(users_organizations::access_all.eq(true)) // access_all via membership
+src/db/models/collection.rs:544:                            users_organizations::access_all.eq(true).or(
+src/db/models/collection.rs:545:                                // access_all in Organization
+src/db/models/collection.rs:550:                            groups::access_all.eq(true), // access_all in groups
+src/db/models/collection.rs:603:                            users_organizations::access_all.eq(true).or(
+src/db/models/collection.rs:604:                                // access_all in Organization
+src/db/models/collection.rs:609:                            groups::access_all.eq(true), // access_all in groups
+src/db/models/group.rs:26:    pub access_all: bool,
+src/db/models/group.rs:56:        access_all: bool,
+src/db/models/group.rs:65:            access_all,
+src/db/models/group.rs:107:            "accessAll": self.access_all,
+src/db/models/group.rs:260:                .filter(groups::access_all.eq(true))
+src/db/models/group.rs:280:                .filter(groups::access_all.eq(true))
+src/db/models/group.rs:281:                .select(groups::access_all)
+src/db/models/group.rs:604:                .filter(groups::access_all.eq(true))
+src/db/models/organization.rs:54:    pub access_all: bool,
+src/db/models/organization.rs:271:            access_all: false,
+src/db/models/organization.rs:460:                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
+src/db/models/organization.rs:465:                "createNewCollections": membership_type == 4 && self.access_all,
+src/db/models/organization.rs:466:                "editAnyCollection": membership_type == 4 && self.access_all,
+src/db/models/organization.rs:467:                "deleteAnyCollection": membership_type == 4 && self.access_all,
+src/db/models/organization.rs:525:            // limit collection creation to managers with access_all permission to prevent issues
+src/db/models/organization.rs:526:            "limitCollectionCreation": self.atype < MembershipType::Manager || !self.access_all,
+src/db/models/organization.rs:575:        let collections: Vec<Value> = if include_collections && !(full_access_group || self.access_all) {
+src/db/models/organization.rs:627:        // HACK: Only return permissions if the user is of type custom and has access_all
+src/db/models/organization.rs:629:        let permissions = if membership_type == 4 && self.access_all {
+src/db/models/organization.rs:633:                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
+src/db/models/organization.rs:664:            "accessAll": self.access_all,
+src/db/models/organization.rs:691:        let coll_uuids = if self.access_all {
+src/db/models/organization.rs:723:            "accessAll": self.access_all,
+src/db/models/organization.rs:832:        (self.access_all || self.atype >= MembershipType::Admin) && self.has_status(MembershipStatus::Confirmed)
+src/db/models/organization.rs:952:                            .and(users_organizations::access_all.eq(true))),
+src/db/models/organization.rs:1076:                .filter(users_organizations::access_all.eq(true).or(
+src/db/models/organization.rs:1110:                .filter(groups::access_all.eq(true).or(
+src/db/models/organization.rs:1152:                .filter(users_organizations::access_all.eq(true).or(
+src/db/schema.rs:239:        access_all -> Bool,
+src/db/schema.rs:302:        access_all -> Bool,

@@ -1,0 +1,10 @@
+{
+ "step01_ls_root.txt": 101,
+ "step02_grep_orgcoll.txt": 2291,
+ "step03_grep_accessall.txt": 1999,
+ "step04_read_orgs.txt": 1834,
+ "step05_grep_core.txt": 2187,
+ "step06_read_coll.txt": 562,
+ "step07_read_cipher.txt": 964,
+ "step08_read_org.txt": 775
+}

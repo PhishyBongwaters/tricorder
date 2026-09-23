@@ -1,0 +1,70 @@
+                != 0
+        })
+        .await
+    }
+
+    pub async fn is_coll_manageable_by_user(uuid: &CollectionId, user_uuid: &UserId, conn: &DbConn) -> bool {
+        let uuid = uuid.to_string();
+        let user_uuid = user_uuid.to_string();
+        conn.run(move |conn| {
+            collections::table
+                .left_join(
+                    users_collections::table.on(users_collections::collection_uuid
+                        .eq(collections::uuid)
+                        .and(users_collections::user_uuid.eq(user_uuid.clone()))),
+                )
+                .left_join(
+                    users_organizations::table.on(collections::org_uuid
+                        .eq(users_organizations::org_uuid)
+                        .and(users_organizations::user_uuid.eq(user_uuid))),
+                )
+                .left_join(groups_users::table.on(groups_users::users_organizations_uuid.eq(users_organizations::uuid)))
+                .left_join(
+                    groups::table.on(groups::uuid
+                        .eq(groups_users::groups_uuid)
+                        .and(groups::organizations_uuid.eq(users_organizations::org_uuid))),
+                )
+                .left_join(
+                    collections_groups::table.on(collections_groups::groups_uuid
+                        .eq(groups_users::groups_uuid)
+                        .and(collections_groups::collections_uuid.eq(collections::uuid))),
+                )
+                .filter(collections::uuid.eq(&uuid))
+                .filter(
+                    users_collections::collection_uuid
+                        .eq(&uuid)
+                        .and(users_collections::manage.eq(true))
+                        .or(
+                            // Directly accessed collection
+                            users_organizations::access_all.eq(true).or(
+                                // access_all in Organization
+                                users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
+                            ),
+                        )
+                        .or(
+                            groups::access_all.eq(true), // access_all in groups
+                        )
+                        .or(
+                            // access via groups
+                            groups_users::users_organizations_uuid.eq(users_organizations::uuid).and(
+                                collections_groups::collections_uuid
+                                    .is_not_null()
+                                    .and(collections_groups::manage.eq(true)),
+                            ),
+                        ),
+                )
+                .count()
+                .first::<i64>(conn)
+                .ok()
+                .unwrap_or(0)
+                != 0
+        })
+        .await
+    }
+
+    pub async fn is_manageable_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
+        Self::is_coll_manageable_by_user(&self.uuid, user_uuid, conn).await
+    }
+
+    // Whether the user has manage access to at least one collection in the org, directly or via a
+    // group. Org-scoped counterpart of is_coll_manageable_by_user.

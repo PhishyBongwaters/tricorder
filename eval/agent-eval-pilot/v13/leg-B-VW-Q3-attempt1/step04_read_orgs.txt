@@ -1,0 +1,250 @@
+}
+
+async fn get_org_collections_impl(org_id: &OrganizationId, conn: &DbConn) -> Value {
+    Collection::find_by_organization(org_id, conn).await.iter().map(Collection::to_json).collect::<Value>()
+}
+
+#[post("/organizations/<org_id>/collections", data = "<data>")]
+async fn post_organization_collections(
+    org_id: OrganizationId,
+    headers: ManagerHeadersLoose,
+    data: Json<FullCollectionData>,
+    conn: DbConn,
+) -> JsonResult {
+    if org_id != headers.membership.org_uuid {
+        err!("Organization not found", "Organization id's do not match");
+    }
+    let data: FullCollectionData = data.into_inner();
+    data.validate(&org_id, &conn).await?;
+
+    if headers.membership.atype == MembershipType::Manager && !headers.membership.access_all {
+        err!("You don't have permission to create collections")
+    }
+
+    let collection = Collection::new(org_id.clone(), data.name, data.external_id);
+    collection.save(&conn).await?;
+
+    log_event(
+        EventType::CollectionCreated as i32,
+        &collection.uuid,
+        &org_id,
+        &headers.user.uuid,
+        headers.device.atype,
+        &headers.ip.ip,
+        &conn,
+    )
+    .await;
+
+    for group in data.groups {
+        CollectionGroup::new(collection.uuid.clone(), group.id, group.read_only, group.hide_passwords, group.manage)
+            .save(&org_id, &conn)
+            .await?;
+    }
+
+    for user in data.users {
+        let Some(member) = Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await else {
+            err!("User is not part of organization")
+        };
+
+        if member.access_all {
+            continue;
+        }
+
+        CollectionUser::save(
+            &member.user_uuid,
+            &collection.uuid,
+            user.read_only,
+            user.hide_passwords,
+            user.manage,
+            &conn,
+        )
+        .await?;
+    }
+
+    Ok(Json(collection.to_json_details(&headers.membership.user_uuid, None, &conn).await))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BulkCollectionAccessData {
+    collection_ids: Vec<CollectionId>,
+    groups: Vec<CollectionGroupData>,
+    users: Vec<CollectionMembershipData>,
+}
+
+#[post("/organizations/<org_id>/collections/bulk-access", data = "<data>", rank = 1)]
+async fn post_bulk_access_collections(
+    org_id: OrganizationId,
+    headers: ManagerHeadersLoose,
+    data: Json<BulkCollectionAccessData>,
+    conn: DbConn,
+) -> EmptyResult {
+    if org_id != headers.membership.org_uuid {
+        err!("Organization not found", "Organization id's do not match");
+    }
+    let data: BulkCollectionAccessData = data.into_inner();
+
+    if Organization::find_by_uuid(&org_id, &conn).await.is_none() {
+        err!("Can't find organization details")
+    }
+
+    // The collections and members are checked below, the groups only here.
+    let org_groups = Group::find_by_organization(&org_id, &conn).await;
+    let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
+    if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
+        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id, org_id))
+    }
+
+    for col_id in data.collection_ids {
+        let Some(collection) = Collection::find_by_uuid_and_org(&col_id, &org_id, &conn).await else {
+            err!("Collection not found")
+        };
+
+        if !collection.is_manageable_by_user(&headers.membership.user_uuid, &conn).await {
+            err!("Collection not found", "The current user isn't a manager for this collection")
+        }
+
+        // update collection modification date
+        collection.save(&conn).await?;
+
+        log_event(
+            EventType::CollectionUpdated as i32,
+            &collection.uuid,
+            &org_id,
+            &headers.user.uuid,
+            headers.device.atype,
+            &headers.ip.ip,
+            &conn,
+        )
+        .await;
+
+        CollectionGroup::delete_all_by_collection(&col_id, &org_id, &conn).await?;
+        for group in &data.groups {
+            CollectionGroup::new(col_id.clone(), group.id.clone(), group.read_only, group.hide_passwords, group.manage)
+                .save(&org_id, &conn)
+                .await?;
+        }
+
+        CollectionUser::delete_all_by_collection(&col_id, &conn).await?;
+        for user in &data.users {
+            let Some(member) = Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await else {
+                err!("User is not part of organization")
+            };
+
+            if member.access_all {
+                continue;
+            }
+
+            CollectionUser::save(&member.user_uuid, &col_id, user.read_only, user.hide_passwords, user.manage, &conn)
+                .await?;
+        }
+    }
+
+    Ok(())
+}
+
+#[put("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
+async fn put_organization_collection_update(
+    org_id: OrganizationId,
+    col_id: CollectionId,
+    headers: ManagerHeaders,
+    data: Json<FullCollectionData>,
+    conn: DbConn,
+) -> JsonResult {
+    post_organization_collection_update(org_id, col_id, headers, data, conn).await
+}
+
+#[post("/organizations/<org_id>/collections/<col_id>", data = "<data>", rank = 2)]
+async fn post_organization_collection_update(
+    org_id: OrganizationId,
+    col_id: CollectionId,
+    headers: ManagerHeaders,
+    data: Json<FullCollectionData>,
+    conn: DbConn,
+) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+    let data: FullCollectionData = data.into_inner();
+    data.validate(&org_id, &conn).await?;
+
+    if Organization::find_by_uuid(&org_id, &conn).await.is_none() {
+        err!("Can't find organization details")
+    }
+
+    let Some(mut collection) = Collection::find_by_uuid_and_org(&col_id, &org_id, &conn).await else {
+        err!("Collection not found")
+    };
+
+    collection.name = data.name;
+    collection.external_id = match data.external_id {
+        Some(external_id) if !external_id.trim().is_empty() => Some(external_id),
+        _ => None,
+    };
+
+    collection.save(&conn).await?;
+
+    log_event(
+        EventType::CollectionUpdated as i32,
+        &collection.uuid,
+        &org_id,
+        &headers.user.uuid,
+        headers.device.atype,
+        &headers.ip.ip,
+        &conn,
+    )
+    .await;
+
+    CollectionGroup::delete_all_by_collection(&col_id, &org_id, &conn).await?;
+
+    for group in data.groups {
+        CollectionGroup::new(col_id.clone(), group.id, group.read_only, group.hide_passwords, group.manage)
+            .save(&org_id, &conn)
+            .await?;
+    }
+
+    CollectionUser::delete_all_by_collection(&col_id, &conn).await?;
+
+    for user in data.users {
+        let Some(member) = Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await else {
+            err!("User is not part of organization")
+        };
+
+        if member.access_all {
+            continue;
+        }
+
+        CollectionUser::save(&member.user_uuid, &col_id, user.read_only, user.hide_passwords, user.manage, &conn)
+            .await?;
+    }
+
+    Ok(Json(collection.to_json_details(&headers.user.uuid, None, &conn).await))
+}
+
+async fn delete_organization_collection_impl(
+    org_id: &OrganizationId,
+    col_id: &CollectionId,
+    headers: &ManagerHeaders,
+    conn: &DbConn,
+) -> EmptyResult {
+    if org_id != &headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+    let Some(collection) = Collection::find_by_uuid_and_org(col_id, org_id, conn).await else {
+        err!("Collection not found", "Collection does not exist or does not belong to this organization")
+    };
+    log_event(
+        EventType::CollectionDeleted as i32,
+        &collection.uuid,
+        org_id,
+        &headers.user.uuid,
+        headers.device.atype,
+        &headers.ip.ip,
+        conn,
+    )
+    .await;
+    collection.delete(conn).await
+}
+
+#[delete("/organizations/<org_id>/collections/<col_id>")]
+async fn delete_organization_collection(

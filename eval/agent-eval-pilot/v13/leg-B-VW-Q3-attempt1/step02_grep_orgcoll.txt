@@ -1,0 +1,91 @@
+src/api/core/organizations.rs:42:        post_organization_collections,
+src/api/core/organizations.rs:44:        post_organization_collection_update,
+src/api/core/organizations.rs:45:        put_organization_collection_update,
+src/api/core/organizations.rs:46:        delete_organization_collection,
+src/api/core/organizations.rs:47:        post_organization_collection_delete,
+src/api/core/organizations.rs:48:        bulk_delete_organization_collections,
+src/api/core/organizations.rs:387:#[get("/organizations/<org_id>/collections")]
+src/api/core/organizations.rs:404:#[get("/organizations/<org_id>/collections/details")]
+src/api/core/organizations.rs:444:            || CollectionUser::has_access_to_collection_by_user(&col.uuid, &member.user_uuid, &conn).await
+src/api/core/organizations.rs:480:        json_object["object"] = json!("collectionAccessDetails");
+src/api/core/organizations.rs:493:    Collection::find_by_organization(org_id, conn).await.iter().map(Collection::to_json).collect::<Value>()
+src/api/core/organizations.rs:496:#[post("/organizations/<org_id>/collections", data = "<data>")]
+src/api/core/organizations.rs:497:async fn post_organization_collections(
+src/api/core/organizations.rs:558:struct BulkCollectionAccessData {
+src/api/core/organizations.rs:564:#[post("/organizations/<org_id>/collections/bulk-access", data = "<data>", rank = 1)]
+src/api/core/organizations.rs:568:    data: Json<BulkCollectionAccessData>,
+src/api/core/organizations.rs:574:    let data: BulkCollectionAccessData = data.into_inner();
+src/api/core/organizations.rs:635:#[put("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
+src/api/core/organizations.rs:636:async fn put_organization_collection_update(
+src/api/core/organizations.rs:643:    post_organization_collection_update(org_id, col_id, headers, data, conn).await
+src/api/core/organizations.rs:646:#[post("/organizations/<org_id>/collections/<col_id>", data = "<data>", rank = 2)]
+src/api/core/organizations.rs:647:async fn post_organization_collection_update(
+src/api/core/organizations.rs:713:async fn delete_organization_collection_impl(
+src/api/core/organizations.rs:738:#[delete("/organizations/<org_id>/collections/<col_id>")]
+src/api/core/organizations.rs:739:async fn delete_organization_collection(
+src/api/core/organizations.rs:745:    delete_organization_collection_impl(&org_id, &col_id, &headers, &conn).await
+src/api/core/organizations.rs:748:#[post("/organizations/<org_id>/collections/<col_id>/delete")]
+src/api/core/organizations.rs:749:async fn post_organization_collection_delete(
+src/api/core/organizations.rs:755:    delete_organization_collection_impl(&org_id, &col_id, &headers, &conn).await
+src/api/core/organizations.rs:764:#[delete("/organizations/<org_id>/collections", data = "<data>")]
+src/api/core/organizations.rs:765:async fn bulk_delete_organization_collections(
+src/api/core/organizations.rs:781:        delete_organization_collection_impl(&org_id, &col_id, &headers, &conn).await?;
+src/api/core/organizations.rs:786:#[get("/organizations/<org_id>/collections/<col_id>/details")]
+src/api/core/organizations.rs:840:            let assigned = Collection::can_access_collection(&member, &collection.uuid, &conn).await;
+src/api/core/organizations.rs:846:            json_object["object"] = json!("collectionAccessDetails");
+src/api/core/organizations.rs:853:#[get("/organizations/<org_id>/collections/<col_id>/users")]
+src/api/core/organizations.rs:1069:    // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
+src/api/core/organizations.rs:1563:    // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
+src/api/core/organizations.rs:2466:    // The details view (group→collection/user mappings) needs full org access; the plain list only
+src/api/notifications.rs:697:    // SyncOrganizationCollectionSettingChanged = 19, // Not supported
+src/auth.rs:31:            AttachmentId, CipherId, Collection, CollectionId, Device, DeviceId, DeviceType, EmergencyAccessId,
+src/auth.rs:846:// col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),
+src/db/models/cipher.rs:594:    /// not in any collection the user has access to. Otherwise, the user has
+src/db/models/cipher.rs:604:        // a collection that the user has full access to. If so, there are no
+src/db/models/cipher.rs:628:            let user_permissions = self.get_user_collections_access_flags(user_uuid, conn).await;
+src/db/models/cipher.rs:630:                self.get_group_collections_access_flags(user_uuid, conn).await
+src/db/models/cipher.rs:637:            // This cipher isn't in any collections accessible to the user.
+src/db/models/cipher.rs:641:        // A cipher can be in multiple collections with inconsistent access flags.
+src/db/models/cipher.rs:667:    async fn get_user_collections_access_flags(&self, user_uuid: &UserId, conn: &DbConn) -> Vec<(bool, bool, bool)> {
+src/db/models/cipher.rs:669:            // Check whether this cipher is in any collections accessible to the
+src/db/models/cipher.rs:686:    async fn get_group_collections_access_flags(&self, user_uuid: &UserId, conn: &DbConn) -> Vec<(bool, bool, bool)> {
+src/db/models/cipher.rs:722:    // used for checking if collection can be edited (only if user has access to a collection they
+src/db/models/cipher.rs:795:    // direct ownership, collection or via group access.
+src/db/models/cipher.rs:824:                            .and(users_organizations::user_uuid.eq(users_collections::user_uuid))),
+src/db/models/cipher.rs:842:                    .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
+src/db/models/cipher.rs:844:                    .or_filter(collections_groups::collections_uuid.is_not_null()) // Access via groups
+src/db/models/cipher.rs:875:                            .and(users_organizations::user_uuid.eq(users_collections::user_uuid))),
+src/db/models/cipher.rs:879:                    .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
+src/db/models/cipher.rs:1124:    /// This is used during a full sync so we only need one query for all collections accessible.
+src/db/models/cipher.rs:1153:                .or_filter(users_collections::user_uuid.eq(user_uuid)) // User has access to collection
+src/db/models/cipher.rs:1157:                .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
+src/db/models/collection.rs:111:                    // Only let a manager manage collections when the have full read/write access
+src/db/models/collection.rs:158:                || CollectionUser::has_access_to_collection_by_user(col_id, &member.user_uuid, conn).await
+src/db/models/collection.rs:241:                        users_organizations::table.on(collections::org_uuid
+src/db/models/collection.rs:291:                        users_organizations::table.on(collections::org_uuid
+src/db/models/collection.rs:360:                        users_organizations::table.on(collections::org_uuid
+src/db/models/collection.rs:412:                        users_organizations::table.on(collections::org_uuid
+src/db/models/collection.rs:439:                        users_organizations::table.on(collections::org_uuid
+src/db/models/collection.rs:485:                        users_organizations::table.on(collections::org_uuid
+src/db/models/collection.rs:522:                    users_organizations::table.on(collections::org_uuid
+src/db/models/collection.rs:581:                    users_organizations::table.on(collections::org_uuid
+src/db/models/collection.rs:650:                    users_organizations::table.on(collections::org_uuid
+src/db/models/collection.rs:704:                        users_organizations::table.on(users_organizations::user_uuid.eq(users_collections::user_uuid)),
+src/db/models/collection.rs:821:                        users_organizations::table.on(users_organizations::user_uuid.eq(users_collections::user_uuid)),
+src/db/models/event.rs:122:    // OrganizationCollectionManagementUpdated = 1609, // Not supported
+src/db/models/group.rs:433:                        .and(groups::organizations_uuid.eq(collections::org_uuid))),
+src/db/models/organization.rs:19:            organizations, users, users_collections, users_organizations,
+src/db/models/organization.rs:460:                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
+src/db/models/organization.rs:464:                // If the following 3 Collection roles are set to true a custom user has access all permission
+src/db/models/organization.rs:465:                "createNewCollections": membership_type == 4 && self.access_all,
+src/db/models/organization.rs:466:                "editAnyCollection": membership_type == 4 && self.access_all,
+src/db/models/organization.rs:467:                "deleteAnyCollection": membership_type == 4 && self.access_all,
+src/db/models/organization.rs:525:            // limit collection creation to managers with access_all permission to prevent issues
+src/db/models/organization.rs:526:            "limitCollectionCreation": self.atype < MembershipType::Manager || !self.access_all,
+src/db/models/organization.rs:574:        // If collections are to be included, only include them if the user does not have full access via a group or defined to the user it self
+src/db/models/organization.rs:575:        let collections: Vec<Value> = if include_collections && !(full_access_group || self.access_all) {
+src/db/models/organization.rs:633:                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
+src/db/models/organization.rs:637:                // If the following 3 Collection roles are set to true a custom user has access all permission
+src/db/models/organization.rs:1078:                    ciphers_collections::cipher_uuid.eq(&cipher_uuid), // ..or access to collection with cipher
+src/db/models/organization.rs:1112:                    ciphers_collections::cipher_uuid.eq(&cipher_uuid), // ..or access to collection via group
+src/db/models/organization.rs:1154:                    users_collections::collection_uuid.eq(&collection_uuid), // ..or access to collection with cipher
