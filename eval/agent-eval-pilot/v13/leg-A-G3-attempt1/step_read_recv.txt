@@ -1,0 +1,32 @@
+500: func chanrecv1(c *hchan, elem unsafe.Pointer) {
+501: 	chanrecv(c, elem, true)
+502: }
+503: 
+504: //go:nosplit
+505: func chanrecv2(c *hchan, elem unsafe.Pointer) (received bool) {
+506: 	_, received = chanrecv(c, elem, true)
+507: 	return
+508: }
+509: 
+510: // chanrecv receives on channel c and writes the received data to ep.
+511: // ep may be nil, in which case received data is ignored.
+512: // If block == false and no elements are available, returns (false, false).
+513: // Otherwise, if c is closed, zeros *ep and returns (true, false).
+514: // Otherwise, fills in *ep with an element and returns (true, true).
+515: // A non-nil ep must point to the heap or the caller's stack.
+516: func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool) {
+517: 	// raceenabled: don't need to check ep, as it is always on the stack
+518: 	// or is new memory allocated by reflect.
+519: 
+520: 	if debugChan {
+521: 		print("chanrecv: chan=", c, "\n")
+522: 	}
+523: 
+524: 	if c == nil {
+525: 		if !block {
+526: 			return
+527: 		}
+528: 		gopark(nil, nil, waitReasonChanReceiveNilChan, traceBlockForever, 2)
+529: 		throw("unreachable")
+530: 	}
+531: 

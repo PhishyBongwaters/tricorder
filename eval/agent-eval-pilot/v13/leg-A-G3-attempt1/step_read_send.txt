@@ -1,0 +1,24 @@
+160: func chansend1(c *hchan, elem unsafe.Pointer) {
+161: 	chansend(c, elem, true, sys.GetCallerPC())
+162: }
+163: 
+164: // chansend sends the element pointed to by ep on channel c.
+165: // A send on a closed channel panics.
+166: // If block == false and the send cannot proceed immediately, it returns false.
+167: // Otherwise, it waits as needed for the send to complete and returns true.
+168: func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
+169: 	if c == nil {
+170: 		if !block {
+171: 			return false
+172: 		}
+173: 		gopark(nil, nil, waitReasonChanSendNilChan, traceBlockForever, 2)
+174: 		throw("unreachable")
+175: 	}
+176: 
+177: 	if debugChan {
+178: 		print("chansend: chan=", c, "\n")
+179: 	}
+180: 
+181: 	if raceenabled {
+182: 		racereadpc(c.raceaddr(), callerpc, abi.FuncPCABIInternal(chansend))
+183: 	}
