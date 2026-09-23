@@ -1,0 +1,40 @@
+	off = objw.Uvarint(x, off, uint64(-s.deferBitsTemp.FrameOffset()))
+	off = objw.Uvarint(x, off, uint64(-firstOffset))
+}
+
+// buildssa builds an SSA function for fn.
+// worker indicates which of the backend workers is doing the processing.
+func buildssa(compiler ssa.Compiler, fn *ir.Func, worker int, isPgoHot bool) (*ssa.Func, ssa.HTMLWriter) {
+	name := ir.FuncName(fn)
+
+	abiSelf := abiForFunc(fn, ssaConfig.ABI0, ssaConfig.ABI1)
+
+	printssa := false
+	// match either a simple name e.g. "(*Reader).Reset", package.name e.g. "compress/gzip.(*Reader).Reset", or subpackage name "gzip.(*Reader).Reset"
+	// optionally allows an ABI suffix specification in the GOSSAHASH, e.g. "(*Reader).Reset<0>" etc
+	if strings.Contains(ssaDump, name) { // in all the cases the function name is entirely contained within the GOSSAFUNC string.
+		nameOptABI := name
+		if l := len(ssaDump); l > 1 && ssaDump[l-2] == ',' { // ABI specification
+			nameOptABI = ssa.FuncNameABI(name, abiSelf.Which())
+		} else if strings.HasSuffix(ssaDump, ">") { // if they use the linker syntax instead....
+			l := len(ssaDump)
+			if l >= 3 && ssaDump[l-3] == '<' {
+				nameOptABI = ssa.FuncNameABI(name, abiSelf.Which())
+				ssaDump = ssaDump[:l-3] + "," + ssaDump[l-2:l-1]
+			}
+		}
+		pkgDotName := base.Ctxt.Pkgpath + "." + nameOptABI
+		printssa = nameOptABI == ssaDump || // "(*Reader).Reset"
+			pkgDotName == ssaDump || // "compress/gzip.(*Reader).Reset"
+			strings.HasSuffix(pkgDotName, ssaDump) && strings.HasSuffix(pkgDotName, "/"+ssaDump) // "gzip.(*Reader).Reset"
+	}
+
+	var astBuf *bytes.Buffer
+	if printssa {
+		astBuf = &bytes.Buffer{}
+		ir.FDumpList(astBuf, "buildssa-body", fn.Body)
+		if ssaDumpStdout {
+			fmt.Println("generating SSA for", name)
+			fmt.Print(astBuf.String())
+		}
+	}
