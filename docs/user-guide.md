@@ -55,7 +55,7 @@ tricorder /path/to/repo
 ```
 
 You'll get a ranked map of definitions, highest-PageRank first, fitted to
-8192 tokens. Try these next:
+an auto budget (scaled by repo size, floor 2048 tokens). Try these next:
 
 ```bash
 tricorder /path/to/repo --map-tokens 2048     # smaller budget

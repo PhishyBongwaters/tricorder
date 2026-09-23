@@ -53,7 +53,7 @@ relevant related files.
 | `other_files` | string[] | — | Other relevant files — lowest ranking. |
 | `mentioned_files` | string[] | — | Explicitly mentioned files — mid-level boost. |
 | `mentioned_idents` | string[] | — | Explicitly mentioned identifiers — ranking boost. |
-| `token_limit` | int | `8192` | Max tokens for the map. |
+| `token_limit` | int or null | auto | Max tokens for the map. Unset/null scales with discovered repo size (floor 2048); explicit values win. |
 | `tier` | int | `0` | `0` = definitions only (cheapest); `1` = definitions + context lines. |
 | `context_lines` | int | `3` | Context lines per definition when `tier=1`. |
 | `output_format` | string | `"text"` | `"text"` for the map, `"mermaid"` for a dependency flowchart. |

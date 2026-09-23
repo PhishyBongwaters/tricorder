@@ -48,7 +48,7 @@ All MCP tools require `project_root` (absolute path) — they route against that
 
 ## tricorder_scan parameters
 
-- `project_root` (required), `token_limit` (default 8192), `tier`: `0` = definitions only (default) or `1` = + context lines
+- `project_root` (required), `token_limit` (auto when unset — scaled by repo size, floor 2048), `tier`: `0` = definitions only (default) or `1` = + context lines
 - `output_format`: `text` or `mermaid`; `chat_files`, `other_files`, `mentioned_files`, `mentioned_idents`
 - `exclude_unranked`, `exclude_untagged`, `force_refresh`, `dry_run`, `max_files`
 - `exclude_globs`: list of glob patterns (relative, POSIX) to drop from the auto-scan before ranking. Use for vendored/third-party subtrees, e.g. `["vendor/**"]`, `["third_party/**"]`. Ignored when `other_files` is explicitly provided.

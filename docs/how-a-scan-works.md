@@ -38,7 +38,7 @@ a function that gets called from fifty places outranks one nobody calls.
 Files you're actively working on get an extra boost.
 
 **6. Fit it into your token budget.** The ranked list is trimmed until it
-fits `--map-tokens` (default 8192 tokens) — the highest-ranked
+fits `--map-tokens` (auto by default — scaled by repo size, floor 2048 tokens) — the highest-ranked
 definitions survive. This is the step that keeps a 16GB local model from
 drowning: it sees the important parts first, and only the important
 parts.

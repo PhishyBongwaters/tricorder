@@ -53,14 +53,15 @@ class TricorderClient:
     def __init__(
         self,
         tricorder_exe: Optional[str] = None,
-        default_token_limit: int = 8192,
+        default_token_limit: Optional[int] = None,
     ):
         """
         Initialize client.
-        
+
         Args:
             tricorder_exe: Path to tricorder executable. Auto-detected if None.
-            default_token_limit: Default token limit for scans.
+            default_token_limit: Default token limit for scans (None = auto,
+                scaled by repo size with floor 2048).
         """
         self.default_token_limit = default_token_limit
         
@@ -106,7 +107,8 @@ class TricorderClient:
         Args:
             project_root: Absolute path to project root.
             scan_path: Specific path to scan (relative to root or absolute).
-            token_limit: Maximum tokens for map (default: 8192).
+            token_limit: Maximum tokens for map (None = auto, scaled by
+                repo size with floor 2048).
             tier: 0 = definitions only, 1 = definitions + context.
             exclude_untagged: Skip untagged files section.
             exclude_globs: Glob patterns to exclude from scan.
@@ -116,9 +118,12 @@ class TricorderClient:
         Returns:
             ScanResult with map text and metadata.
         """
-        args = [
-            "--root", project_root,
-            "--map-tokens", str(token_limit or self.default_token_limit),
+        resolved = (token_limit if token_limit is not None
+                    else self.default_token_limit)
+        args = ["--root", project_root]
+        if resolved is not None:
+            args += ["--map-tokens", str(resolved)]
+        args += [
             "--tier", str(tier),
             "--format", output_format,
         ]
@@ -188,7 +193,7 @@ class TricorderClient:
         """
         # For now, use scan + filter as fallback
         # A real implementation would call the MCP tricorder_detect tool
-        scan_result = self.scan(project_root, token_limit=8192, tier=0)
+        scan_result = self.scan(project_root, tier=0)
         
         # Simple substring filter on map output
         query_lower = query.lower()

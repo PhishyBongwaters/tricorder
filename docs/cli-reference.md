@@ -29,7 +29,7 @@ Priority order: `--chat-files` > `--mentioned-files` > `--other-files` > auto-di
 
 | Flag | Default | Description |
 |---|---|---|
-| `--map-tokens N` | `8192` | Maximum tokens for the generated map. Binary search fits the highest-ranked tags to budget; the `Other files:` (untagged) section shares the same budget and truncates to a `+N more` tail instead of overflowing it. |
+| `--map-tokens N` | auto | Maximum tokens for the generated map. Unset (auto) scales with discovered repo size (`default_map_budget`: floor 2048, 0.5 tok/file, env-tunable); explicit N always wins, `0` skips the render. Binary search fits the highest-ranked tags to budget; the `Other files:` (untagged) section shares the same budget and truncates to a `+N more` tail instead of overflowing it. |
 | `--tier {0,1}` | `0` | `0` = definitions only (~14 tokens/tag); `1` = definitions + context lines (~350 tokens/tag). |
 | `--context-lines N` | `3` | Context lines around each definition when `--tier 1`. |
 | `--top N` | — | Limit output to the top N ranked tags. |

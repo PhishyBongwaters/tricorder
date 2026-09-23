@@ -88,8 +88,8 @@ class TestSurfaceParity(unittest.TestCase):
         return plugin, teardown
 
     def test_plugin_build_map_passes_lean_token_budget(self):
-        """The tier-0 scaffold must go to file with the lean token budget, not the
-        CLI's 8192 default — the reference/depth path lives in MCP tools, so the
+        """The tier-0 scaffold must go to file with the lean token budget, not a
+        fat default — the reference/depth path lives in MCP tools, so the
         map is a navigation scaffold, not a full-repo dump."""
         import unittest.mock as um
         plugin, teardown = self._plugin_module()
