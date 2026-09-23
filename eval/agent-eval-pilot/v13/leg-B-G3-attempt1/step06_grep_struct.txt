@@ -1,0 +1,3 @@
+chan.go:34:type hchan struct {
+chan.go:776:func selectnbsend(c *hchan, elem unsafe.Pointer) (selected bool) {
+chan.go:796:func selectnbrecv(elem unsafe.Pointer, c *hchan) (selected, received bool) {

@@ -1,0 +1,11 @@
+src/runtime/chan.go: 948 lines
+chan.go:67:func makechan64(t *chantype, size int64) *hchan {
+chan.go:75:func makechan(t *chantype, size int) *hchan {
+chan.go:160:func chansend1(c *hchan, elem unsafe.Pointer) {
+chan.go:168:func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
+chan.go:406:func closechan(c *hchan) {
+chan.go:500:func chanrecv1(c *hchan, elem unsafe.Pointer) {
+chan.go:505:func chanrecv2(c *hchan, elem unsafe.Pointer) (received bool) {
+chan.go:516:func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool) {
+chan.go:810:func chanlen(c *hchan) int {
+chan.go:820:func chancap(c *hchan) int {

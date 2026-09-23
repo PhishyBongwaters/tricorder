@@ -1,0 +1,50 @@
+func selectnbsend(c *hchan, elem unsafe.Pointer) (selected bool) {
+	return chansend(c, elem, false, sys.GetCallerPC())
+}
+
+// compiler implements
+//
+//	select {
+//	case v, ok = <-c:
+//		... foo
+//	default:
+//		... bar
+//	}
+//
+// as
+//
+//	if selected, ok = selectnbrecv(&v, c); selected {
+//		... foo
+//	} else {
+//		... bar
+//	}
+func selectnbrecv(elem unsafe.Pointer, c *hchan) (selected, received bool) {
+	return chanrecv(c, elem, false)
+}
+
+//go:linkname reflect_chansend reflect.chansend0
+func reflect_chansend(c *hchan, elem unsafe.Pointer, nb bool) (selected bool) {
+	return chansend(c, elem, !nb, sys.GetCallerPC())
+}
+
+//go:linkname reflect_chanrecv reflect.chanrecv
+func reflect_chanrecv(c *hchan, nb bool, elem unsafe.Pointer) (selected bool, received bool) {
+	return chanrecv(c, elem, !nb)
+}
+
+func chanlen(c *hchan) int {
+	if c == nil || c.timer != nil {
+		// timer channels have a buffered implementation
+		// but present to users as unbuffered, so that we can
+		// undo sends without users noticing.
+		return 0
+	}
+	return int(c.qcount)
+}
+
+func chancap(c *hchan) int {
+	if c == nil || c.timer != nil {
+		// timer channels have a buffered implementation
+		// but present to users as unbuffered, so that we can
+		// undo sends without users noticing.
+		return 0
