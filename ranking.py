@@ -589,7 +589,12 @@ class RankingMixin:
 
         # Get all included rel_files as nodes for PageRank.
         all_nodes = list(included_rels)
-        ranks = db.pagerank(iter(all_nodes), alpha=0.85, personalization=personalization or None)
+        if not personalization and db.ranks_fresh():
+            # Precomputed at scan end (populate_refs -> refresh_ranks):
+            # same unpersonalized ranks, no per-call power iteration.
+            ranks = dict(db.get_ranks())
+        else:
+            ranks = db.pagerank(iter(all_nodes), alpha=0.85, personalization=personalization or None)
 
         ranked_tags: List[Tuple[float, Tag]] = []
         for fname, rel, line, name, _kind in db.def_rows():

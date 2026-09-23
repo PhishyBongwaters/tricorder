@@ -36,7 +36,8 @@ class TestDbInvariants(unittest.TestCase):
         db.populate_refs()
         db.reset()
         for tbl in ("tags", "refs", "meta", "file_state",
-                    "stop_names", "file_flags"):
+                    "stop_names", "file_flags", "file_ranks",
+                    "ranks_stamp"):
             n = db.conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
             self.assertEqual(n, 0, tbl)
 

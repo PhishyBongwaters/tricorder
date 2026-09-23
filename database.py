@@ -55,6 +55,10 @@ _DDL = [
     " name TEXT PRIMARY KEY)",
     "CREATE TABLE IF NOT EXISTS file_flags("
     " rel_file TEXT PRIMARY KEY, reason TEXT NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS file_ranks("
+    " rel_file TEXT PRIMARY KEY, rank REAL NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS ranks_stamp("
+    " signature TEXT NOT NULL, extractor_version INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS idx_tags_kind_name ON tags(kind, name)",
     "CREATE INDEX IF NOT EXISTS idx_tags_file ON tags(file)",
     "CREATE INDEX IF NOT EXISTS idx_tags_rel_file ON tags(rel_file)",
@@ -183,6 +187,8 @@ class DBStore:
             self.conn.execute("DELETE FROM file_state")
             self.conn.execute("DELETE FROM stop_names")
             self.conn.execute("DELETE FROM file_flags")
+            self.conn.execute("DELETE FROM file_ranks")
+            self.conn.execute("DELETE FROM ranks_stamp")
             self.conn.commit()
 
     def delete_tags_for_file(self, rel_file: str):
@@ -236,9 +242,15 @@ class DBStore:
         Idempotent: clears refs before repopulating (needed for incremental).
         Takes the store lock: the DELETE+INSERT pair must be atomic against
         concurrent readers/writers sharing the instance (MCP server threads).
+
+        Scan-end hook: refreshes file_ranks (unpersonalized PageRank over the
+        finished refs graph) so MAP serves stored ranks instead of iterating
+        per call. Same lock (RLock): full and incremental scans both end here,
+        so ranks can never silently stale behind new tags.
         """
         with self._lock:
             self._populate_refs_locked()
+            self._refresh_ranks_locked()
 
     def _populate_refs_locked(self):
         """populate_refs body; caller holds self._lock."""
@@ -261,6 +273,52 @@ class DBStore:
             "SELECT name FROM tags WHERE kind='def' "
             "GROUP BY name HAVING COUNT(DISTINCT rel_file) > 50"
         )
+
+    # -- precomputed ranks -------------------------------------------------
+    def refresh_ranks(self):
+        """(Re)compute unpersonalized PageRank into file_ranks. Public wrapper."""
+        with self._lock:
+            self._refresh_ranks_locked()
+
+    def _refresh_ranks_locked(self):
+        """Caller holds self._lock (RLock: pagerank re-takes it safely)."""
+        # Nodes = every mapped file (defs AND ref-only files): ref-only
+        # files vote but hold no rankable defs, exactly like the serve path,
+        # which iterates over all included rels. Same graph, same ranks.
+        nodes = [r[0] for r in self.conn.execute(
+            "SELECT DISTINCT rel_file FROM tags")]
+        ranks = self.pagerank(iter(nodes)) if nodes else {}
+        self.conn.execute("DELETE FROM file_ranks")
+        self.conn.executemany(
+            "INSERT INTO file_ranks(rel_file, rank) VALUES (?, ?)",
+            list(ranks.items()))
+        meta = self.get_meta()
+        sig, ev = ((meta[2] or ""), (meta[3] or 0)) if meta else ("", 0)
+        self.conn.execute("DELETE FROM ranks_stamp")
+        self.conn.execute(
+            "INSERT INTO ranks_stamp(signature, extractor_version)"
+            " VALUES (?, ?)", (sig, ev))
+        self.conn.commit()
+
+    def ranks_fresh(self) -> bool:
+        """True iff file_ranks was computed for the current meta stamp.
+
+        Any tag-affecting scan ends in populate_refs, which refreshes ranks,
+        so False means serve must iterate (correctness backstop, never stale).
+        """
+        meta = self.get_meta()
+        if meta is None:
+            return False
+        row = self.conn.execute(
+            "SELECT signature, extractor_version FROM ranks_stamp "
+            "ORDER BY rowid DESC LIMIT 1").fetchone()
+        if row is None:
+            return False
+        return row[0] == (meta[2] or "") and row[1] == (meta[3] or 0)
+
+    def get_ranks(self):
+        """Stored (rel_file, rank) pairs for the serve path."""
+        return self.conn.execute("SELECT rel_file, rank FROM file_ranks")
 
     # -- reads --------------------------------------------------------------
     def count_tags(self, kind: Optional[str] = None) -> int:
