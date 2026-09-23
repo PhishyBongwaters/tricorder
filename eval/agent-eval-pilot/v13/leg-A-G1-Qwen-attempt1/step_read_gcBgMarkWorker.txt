@@ -1,0 +1,166 @@
+1766: func gcBgMarkWorker(ready chan struct{}) {
+1767: 	gp := getg()
+1768: 
+1769: 	// We pass node to a gopark unlock function, so it can't be on
+1770: 	// the stack (see gopark). Prevent deadlock from recursively
+1771: 	// starting GC by disabling preemption.
+1772: 	gp.m.preemptoff = "GC worker init"
+1773: 	// TODO: This is technically not allowed in the heap. See comment in tagptr.go.
+1774: 	//
+1775: 	// It is kept alive simply by virtue of being used in the infinite loop
+1776: 	// below. gcBgMarkWorkerPool keeps pointers to nodes that are not
+1777: 	// GC-visible, so this must be kept alive indefinitely (even if
+1778: 	// GOMAXPROCS decreases).
+1779: 	node := &new(gcBgMarkWorkerNodePadded).gcBgMarkWorkerNode
+1780: 	gp.m.preemptoff = ""
+1781: 
+1782: 	node.gp.set(gp)
+1783: 
+1784: 	node.m.set(acquirem())
+1785: 
+1786: 	ready <- struct{}{}
+1787: 	// After this point, the background mark worker is generally scheduled
+1788: 	// cooperatively by gcController.findRunnableGCWorker. While performing
+1789: 	// work on the P, preemption is disabled because we are working on
+1790: 	// P-local work buffers. When the preempt flag is set, this puts itself
+1791: 	// into _Gwaiting to be woken up by gcController.findRunnableGCWorker
+1792: 	// at the appropriate time.
+1793: 	//
+1794: 	// When preemption is enabled (e.g., while in gcMarkDone), this worker
+1795: 	// may be preempted and schedule as a _Grunnable G from a runq. That is
+1796: 	// fine; it will eventually gopark again for further scheduling via
+1797: 	// findRunnableGCWorker.
+1798: 	//
+1799: 	// Since we disable preemption before notifying ready, we guarantee that
+1800: 	// this G will be in the worker pool for the next findRunnableGCWorker.
+1801: 	// This isn't strictly necessary, but it reduces latency between
+1802: 	// _GCmark starting and the workers starting.
+1803: 
+1804: 	for {
+1805: 		// Go to sleep until woken by
+1806: 		// gcController.findRunnableGCWorker.
+1807: 		gopark(func(g *g, nodep unsafe.Pointer) bool {
+1808: 			node := (*gcBgMarkWorkerNode)(nodep)
+1809: 
+1810: 			if mp := node.m.ptr(); mp != nil {
+1811: 				// The worker G is no longer running; release
+1812: 				// the M.
+1813: 				//
+1814: 				// N.B. it is _safe_ to release the M as soon
+1815: 				// as we are no longer performing P-local mark
+1816: 				// work.
+1817: 				//
+1818: 				// However, since we cooperatively stop work
+1819: 				// when gp.preempt is set, if we releasem in
+1820: 				// the loop then the following call to gopark
+1821: 				// would immediately preempt the G. This is
+1822: 				// also safe, but inefficient: the G must
+1823: 				// schedule again only to enter gopark and park
+1824: 				// again. Thus, we defer the release until
+1825: 				// after parking the G.
+1826: 				releasem(mp)
+1827: 			}
+1828: 
+1829: 			// Release this G to the pool.
+1830: 			gcBgMarkWorkerPool.push(&node.node)
+1831: 			// Note that at this point, the G may immediately be
+1832: 			// rescheduled and may be running.
+1833: 			return true
+1834: 		}, unsafe.Pointer(node), waitReasonGCWorkerIdle, traceBlockSystemGoroutine, 0)
+1835: 
+1836: 		// Preemption must not occur here, or another G might see
+1837: 		// p.gcMarkWorkerMode.
+1838: 
+1839: 		// Disable preemption so we can use the gcw. If the
+1840: 		// scheduler wants to preempt us, we'll stop draining,
+1841: 		// dispose the gcw, and then preempt.
+1842: 		node.m.set(acquirem())
+1843: 		pp := gp.m.p.ptr() // P can't change with preemption disabled.
+1844: 
+1845: 		if gcBlackenEnabled == 0 {
+1846: 			println("worker mode", pp.gcMarkWorkerMode)
+1847: 			throw("gcBgMarkWorker: blackening not enabled")
+1848: 		}
+1849: 
+1850: 		if pp.gcMarkWorkerMode == gcMarkWorkerNotWorker {
+1851: 			throw("gcBgMarkWorker: mode not set")
+1852: 		}
+1853: 
+1854: 		startTime := nanotime()
+1855: 		pp.gcMarkWorkerStartTime = startTime
+1856: 		var trackLimiterEvent bool
+1857: 		if pp.gcMarkWorkerMode == gcMarkWorkerIdleMode {
+1858: 			trackLimiterEvent = pp.limiterEvent.start(limiterEventIdleMarkWork, startTime)
+1859: 		}
+1860: 
+1861: 		gcBeginWork()
+1862: 
+1863: 		systemstack(func() {
+1864: 			// Mark our goroutine preemptible so its stack can be scanned or observed
+1865: 			// by the execution tracer. This, for example, lets two mark workers scan
+1866: 			// each other (otherwise, they would deadlock).
+1867: 			//
+1868: 			// casGToWaitingForSuspendG marks the goroutine as ineligible for a
+1869: 			// stack shrink, effectively pinning the stack in memory for the duration.
+1870: 			//
+1871: 			// N.B. The execution tracer is not aware of this status transition and
+1872: 			// handles it specially based on the wait reason.
+1873: 			casGToWaitingForSuspendG(gp, _Grunning, waitReasonGCWorkerActive)
+1874: 			switch pp.gcMarkWorkerMode {
+1875: 			default:
+1876: 				throw("gcBgMarkWorker: unexpected gcMarkWorkerMode")
+1877: 			case gcMarkWorkerDedicatedMode:
+1878: 				gcDrainMarkWorkerDedicated(&pp.gcw, true)
+1879: 				if gp.preempt {
+1880: 					// We were preempted. This is
+1881: 					// a useful signal to kick
+1882: 					// everything out of the run
+1883: 					// queue so it can run
+1884: 					// somewhere else.
+1885: 					if drainQ := runqdrain(pp); !drainQ.empty() {
+1886: 						lock(&sched.lock)
+1887: 						globrunqputbatch(&drainQ)
+1888: 						unlock(&sched.lock)
+1889: 					}
+1890: 				}
+1891: 				// Go back to draining, this time
+1892: 				// without preemption.
+1893: 				gcDrainMarkWorkerDedicated(&pp.gcw, false)
+1894: 			case gcMarkWorkerFractionalMode:
+1895: 				gcDrainMarkWorkerFractional(&pp.gcw)
+1896: 			case gcMarkWorkerIdleMode:
+1897: 				gcDrainMarkWorkerIdle(&pp.gcw)
+1898: 			}
+1899: 			casgstatus(gp, _Gwaiting, _Grunning)
+1900: 		})
+1901: 
+1902: 		// Account for time and mark us as stopped.
+1903: 		now := nanotime()
+1904: 		duration := now - startTime
+1905: 		gcController.markWorkerStop(pp.gcMarkWorkerMode, duration)
+1906: 		if trackLimiterEvent {
+1907: 			pp.limiterEvent.stop(limiterEventIdleMarkWork, now)
+1908: 		}
+1909: 		if pp.gcMarkWorkerMode == gcMarkWorkerFractionalMode {
+1910: 			pp.gcFractionalMarkTime.Add(duration)
+1911: 		}
+1912: 
+1913: 		// We'll releasem after this point and thus this P may run
+1914: 		// something else. We must clear the worker mode to avoid
+1915: 		// attributing the mode to a different (non-worker) G in
+1916: 		// tracev2.GoStart.
+1917: 		pp.gcMarkWorkerMode = gcMarkWorkerNotWorker
+1918: 
+1919: 		// If this worker reached a background mark completion
+1920: 		// point, signal the main GC goroutine.
+1921: 		if gcEndWork() {
+1922: 			// We don't need the P-local buffers here, allow
+1923: 			// preemption because we may schedule like a regular
+1924: 			// goroutine in gcMarkDone (block on locks, etc).
+1925: 			releasem(node.m.ptr())
+1926: 			node.m.set(nil)
+1927: 
+1928: 			gcMarkDone()
+1929: 		}
+1930: 	}
+1931: }

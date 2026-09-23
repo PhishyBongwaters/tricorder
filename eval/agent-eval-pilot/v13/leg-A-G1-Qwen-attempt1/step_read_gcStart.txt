@@ -1,0 +1,68 @@
+733: func gcStart(trigger gcTrigger) {
+734: 	// Since this is called from malloc and malloc is called in
+735: 	// the guts of a number of libraries that might be holding
+736: 	// locks, don't attempt to start GC in non-preemptible or
+737: 	// potentially unstable situations.
+738: 	mp := acquirem()
+739: 	if gp := getg(); gp == mp.g0 || mp.locks > 1 || mp.preemptoff != "" {
+740: 		releasem(mp)
+741: 		return
+742: 	}
+743: 	releasem(mp)
+744: 	mp = nil
+745: 
+746: 	if gp := getg(); gp.bubble != nil {
+747: 		// Disassociate the G from its synctest bubble while allocating.
+748: 		// This is less elegant than incrementing the group's active count,
+749: 		// but avoids any contamination between GC and synctest.
+750: 		bubble := gp.bubble
+751: 		gp.bubble = nil
+752: 		defer func() {
+753: 			gp.bubble = bubble
+754: 		}()
+755: 	}
+756: 
+757: 	// Pick up the remaining unswept/not being swept spans concurrently
+758: 	//
+759: 	// This shouldn't happen if we're being invoked in background
+760: 	// mode since proportional sweep should have just finished
+761: 	// sweeping everything, but rounding errors, etc, may leave a
+762: 	// few spans unswept. In forced mode, this is necessary since
+763: 	// GC can be forced at any point in the sweeping cycle.
+764: 	//
+765: 	// We check the transition condition continuously here in case
+766: 	// this G gets delayed in to the next GC cycle.
+767: 	for trigger.test() && sweepone() != ^uintptr(0) {
+768: 	}
+769: 
+770: 	// Perform GC initialization and the sweep termination
+771: 	// transition.
+772: 	semacquire(&work.startSema)
+773: 	// Re-check transition condition under transition lock.
+774: 	if !trigger.test() {
+775: 		semrelease(&work.startSema)
+776: 		return
+777: 	}
+778: 
+779: 	// In gcstoptheworld debug mode, upgrade the mode accordingly.
+780: 	// We do this after re-checking the transition condition so
+781: 	// that multiple goroutines that detect the heap trigger don't
+782: 	// start multiple STW GCs.
+783: 	mode := gcBackgroundMode
+784: 	if debug.gcstoptheworld == 1 {
+785: 		mode = gcForceMode
+786: 	} else if debug.gcstoptheworld == 2 {
+787: 		mode = gcForceBlockMode
+788: 	}
+789: 
+790: 	// Ok, we're doing it! Stop everybody else
+791: 	semacquire(&gcsema)
+792: 	semacquire(&worldsema)
+793: 
+794: 	// For stats, check if this GC was forced by the user.
+795: 	// Update it under gcsema to avoid gctrace getting wrong values.
+796: 	work.userForced = trigger.kind == gcTriggerCycle
+797: 
+798: 	trace := traceAcquire()
+799: 	if trace.ok() {
+800: 		trace.GCStart()

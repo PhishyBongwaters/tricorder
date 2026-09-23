@@ -1,0 +1,168 @@
+1253: func gcDrain(gcw *gcWork, flags gcDrainFlags) {
+1254: 	if !writeBarrier.enabled {
+1255: 		throw("gcDrain phase incorrect")
+1256: 	}
+1257: 
+1258: 	// N.B. We must be running in a non-preemptible context, so it's
+1259: 	// safe to hold a reference to our P here.
+1260: 	gp := getg().m.curg
+1261: 	pp := gp.m.p.ptr()
+1262: 	preemptible := flags&gcDrainUntilPreempt != 0
+1263: 	flushBgCredit := flags&gcDrainFlushBgCredit != 0
+1264: 	idle := flags&gcDrainIdle != 0
+1265: 
+1266: 	initScanWork := gcw.heapScanWork
+1267: 
+1268: 	// checkWork is the scan work before performing the next
+1269: 	// self-preempt check.
+1270: 	checkWork := int64(1<<63 - 1)
+1271: 	var check func() bool
+1272: 	if flags&(gcDrainIdle|gcDrainFractional) != 0 {
+1273: 		checkWork = initScanWork + drainCheckThreshold
+1274: 		if idle {
+1275: 			check = pollWork
+1276: 		} else if flags&gcDrainFractional != 0 {
+1277: 			check = pollFractionalWorkerExit
+1278: 		}
+1279: 	}
+1280: 
+1281: 	if work.markrootNext.Load() < work.markrootJobs.Load() {
+1282: 		// Stop if we're preemptible, if someone wants to STW, or if
+1283: 		// someone is calling forEachP.
+1284: 		for !(gp.preempt && (preemptible || sched.gcwaiting.Load() || pp.runSafePointFn != 0)) {
+1285: 			job, ok := gcNextMarkRoot()
+1286: 			if !ok {
+1287: 				break
+1288: 			}
+1289: 			markroot(gcw, job, flushBgCredit)
+1290: 			if check != nil && check() {
+1291: 				goto done
+1292: 			}
+1293: 
+1294: 			// Spin up a new worker if requested.
+1295: 			if goexperiment.GreenTeaGC && gcw.mayNeedWorker {
+1296: 				gcw.mayNeedWorker = false
+1297: 				if gcphase == _GCmark {
+1298: 					gcController.enlistWorker()
+1299: 				}
+1300: 			}
+1301: 		}
+1302: 	}
+1303: 
+1304: 	// Drain heap marking jobs.
+1305: 	//
+1306: 	// Stop if we're preemptible, if someone wants to STW, or if
+1307: 	// someone is calling forEachP.
+1308: 	//
+1309: 	// TODO(mknyszek): Consider always checking gp.preempt instead
+1310: 	// of having the preempt flag, and making an exception for certain
+1311: 	// mark workers in retake. That might be simpler than trying to
+1312: 	// enumerate all the reasons why we might want to preempt, even
+1313: 	// if we're supposed to be mostly non-preemptible.
+1314: 	for !(gp.preempt && (preemptible || sched.gcwaiting.Load() || pp.runSafePointFn != 0)) {
+1315: 		// Try to keep work available on the global queue. We used to
+1316: 		// check if there were waiting workers, but it's better to
+1317: 		// just keep work available than to make workers wait. In the
+1318: 		// worst case, we'll do O(log(_WorkbufSize)) unnecessary
+1319: 		// balances.
+1320: 		if work.full == 0 {
+1321: 			gcw.balance()
+1322: 		}
+1323: 
+1324: 		// See mgcwork.go for the rationale behind the order in which we check these queues.
+1325: 		var b uintptr
+1326: 		var s objptr
+1327: 		if b = gcw.tryGetObjFast(); b == 0 {
+1328: 			if s = gcw.tryGetSpanFast(); s == 0 {
+1329: 				if b = gcw.tryGetObj(); b == 0 {
+1330: 					if s = gcw.tryGetSpan(); s == 0 {
+1331: 						// Flush the write barrier
+1332: 						// buffer; this may create
+1333: 						// more work.
+1334: 						wbBufFlush()
+1335: 						if b = gcw.tryGetObj(); b == 0 {
+1336: 							if s = gcw.tryGetSpan(); s == 0 {
+1337: 								s = gcw.tryStealSpan()
+1338: 							}
+1339: 						}
+1340: 					}
+1341: 				}
+1342: 			}
+1343: 		}
+1344: 		if b != 0 {
+1345: 			scanObject(b, gcw)
+1346: 		} else if s != 0 {
+1347: 			scanSpan(s, gcw)
+1348: 		} else {
+1349: 			// Unable to get work.
+1350: 			break
+1351: 		}
+1352: 
+1353: 		// Spin up a new worker if requested.
+1354: 		if goexperiment.GreenTeaGC && gcw.mayNeedWorker {
+1355: 			gcw.mayNeedWorker = false
+1356: 			if gcphase == _GCmark {
+1357: 				gcController.enlistWorker()
+1358: 			}
+1359: 		}
+1360: 
+1361: 		// Flush background scan work credit to the global
+1362: 		// account if we've accumulated enough locally so
+1363: 		// mutator assists can draw on it.
+1364: 		if gcw.heapScanWork >= gcCreditSlack {
+1365: 			gcController.heapScanWork.Add(gcw.heapScanWork)
+1366: 			if flushBgCredit {
+1367: 				gcFlushBgCredit(gcw.heapScanWork - initScanWork)
+1368: 				initScanWork = 0
+1369: 			}
+1370: 			checkWork -= gcw.heapScanWork
+1371: 			gcw.heapScanWork = 0
+1372: 
+1373: 			if checkWork <= 0 {
+1374: 				checkWork += drainCheckThreshold
+1375: 				if check != nil && check() {
+1376: 					break
+1377: 				}
+1378: 			}
+1379: 		}
+1380: 	}
+1381: 
+1382: done:
+1383: 	// Flush remaining scan work credit.
+1384: 	if gcw.heapScanWork > 0 {
+1385: 		gcController.heapScanWork.Add(gcw.heapScanWork)
+1386: 		if flushBgCredit {
+1387: 			gcFlushBgCredit(gcw.heapScanWork - initScanWork)
+1388: 		}
+1389: 		gcw.heapScanWork = 0
+1390: 	}
+1391: }
+1392: 
+1393: // gcDrainN blackens grey objects until it has performed roughly
+1394: // scanWork units of scan work or the G is preempted. This is
+1395: // best-effort, so it may perform less work if it fails to get a work
+1396: // buffer. Otherwise, it will perform at least n units of work, but
+1397: // may perform more because scanning is always done in whole object
+1398: // increments. It returns the amount of scan work performed.
+1399: //
+1400: // The caller goroutine must be in a preemptible state (e.g.,
+1401: // _Gwaiting) to prevent deadlocks during stack scanning. As a
+1402: // consequence, this must be called on the system stack.
+1403: //
+1404: //go:nowritebarrier
+1405: //go:systemstack
+1406: func gcDrainN(gcw *gcWork, scanWork int64) int64 {
+1407: 	if !writeBarrier.enabled {
+1408: 		throw("gcDrainN phase incorrect")
+1409: 	}
+1410: 
+1411: 	// There may already be scan work on the gcw, which we don't
+1412: 	// want to claim was done by this call.
+1413: 	workFlushed := -gcw.heapScanWork
+1414: 
+1415: 	// In addition to backing out because of a preemption, back out
+1416: 	// if the GC CPU limiter is enabled.
+1417: 	gp := getg().m.curg
+1418: 	for !gp.preempt && !gcCPULimiter.limiting() && workFlushed+gcw.heapScanWork < scanWork {
+1419: 		// See gcDrain comment.
+1420: 		if work.full == 0 {
