@@ -1,0 +1,20 @@
+150:         json_object["hidePasswords"] = json!(hide_passwords);
+151:         json_object["manage"] = json!(manage);
+152:         json_object
+153:     }
+154: 
+155:     pub async fn can_access_collection(member: &Membership, col_id: &CollectionId, conn: &DbConn) -> bool {
+156:         member.has_status(MembershipStatus::Confirmed)
+157:             && (member.has_full_access()
+158:                 || CollectionUser::has_access_to_collection_by_user(col_id, &member.user_uuid, conn).await
+159:                 || (CONFIG.org_groups_enabled()
+160:                     && (GroupUser::has_full_access_by_member(&member.org_uuid, &member.uuid, conn).await
+161:                         || GroupUser::has_access_to_collection_by_member(col_id, &member.uuid, conn).await)))
+162:     }
+163: }
+164: 
+165: /// Database methods
+166: impl Collection {
+167:     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
+168:         self.update_users_revision(conn).await;
+169: 

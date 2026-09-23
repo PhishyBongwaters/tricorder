@@ -1,0 +1,10 @@
+896:             Ok(())
+897:         })
+898:         .await
+899:     }
+900: 
+901:     pub async fn has_access_to_collection_by_user(col_id: &CollectionId, user_uuid: &UserId, conn: &DbConn) -> bool {
+902:         Self::find_by_collection_and_user(col_id, user_uuid, conn).await.is_some()
+903:     }
+904: }
+905: 
