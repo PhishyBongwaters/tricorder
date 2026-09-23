@@ -6,7 +6,7 @@
 
 **Turn any codebase into a token-efficient map an LLM agent can actually navigate.**
 
-Tricorder scans a repository with tree-sitter, ranks every symbol by importance (PageRank over the call graph), and emits a compact map — definitions, signatures, and cross-file references — sized to fit your context window. Measured on the current pipeline in scripted retrieval runs (fixed rung policies per repo, no live agent): Vaultwarden queries cost 8,987 response-payload tokens vs 26,818 for baseline navigation (−66.5%), and 5 Swift queries cost 7,608 tokens where the baseline needs 38,885 (−80.4%).
+Tricorder scans a repository with tree-sitter, ranks every symbol by importance (PageRank over the call graph), and emits a compact map — definitions, signatures, and cross-file references — sized to fit your context window. Measured on the current pipeline in scripted retrieval runs (fixed rung policies per repo, no live agent — both arms fed the same oracle keywords taken from ground truth, never the natural-language questions): Vaultwarden queries cost 8,987 response-payload tokens vs 26,818 on pre-fix baseline code (−66.5%), and 5 Swift queries cost 7,608 tokens where the baseline needs 38,885 (−80.4%). Treat these as a perfect-world upper bound: a real agent still has to discover the right keywords itself, which these runs skip.
 
 ```
 $ tricorder /path/to/repo --map-tokens 2048
@@ -32,9 +32,9 @@ Three interfaces, one engine: a **CLI** for humans and scripts, an **MCP server*
 | Read every file (hours) | Intelligent map in seconds |
 | Hit-or-miss grep | Precise symbol detection with definitions *and* references |
 | Manual dependency tracing | Automatic call graph + PageRank |
-| Context window overflow | Token-budgeted output (−55% to −80% per-query payload vs baseline tools, measured) |
+| Context window overflow | Token-budgeted output (−55% to −80% per-query payload vs pre-fix baseline code in scripted runs, measured — oracle keyword inputs, see below) |
 
-**Measured on the current pipeline (response-payload tokens in scripted retrieval runs — fixed rung policies, ground-truth citation grading, no live agent):** −70.3% combined across Vaultwarden, Go, and Swift repos — ground truth cited in 12/12 runs on both baseline and branch (Vaultwarden/Go measured 2026-09-21, Swift re-measured 2026-09-22 after the Q4 crowding fix; see [comparison runs](eval/comparison-runs/2026-09-22/README.md)). This is distinct from end-to-end agent eval (`bench/bench_agent_eval.py`, model in the loop) — no agent-eval numbers are quoted here. Older Gen 2 map-vs-blind-repo numbers (86.7–100% across 15 repos) describe a previous pipeline version and are kept for history in [Benchmarks](docs/benchmarks.md).
+**Measured on the current pipeline (response-payload tokens in scripted retrieval runs — fixed rung policies, ground-truth citation grading, no live agent):** −70.3% combined across Vaultwarden, Go, and Swift repos — ground truth cited in 12/12 runs on both baseline and branch (Vaultwarden/Go measured 2026-09-21, Swift re-measured 2026-09-22 after the Q4 crowding fix; see [comparison runs](eval/comparison-runs/2026-09-22/README.md)). Both arms are tricorder code — frozen pre-fix baseline vs branch tip — fed identical oracle keyword inputs (exact ground-truth symbols or short keyword phrases, never the natural-language question text). So this is a perfect-world upper bound on keyword-to-answer efficiency, not a measure of end-to-end agent search: it skips the hardest part, discovering the right terms from a plain-English question. Per-repo inputs are listed in [Benchmarks](docs/benchmarks.md). This is distinct from end-to-end agent eval (`bench/bench_agent_eval.py`, model in the loop) — no agent-eval numbers are quoted here. Older Gen 2 map-vs-blind-repo numbers (86.7–100% across 15 repos) describe a previous pipeline version and are kept for history in [Benchmarks](docs/benchmarks.md).
 
 ## Quick Start
 

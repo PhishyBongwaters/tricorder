@@ -7,6 +7,32 @@
 > [comparison runs 2026-09-21](../eval/comparison-runs/2026-09-21/README.md)
 > (−76.3% combined response-payload tokens vs baseline tools).
 
+## Current numbers — what was actually fed
+
+The −70.3% combined figure (12/12 scripted runs, VW+Go 9/21, Swift 9/22)
+compares two tricorder code versions — frozen pre-fix baseline vs branch
+tip — on identical inputs, paired same-machine. It is **not** tricorder vs
+grep, and it is **not** natural-language search. Every rung was fed oracle
+keywords taken from ground truth; the plain-English question text was never
+issued to either arm. Read the savings as a perfect-world upper bound on
+keyword-to-answer efficiency: a real agent still has to discover the right
+terms from a question, which these runs skip.
+
+Per-repo inputs (frozen corpora live with the run records):
+
+- **Vaultwarden** (4 questions): short keyword phrases fed to
+  `detect` → `symbols` → `detail` — e.g. `"totp code"`, `"admin token"`,
+  `"collection permissions"`, `"cipher update notification"`
+  (`eval/comparison-runs/2026-09-21/corpora/vw_corpus.json`).
+- **Go** (3 questions): exact ground-truth symbols, two keywords per task,
+  6 rungs each — e.g. `gcBgMarkWorker` + `markroot`, `chansend` +
+  `chanrecv`, `buildssa` + `NewConfig`
+  (`eval/comparison-runs/2026-09-21/corpora/tasks_go_3.json`).
+- **Swift** (5 questions): one exact symbol plus one keyword phrase per
+  question, 2× `detect` each — e.g. `CSApply` + `"type check function
+  call"`, `parseExpr` + `"expression parser"`
+  (`eval/comparison-runs/2026-09-22/scripts/qrun.py`, `QUESTIONS`).
+
 Tricorder's whole point is token savings: a compact map steers an agent to
 the right code without reading the entire repo.
 

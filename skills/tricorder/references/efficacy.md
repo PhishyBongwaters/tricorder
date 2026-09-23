@@ -1,12 +1,17 @@
 # Benchmark Efficacy
 
-Measured per-query response-payload tokens, baseline navigation vs tricorder
+Measured per-query response-payload tokens, pre-fix baseline code vs tricorder
 branch — see the canonical run records in
 `eval/comparison-runs/2026-09-21/README.md` (Vaultwarden, Go) and
 `eval/comparison-runs/2026-09-22/README.md` (Swift re-measure)
 (tiktoken `cl100k_base`, frozen question corpora with ground-truth
-grading). All runs use a scripted rung policy (fixed detect/symbols/detail
-sequence, first-hit detail, citation grading) — no live agent or model.
+grading). Both arms are tricorder code fed identical inputs; all runs use
+a scripted rung policy (fixed detect/symbols/detail sequence, first-hit
+detail, citation grading) — no live agent or model. Crucially, the inputs
+fed to each rung are oracle keywords taken from ground truth (exact
+symbols or short keyword phrases — never the natural-language question
+text), so these savings are a perfect-world upper bound on
+keyword-to-answer efficiency, not end-to-end agent search.
 Do not mix these with end-to-end agent-eval numbers
 (`bench/bench_agent_eval.py`); do not quote older map-vs-blind percentages,
 which ran against previous pipeline versions.
