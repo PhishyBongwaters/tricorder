@@ -870,6 +870,43 @@ def calculate_full_repo_budget(project_root: str, token_estimate: int,
     return result
 
 
+# =============================================================================
+# Scaled map budget: default map size grows with repo size, floored at 2048.
+# Explicit budgets always win — this applies only when the caller passes
+# nothing (CLI --map-tokens unset, MCP token_limit None).
+# =============================================================================
+# Mandated minimum map budget. Raisable via TRICORDER_MAP_BUDGET_FLOOR,
+# never lowerable: the floor clamps upward only.
+MAP_BUDGET_FLOOR = 2048
+
+# Default tokens-per-file ratio. 0.5 approximates the historical 8192 default
+# at Go scale (~16k files -> ~8k); retune via TRICORDER_MAP_BUDGET_RATIO.
+MAP_BUDGET_RATIO = 0.5
+
+
+def default_map_budget(n_files: int) -> int:
+    """Map token budget for a repo of n_files when no explicit budget given.
+
+    max(floor, ceil(n_files * ratio)). n_files <= 0 gets the floor.
+    """
+    try:
+        floor = int(os.environ.get("TRICORDER_MAP_BUDGET_FLOOR",
+                                   str(MAP_BUDGET_FLOOR)))
+    except ValueError:
+        floor = MAP_BUDGET_FLOOR
+    floor = max(MAP_BUDGET_FLOOR, floor)
+    try:
+        ratio = float(os.environ.get("TRICORDER_MAP_BUDGET_RATIO",
+                                     str(MAP_BUDGET_RATIO)))
+    except ValueError:
+        ratio = MAP_BUDGET_RATIO
+    if ratio < 0:
+        ratio = MAP_BUDGET_RATIO
+    import math
+    scaled = math.ceil(max(0, n_files) * ratio)
+    return max(floor, scaled)
+
+
 def repo_budget(project_root: str, token_estimate: int,
                 model_name: str = "gpt-4",
                 exclude_globs: Optional[List[str]] = None,

@@ -766,7 +766,7 @@ async def tricorder_scan(
     project_root: str,
     chat_files: Optional[List[str]] = None,
     other_files: Optional[List[str]] = None,
-    token_limit: Any = 8192,  # Accept any type to handle empty strings
+    token_limit: Any = None,  # None = auto: scaled by discovered repo size (floor 2048). Accepts any type to handle empty strings
     exclude_unranked: bool = False,
     force_refresh: bool = False,
     mentioned_files: Optional[List[str]] = None,
@@ -792,7 +792,7 @@ async def tricorder_scan(
     :param project_root: Root directory of the project to search.  (must be an absolute path!)
     :param chat_files: A list of file paths that are currently in the chat context. These files will receive the highest ranking.
     :param other_files: A list of other relevant file paths in the repository to consider for the map. They receive a lower ranking boost than mentioned_files and chat_files.
-    :param token_limit: The maximum number of tokens the generated repository map should occupy. Defaults to 8192.
+    :param token_limit: The maximum number of tokens the generated repository map should occupy. Defaults to None (auto — scaled by discovered repo size via default_map_budget, floor 2048).
     :param exclude_unranked: If True, files with a PageRank of 0.0 will be excluded from the map. Defaults to False.
     :param force_refresh: If True, forces a refresh of the repository map cache. Defaults to False.
     :param mentioned_files: Optional list of file paths explicitly mentioned in the conversation and receive a mid-level ranking boost.
@@ -819,14 +819,17 @@ async def tricorder_scan(
         return {"error": err}
 
     # 1. Handle and validate parameters
-    # Convert token_limit to integer with fallback
+    # Convert token_limit to integer; None/empty = auto (resolved after
+    # discovery). Non-positive stays the legacy 8192 fallback.
+    _auto_budget = token_limit is None or token_limit == ""
     try:
-        token_limit = int(token_limit) if token_limit else 8192
+        token_limit = int(token_limit) if not _auto_budget else None
     except (TypeError, ValueError):
-        token_limit = 8192
-    
+        token_limit = None
+        _auto_budget = True
+
     # Ensure token_limit is positive
-    if token_limit <= 0:
+    if token_limit is not None and token_limit <= 0:
         token_limit = 8192
     
     # TC-007: clamp max_files server-side.
@@ -898,6 +901,13 @@ async def tricorder_scan(
     # Add a print statement for debugging so you can see what the tool is working with.
     log.debug(f"Chat files: {chat_files_list}")
     log.debug(f"Effective other_files count: {len(effective_other_files)}")
+
+    # Auto budget: unset token_limit scales with discovered repo size
+    # (floor 2048). Explicit values pass through untouched.
+    if _auto_budget or token_limit is None:
+        from utils import default_map_budget
+        token_limit = default_map_budget(
+            len(chat_files_list) + len(effective_other_files))
 
     # If after all that we have no files, we can exit early.
     if not chat_files_list and not effective_other_files:

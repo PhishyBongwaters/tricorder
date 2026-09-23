@@ -162,8 +162,10 @@ Examples:
     parser.add_argument(
         "--map-tokens",
         type=int,
-        default=8192,
-        help="Maximum tokens for the generated map (default: 8192)"
+        default=None,
+        help="Maximum tokens for the generated map (default: auto — scaled "
+             "by repo size via default_map_budget, floor 2048; 0 skips the "
+             "render, e.g. for DB-build-only prescans)"
     )
 
     parser.add_argument(
@@ -745,9 +747,17 @@ Examples:
     mentioned_fnames = set(args.mentioned_files) if args.mentioned_files else None
     mentioned_idents = set(args.mentioned_idents) if args.mentioned_idents else None
 
+    # Auto budget: unset --map-tokens scales with discovered repo size
+    # (floor 2048). Explicit values — including the 0 render-skip sentinel —
+    # pass through untouched.
+    map_tokens = args.map_tokens
+    if map_tokens is None:
+        from utils import default_map_budget
+        map_tokens = default_map_budget(len(chat_files) + len(other_files))
+
     try:
         repo_map = Tricorder(
-            map_tokens=args.map_tokens,
+            map_tokens=map_tokens,
             root=str(root_path),
             token_counter_func=token_counter,
             file_reader_func=read_text,
@@ -868,15 +878,15 @@ Examples:
                     sample_tree = repo_map.to_tree(sample, chat_rel, [])
                     sample_tokens = repo_map.token_count(sample_tree)
                     tokens_per_tag = sample_tokens / len(sample)
-                    tags_at_budget = int(args.map_tokens / tokens_per_tag) if tokens_per_tag > 0 else 0
-                    full_est = repo_budget(args.root, args.map_tokens, args.model,
+                    tags_at_budget = int(map_tokens / tokens_per_tag) if tokens_per_tag > 0 else 0
+                    full_est = repo_budget(args.root, map_tokens, args.model,
                                            args.exclude_globs)["full_repo_estimate"]
-                    planned = min(args.map_tokens, full_est)
+                    planned = min(map_tokens, full_est)
                     savings = repo_budget(args.root, planned, args.model,
                                           args.exclude_globs)["savings_pct"]
                     repo_map.output_handlers['info'](
                         f"Tags: {len(ranked_tags)} | Tokens per tag: ~{tokens_per_tag:.0f} | "
-                        f"Tags at --map-tokens {args.map_tokens}: ~{tags_at_budget} | "
+                        f"Tags at --map-tokens {map_tokens}: ~{tags_at_budget} | "
                         f"Full repo estimate: ~{full_est} tokens | "
                         f"Estimated savings: {savings}%"
                     )
