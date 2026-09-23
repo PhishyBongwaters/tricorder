@@ -49,6 +49,16 @@ anyway. Legs measure retrieval given the index, nothing else.
   keep passing explicit budgets.
 - Both recorded here so they survive; build after the series.
 
+## Canonical Go prescan (2026-09-23, render-skipped, `--map-tokens 0`)
+
+- DB: `.tricorder/db/go.db` (canonical `--init` flow, never in the repo)
+- Coverage: 12,850/12,850 discovered source files (`file_state`);
+  1,383,966 tags, 12,057,079 refs, 10,767 ranked files
+- `ranks_stamp` matches meta signature (extractor 3) — ranks live,
+  MAP serves from the table when unpersonalized
+- Killed `--map-tokens 2048` attempt contributed partial tags; the
+  completing run filled the rest via dirty-diff resume (no re-parse)
+
 ## Records per leg (commit each)
 
 - `v13/<leg>/transcript.md` — agent's commands in order + final answer
