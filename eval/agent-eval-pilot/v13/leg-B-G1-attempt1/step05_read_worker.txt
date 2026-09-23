@@ -1,0 +1,240 @@
+		lc.mspan.setUserArenaChunkToFault()
+	}
+
+	// Enable huge pages on some metadata if we cross a heap threshold.
+	if gcController.heapGoal() > minHeapForMetadataHugePages {
+		systemstack(func() {
+			mheap_.enableMetadataHugePages()
+		})
+	}
+
+	semrelease(&worldsema)
+	semrelease(&gcsema)
+	// Careful: another GC cycle may start now.
+
+	releasem(mp)
+	mp = nil
+
+	// now that gc is done, kick off finalizer thread if needed
+	if !concurrentSweep {
+		// give the queued finalizers, if any, a chance to run
+		Gosched()
+	}
+}
+
+// gcBgMarkStartWorkers prepares background mark worker goroutines. These
+// goroutines will not run until the mark phase, but they must be started while
+// the work is not stopped and from a regular G stack. The caller must hold
+// worldsema.
+func gcBgMarkStartWorkers() {
+	// Background marking is performed by per-P G's. Ensure that each P has
+	// a background GC G.
+	//
+	// Worker Gs don't exit if gomaxprocs is reduced. If it is raised
+	// again, we can reuse the old workers; no need to create new workers.
+	if gcBgMarkWorkerCount >= gomaxprocs {
+		return
+	}
+
+	// Increment mp.locks when allocating. We are called within gcStart,
+	// and thus must not trigger another gcStart via an allocation. gcStart
+	// bails when allocating with locks held, so simulate that for these
+	// allocations.
+	//
+	// TODO(prattmic): cleanup gcStart to use a more explicit "in gcStart"
+	// check for bailing.
+	mp := acquirem()
+	ready := make(chan struct{}, 1)
+	releasem(mp)
+
+	for gcBgMarkWorkerCount < gomaxprocs {
+		mp := acquirem() // See above, we allocate a closure here.
+		go gcBgMarkWorker(ready)
+		releasem(mp)
+
+		// N.B. we intentionally wait on each goroutine individually
+		// rather than starting all in a batch and then waiting once
+		// afterwards. By running one goroutine at a time, we can take
+		// advantage of runnext to bounce back and forth between
+		// workers and this goroutine. In an overloaded application,
+		// this can reduce GC start latency by prioritizing these
+		// goroutines rather than waiting on the end of the run queue.
+		<-ready
+		// The worker is now guaranteed to be added to the pool before
+		// its P's next findRunnableGCWorker.
+
+		gcBgMarkWorkerCount++
+	}
+}
+
+// gcBgMarkPrepare sets up state for background marking.
+// Mutator assists must not yet be enabled.
+func gcBgMarkPrepare() {
+	// Background marking will stop when the work queues are empty
+	// and there are no more workers (note that, since this is
+	// concurrent, this may be a transient state, but mark
+	// termination will clean it up). Between background workers
+	// and assists, we don't really know how many workers there
+	// will be, so we pretend to have an arbitrarily large number
+	// of workers, almost all of which are "waiting". While a
+	// worker is working it decrements nwait. If nproc == nwait,
+	// there are no workers.
+	work.nproc = ^uint32(0)
+	work.nwait = ^uint32(0)
+}
+
+// gcBgMarkWorkerNode is an entry in the gcBgMarkWorkerPool. It points to a single
+// gcBgMarkWorker goroutine.
+type gcBgMarkWorkerNode struct {
+	// Unused workers are managed in a lock-free stack. This field must be first.
+	node lfnode
+
+	// The g of this worker.
+	gp guintptr
+
+	// Release this m on park. This is used to communicate with the unlock
+	// function, which cannot access the G's stack. It is unused outside of
+	// gcBgMarkWorker().
+	m muintptr
+}
+type gcBgMarkWorkerNodePadded struct {
+	gcBgMarkWorkerNode
+	pad [tagAlign - unsafe.Sizeof(gcBgMarkWorkerNode{}) - gcBgMarkWorkerNodeRedZoneSize]byte
+}
+
+const gcBgMarkWorkerNodeRedZoneSize = (16 << 2) * asanenabledBit // redZoneSize(512)
+
+func gcBgMarkWorker(ready chan struct{}) {
+	gp := getg()
+
+	// We pass node to a gopark unlock function, so it can't be on
+	// the stack (see gopark). Prevent deadlock from recursively
+	// starting GC by disabling preemption.
+	gp.m.preemptoff = "GC worker init"
+	// TODO: This is technically not allowed in the heap. See comment in tagptr.go.
+	//
+	// It is kept alive simply by virtue of being used in the infinite loop
+	// below. gcBgMarkWorkerPool keeps pointers to nodes that are not
+	// GC-visible, so this must be kept alive indefinitely (even if
+	// GOMAXPROCS decreases).
+	node := &new(gcBgMarkWorkerNodePadded).gcBgMarkWorkerNode
+	gp.m.preemptoff = ""
+
+	node.gp.set(gp)
+
+	node.m.set(acquirem())
+
+	ready <- struct{}{}
+	// After this point, the background mark worker is generally scheduled
+	// cooperatively by gcController.findRunnableGCWorker. While performing
+	// work on the P, preemption is disabled because we are working on
+	// P-local work buffers. When the preempt flag is set, this puts itself
+	// into _Gwaiting to be woken up by gcController.findRunnableGCWorker
+	// at the appropriate time.
+	//
+	// When preemption is enabled (e.g., while in gcMarkDone), this worker
+	// may be preempted and schedule as a _Grunnable G from a runq. That is
+	// fine; it will eventually gopark again for further scheduling via
+	// findRunnableGCWorker.
+	//
+	// Since we disable preemption before notifying ready, we guarantee that
+	// this G will be in the worker pool for the next findRunnableGCWorker.
+	// This isn't strictly necessary, but it reduces latency between
+	// _GCmark starting and the workers starting.
+
+	for {
+		// Go to sleep until woken by
+		// gcController.findRunnableGCWorker.
+		gopark(func(g *g, nodep unsafe.Pointer) bool {
+			node := (*gcBgMarkWorkerNode)(nodep)
+
+			if mp := node.m.ptr(); mp != nil {
+				// The worker G is no longer running; release
+				// the M.
+				//
+				// N.B. it is _safe_ to release the M as soon
+				// as we are no longer performing P-local mark
+				// work.
+				//
+				// However, since we cooperatively stop work
+				// when gp.preempt is set, if we releasem in
+				// the loop then the following call to gopark
+				// would immediately preempt the G. This is
+				// also safe, but inefficient: the G must
+				// schedule again only to enter gopark and park
+				// again. Thus, we defer the release until
+				// after parking the G.
+				releasem(mp)
+			}
+
+			// Release this G to the pool.
+			gcBgMarkWorkerPool.push(&node.node)
+			// Note that at this point, the G may immediately be
+			// rescheduled and may be running.
+			return true
+		}, unsafe.Pointer(node), waitReasonGCWorkerIdle, traceBlockSystemGoroutine, 0)
+
+		// Preemption must not occur here, or another G might see
+		// p.gcMarkWorkerMode.
+
+		// Disable preemption so we can use the gcw. If the
+		// scheduler wants to preempt us, we'll stop draining,
+		// dispose the gcw, and then preempt.
+		node.m.set(acquirem())
+		pp := gp.m.p.ptr() // P can't change with preemption disabled.
+
+		if gcBlackenEnabled == 0 {
+			println("worker mode", pp.gcMarkWorkerMode)
+			throw("gcBgMarkWorker: blackening not enabled")
+		}
+
+		if pp.gcMarkWorkerMode == gcMarkWorkerNotWorker {
+			throw("gcBgMarkWorker: mode not set")
+		}
+
+		startTime := nanotime()
+		pp.gcMarkWorkerStartTime = startTime
+		var trackLimiterEvent bool
+		if pp.gcMarkWorkerMode == gcMarkWorkerIdleMode {
+			trackLimiterEvent = pp.limiterEvent.start(limiterEventIdleMarkWork, startTime)
+		}
+
+		gcBeginWork()
+
+		systemstack(func() {
+			// Mark our goroutine preemptible so its stack can be scanned or observed
+			// by the execution tracer. This, for example, lets two mark workers scan
+			// each other (otherwise, they would deadlock).
+			//
+			// casGToWaitingForSuspendG marks the goroutine as ineligible for a
+			// stack shrink, effectively pinning the stack in memory for the duration.
+			//
+			// N.B. The execution tracer is not aware of this status transition and
+			// handles it specially based on the wait reason.
+			casGToWaitingForSuspendG(gp, _Grunning, waitReasonGCWorkerActive)
+			switch pp.gcMarkWorkerMode {
+			default:
+				throw("gcBgMarkWorker: unexpected gcMarkWorkerMode")
+			case gcMarkWorkerDedicatedMode:
+				gcDrainMarkWorkerDedicated(&pp.gcw, true)
+				if gp.preempt {
+					// We were preempted. This is
+					// a useful signal to kick
+					// everything out of the run
+					// queue so it can run
+					// somewhere else.
+					if drainQ := runqdrain(pp); !drainQ.empty() {
+						lock(&sched.lock)
+						globrunqputbatch(&drainQ)
+						unlock(&sched.lock)
+					}
+				}
+				// Go back to draining, this time
+				// without preemption.
+				gcDrainMarkWorkerDedicated(&pp.gcw, false)
+			case gcMarkWorkerFractionalMode:
+				gcDrainMarkWorkerFractional(&pp.gcw)
+			case gcMarkWorkerIdleMode:
+				gcDrainMarkWorkerIdle(&pp.gcw)
+			}
+			casgstatus(gp, _Gwaiting, _Grunning)

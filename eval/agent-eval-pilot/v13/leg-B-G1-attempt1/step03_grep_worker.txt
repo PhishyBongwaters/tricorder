@@ -1,0 +1,38 @@
+mgc.go:1694:	if gcBgMarkWorkerCount >= gomaxprocs {
+mgc.go:1709:	for gcBgMarkWorkerCount < gomaxprocs {
+mgc.go:1711:		go gcBgMarkWorker(ready)
+mgc.go:1725:		gcBgMarkWorkerCount++
+mgc.go:1745:// gcBgMarkWorkerNode is an entry in the gcBgMarkWorkerPool. It points to a single
+mgc.go:1746:// gcBgMarkWorker goroutine.
+mgc.go:1747:type gcBgMarkWorkerNode struct {
+mgc.go:1756:	// gcBgMarkWorker().
+mgc.go:1759:type gcBgMarkWorkerNodePadded struct {
+mgc.go:1760:	gcBgMarkWorkerNode
+mgc.go:1761:	pad [tagAlign - unsafe.Sizeof(gcBgMarkWorkerNode{}) - gcBgMarkWorkerNodeRedZoneSize]byte
+mgc.go:1764:const gcBgMarkWorkerNodeRedZoneSize = (16 << 2) * asanenabledBit // redZoneSize(512)
+mgc.go:1766:func gcBgMarkWorker(ready chan struct{}) {
+mgc.go:1776:	// below. gcBgMarkWorkerPool keeps pointers to nodes that are not
+mgc.go:1779:	node := &new(gcBgMarkWorkerNodePadded).gcBgMarkWorkerNode
+mgc.go:1808:			node := (*gcBgMarkWorkerNode)(nodep)
+mgc.go:1830:			gcBgMarkWorkerPool.push(&node.node)
+mgc.go:1847:			throw("gcBgMarkWorker: blackening not enabled")
+mgc.go:1851:			throw("gcBgMarkWorker: mode not set")
+mgc.go:1876:				throw("gcBgMarkWorker: unexpected gcMarkWorkerMode")
+mgcpacer.go:784:		// When a dedicated worker stops running, the gcBgMarkWorker loop notes
+mgcpacer.go:791:	node := (*gcBgMarkWorkerNode)(gcBgMarkWorkerPool.pop())
+mgcpacer.go:826:		gcBgMarkWorkerPool.push(&node.node)
+mgcpacer.go:836:			gcBgMarkWorkerPool.push(&node.node)
+mgcpacer.go:906:	gcBgMarkWorkerPool.push(&node.node)
+proc.go:3561:		node := (*gcBgMarkWorkerNode)(gcBgMarkWorkerPool.pop())
+proc.go:3985:	// If we were to check gcBgMarkWorkerPool first, we must somehow handle
+proc.go:3987:	// empty gcBgMarkWorkerPool is only possible if gcMarkDone is running.
+proc.go:4002:	node := (*gcBgMarkWorkerNode)(gcBgMarkWorkerPool.pop())
+proc.go:6259:	// sweep termination STW that starts the mark phase. gcBgMarkWorker
+runtime2.go:870:	// See comment in gcBgMarkWorker about the lifetime of
+runtime2.go:871:	// gcBgMarkWorkerNode.
+runtime2.go:874:	nextGCMarkWorker *gcBgMarkWorkerNode
+runtime2.go:1468:	// *gcBgMarkWorkerNode.
+runtime2.go:1469:	gcBgMarkWorkerPool lfstack
+runtime2.go:1471:	// Total number of gcBgMarkWorker goroutines. Protected by worldsema.
+runtime2.go:1472:	gcBgMarkWorkerCount int32
+tagptr.go:20:// gcBgMarkWorkerNode is also small, but we don't make many of those

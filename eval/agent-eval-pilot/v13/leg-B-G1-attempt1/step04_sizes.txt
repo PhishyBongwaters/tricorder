@@ -1,0 +1,2 @@
+src/runtime/mgc.go: 79497B/2349 lines
+src/runtime/mgcmark.go: 56759B/1806 lines

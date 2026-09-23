@@ -1,0 +1,11 @@
+{
+ "step01_ls_runtime.txt": 4640,
+ "step03_grep_worker.txt": 772,
+ "step04_sizes.txt": 30,
+ "step05_read_worker.txt": 2318,
+ "step06_read_tail_head.txt": 1554,
+ "step07_grep_mark_funcs.txt": 295,
+ "step08_grep_orchestration.txt": 92,
+ "step09_read_cores.txt": 2517,
+ "step10_read_done_wrappers.txt": 1664
+}

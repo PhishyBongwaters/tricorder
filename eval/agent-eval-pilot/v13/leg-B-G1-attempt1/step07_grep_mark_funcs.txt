@@ -1,0 +1,13 @@
+mgcmark.go:109:func gcPrepareMarkRoots() {
+mgcmark.go:179:func gcMarkRootCheck() {
+mgcmark.go:221:func markroot(gcw *gcWork, i uint32, flushBgCredit bool) int64 {
+mgcmark.go:330:func markrootBlock(b0, n0 uintptr, ptrmask0 *uint8, gcw *gcWork, shard int) int64 {
+mgcmark.go:359:func markrootFreeGStacks() {
+mgcmark.go:393:func markrootSpans(gcw *gcWork, shard int) {
+mgcmark.go:1181:func gcDrainMarkWorkerIdle(gcw *gcWork) {
+mgcmark.go:1187:func gcDrainMarkWorkerDedicated(gcw *gcWork, untilPreempt bool) {
+mgcmark.go:1197:func gcDrainMarkWorkerFractional(gcw *gcWork) {
+mgcmark.go:1205:func gcNextMarkRoot() (uint32, bool) {
+mgcmark.go:1253:func gcDrain(gcw *gcWork, flags gcDrainFlags) {
+mgcmark.go:1406:func gcDrainN(gcw *gcWork, scanWork int64) int64 {
+mgcmark.go:1792:func gcMarkTinyAllocs() {

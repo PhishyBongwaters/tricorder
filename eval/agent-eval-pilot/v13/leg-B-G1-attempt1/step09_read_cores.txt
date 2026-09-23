@@ -1,0 +1,284 @@
+func gcMark(startTime int64) {
+	if gcphase != _GCmarktermination {
+		throw("in gcMark expecting to see gcphase as _GCmarktermination")
+	}
+	work.tstart = startTime
+
+	// Check that there's no marking work remaining.
+	if next, jobs := work.markrootNext.Load(), work.markrootJobs.Load(); work.full != 0 || next < jobs {
+		print("runtime: full=", hex(work.full), " next=", next, " jobs=", jobs, " nDataRoots=", work.nDataRoots, " nBSSRoots=", work.nBSSRoots, " nSpanRoots=", work.nSpanRoots, " nStackRoots=", work.nStackRoots, "\n")
+		panic("non-empty mark queue after concurrent mark")
+	}
+
+	if debug.gccheckmark > 0 {
+		// This is expensive when there's a large number of
+		// Gs, so only do it if checkmark is also enabled.
+		gcMarkRootCheck()
+	}
+
+	// Drop allg snapshot. allgs may have grown, in which case
+	// this is the only reference to the old backing store and
+	// there's no need to keep it around.
+	work.stackRoots = nil
+
+	// Clear out buffers and double-check that all gcWork caches
+	// are empty. This should be ensured by gcMarkDone before we
+	// enter mark termination.
+	//
+	// TODO: We could clear out buffers just before mark if this
+	// has a non-negligible impact on STW time.
+	for _, p := range allp {
+		// The write barrier may have buffered pointers since
+		// the gcMarkDone barrier. However, since the barrier
+		// ensured all reachable objects were marked, all of
+		// these must be pointers to black objects. Hence we
+		// can just discard the write barrier buffer.
+		if debug.gccheckmark > 0 {
+			// For debugging, flush the buffer and make
+			// sure it really was all marked.
+			wbBufFlush1(p)
+		} else {
+			p.wbBuf.reset()
+		}
+
+		gcw := &p.gcw
+		if !gcw.empty() {
+			printlock()
+			print("runtime: P ", p.id, " flushedWork ", gcw.flushedWork)
+			if gcw.wbuf1 == nil {
+				print(" wbuf1=<nil>")
+			} else {
+				print(" wbuf1.n=", gcw.wbuf1.nobj)
+			}
+			if gcw.wbuf2 == nil {
+				print(" wbuf2=<nil>")
+			} else {
+				print(" wbuf2.n=", gcw.wbuf2.nobj)
+			}
+			print("\n")
+			throw("P has cached GC work at end of mark termination")
+		}
+		// There may still be cached empty buffers, which we
+		// need to flush since we're going to free them. Also,
+		// there may be non-zero stats because we allocated
+		// black after the gcMarkDone barrier.
+		gcw.dispose()
+	}
+
+	// Flush scanAlloc from each mcache since we're about to modify
+	// heapScan directly. If we were to flush this later, then scanAlloc
+	// might have incorrect information.
+	//
+	// Note that it's not important to retain this information; we know
+	// exactly what heapScan is at this point via scanWork.
+	for _, p := range allp {
+		c := p.mcache
+		if c == nil {
+			continue
+		}
+		c.scanAlloc = 0
+	}
+
+	// Reset controller state.
+	gcController.resetLive(work.bytesMarked)
+}
+
+// gcSweep must be called on the system stack because it acquires the heap
+// lock. See mheap for details.
+//
+// Returns true if the heap was fully swept by this function.
+//
+// The world must be stopped.
+//
+//go:systemstack
+func gcSweep(mode gcMode) bool {
+	assertWorldStopped()
+
+	if gcphase != _GCoff {
+		throw("gcSweep being done but phase is not GCoff")
+	}
+
+	lock(&mheap_.lock)
+	mheap_.sweepgen += 2
+	sweep.active.reset()
+	mheap_.pagesSwept.Store(0)
+	mheap_.sweepArenas = mheap_.heapArenas
+	mheap_.reclaimIndex.Store(0)
+	mheap_.reclaimCredit.Store(0)
+	unlock(&mheap_.lock)
+
+	sweep.centralIndex.clear()
+
+	if !concurrentSweep || mode == gcForceBlockMode {
+		// Special case synchronous sweep.
+		// Record that no proportional sweeping has to happen.
+func gcDrain(gcw *gcWork, flags gcDrainFlags) {
+	if !writeBarrier.enabled {
+		throw("gcDrain phase incorrect")
+	}
+
+	// N.B. We must be running in a non-preemptible context, so it's
+	// safe to hold a reference to our P here.
+	gp := getg().m.curg
+	pp := gp.m.p.ptr()
+	preemptible := flags&gcDrainUntilPreempt != 0
+	flushBgCredit := flags&gcDrainFlushBgCredit != 0
+	idle := flags&gcDrainIdle != 0
+
+	initScanWork := gcw.heapScanWork
+
+	// checkWork is the scan work before performing the next
+	// self-preempt check.
+	checkWork := int64(1<<63 - 1)
+	var check func() bool
+	if flags&(gcDrainIdle|gcDrainFractional) != 0 {
+		checkWork = initScanWork + drainCheckThreshold
+		if idle {
+			check = pollWork
+		} else if flags&gcDrainFractional != 0 {
+			check = pollFractionalWorkerExit
+		}
+	}
+
+	if work.markrootNext.Load() < work.markrootJobs.Load() {
+		// Stop if we're preemptible, if someone wants to STW, or if
+		// someone is calling forEachP.
+		for !(gp.preempt && (preemptible || sched.gcwaiting.Load() || pp.runSafePointFn != 0)) {
+			job, ok := gcNextMarkRoot()
+			if !ok {
+				break
+			}
+			markroot(gcw, job, flushBgCredit)
+			if check != nil && check() {
+				goto done
+			}
+
+			// Spin up a new worker if requested.
+			if goexperiment.GreenTeaGC && gcw.mayNeedWorker {
+				gcw.mayNeedWorker = false
+				if gcphase == _GCmark {
+					gcController.enlistWorker()
+				}
+			}
+		}
+	}
+
+	// Drain heap marking jobs.
+	//
+	// Stop if we're preemptible, if someone wants to STW, or if
+	// someone is calling forEachP.
+	//
+	// TODO(mknyszek): Consider always checking gp.preempt instead
+	// of having the preempt flag, and making an exception for certain
+	// mark workers in retake. That might be simpler than trying to
+	// enumerate all the reasons why we might want to preempt, even
+	// if we're supposed to be mostly non-preemptible.
+	for !(gp.preempt && (preemptible || sched.gcwaiting.Load() || pp.runSafePointFn != 0)) {
+		// Try to keep work available on the global queue. We used to
+		// check if there were waiting workers, but it's better to
+		// just keep work available than to make workers wait. In the
+		// worst case, we'll do O(log(_WorkbufSize)) unnecessary
+		// balances.
+		if work.full == 0 {
+			gcw.balance()
+		}
+
+		// See mgcwork.go for the rationale behind the order in which we check these queues.
+		var b uintptr
+		var s objptr
+		if b = gcw.tryGetObjFast(); b == 0 {
+			if s = gcw.tryGetSpanFast(); s == 0 {
+				if b = gcw.tryGetObj(); b == 0 {
+					if s = gcw.tryGetSpan(); s == 0 {
+						// Flush the write barrier
+						// buffer; this may create
+						// more work.
+						wbBufFlush()
+						if b = gcw.tryGetObj(); b == 0 {
+							if s = gcw.tryGetSpan(); s == 0 {
+								s = gcw.tryStealSpan()
+							}
+						}
+					}
+				}
+			}
+		}
+		if b != 0 {
+			scanObject(b, gcw)
+		} else if s != 0 {
+			scanSpan(s, gcw)
+		} else {
+			// Unable to get work.
+			break
+		}
+
+		// Spin up a new worker if requested.
+		if goexperiment.GreenTeaGC && gcw.mayNeedWorker {
+			gcw.mayNeedWorker = false
+			if gcphase == _GCmark {
+				gcController.enlistWorker()
+			}
+		}
+
+		// Flush background scan work credit to the global
+		// account if we've accumulated enough locally so
+		// mutator assists can draw on it.
+		if gcw.heapScanWork >= gcCreditSlack {
+			gcController.heapScanWork.Add(gcw.heapScanWork)
+			if flushBgCredit {
+				gcFlushBgCredit(gcw.heapScanWork - initScanWork)
+				initScanWork = 0
+			}
+			checkWork -= gcw.heapScanWork
+			gcw.heapScanWork = 0
+
+			if checkWork <= 0 {
+				checkWork += drainCheckThreshold
+				if check != nil && check() {
+					break
+				}
+			}
+		}
+	}
+
+done:
+	// Flush remaining scan work credit.
+	if gcw.heapScanWork > 0 {
+		gcController.heapScanWork.Add(gcw.heapScanWork)
+		if flushBgCredit {
+			gcFlushBgCredit(gcw.heapScanWork - initScanWork)
+		}
+		gcw.heapScanWork = 0
+	}
+}
+
+// gcDrainN blackens grey objects until it has performed roughly
+// scanWork units of scan work or the G is preempted. This is
+// best-effort, so it may perform less work if it fails to get a work
+// buffer. Otherwise, it will perform at least n units of work, but
+// may perform more because scanning is always done in whole object
+// increments. It returns the amount of scan work performed.
+//
+// The caller goroutine must be in a preemptible state (e.g.,
+// _Gwaiting) to prevent deadlocks during stack scanning. As a
+// consequence, this must be called on the system stack.
+//
+//go:nowritebarrier
+//go:systemstack
+func gcDrainN(gcw *gcWork, scanWork int64) int64 {
+	if !writeBarrier.enabled {
+		throw("gcDrainN phase incorrect")
+	}
+
+	// There may already be scan work on the gcw, which we don't
+	// want to claim was done by this call.
+	workFlushed := -gcw.heapScanWork
+
+	// In addition to backing out because of a preemption, back out
+	// if the GC CPU limiter is enabled.
+	gp := getg().m.curg
+	for !gp.preempt && !gcCPULimiter.limiting() && workFlushed+gcw.heapScanWork < scanWork {
+		// See gcDrain comment.
+		if work.full == 0 {
+			gcw.balance()
+		}

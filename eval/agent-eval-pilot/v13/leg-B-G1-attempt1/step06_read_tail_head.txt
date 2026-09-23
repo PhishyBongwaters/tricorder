@@ -1,0 +1,180 @@
+		})
+
+		// Account for time and mark us as stopped.
+		now := nanotime()
+		duration := now - startTime
+		gcController.markWorkerStop(pp.gcMarkWorkerMode, duration)
+		if trackLimiterEvent {
+			pp.limiterEvent.stop(limiterEventIdleMarkWork, now)
+		}
+		if pp.gcMarkWorkerMode == gcMarkWorkerFractionalMode {
+			pp.gcFractionalMarkTime.Add(duration)
+		}
+
+		// We'll releasem after this point and thus this P may run
+		// something else. We must clear the worker mode to avoid
+		// attributing the mode to a different (non-worker) G in
+		// tracev2.GoStart.
+		pp.gcMarkWorkerMode = gcMarkWorkerNotWorker
+
+		// If this worker reached a background mark completion
+		// point, signal the main GC goroutine.
+		if gcEndWork() {
+			// We don't need the P-local buffers here, allow
+			// preemption because we may schedule like a regular
+			// goroutine in gcMarkDone (block on locks, etc).
+			releasem(node.m.ptr())
+			node.m.set(nil)
+
+			gcMarkDone()
+		}
+	}
+}
+
+// gcShouldScheduleWorker reports whether executing a mark worker
+// on p is potentially useful. p may be nil.
+func gcShouldScheduleWorker(p *p) bool {
+	if p != nil && !p.gcw.empty() {
+		return true
+	}
+	return gcMarkWorkAvailable()
+}
+
+// gcIsMarkDone reports whether the mark phase is (probably) done.
+func gcIsMarkDone() bool {
+	return work.nwait == work.nproc && !gcMarkWorkAvailable()
+}
+
+// gcBeginWork signals to the garbage collector that a new worker is
+// about to process GC work.
+func gcBeginWork() {
+	decnwait := atomic.Xadd(&work.nwait, -1)
+	if decnwait == work.nproc {
+		println("runtime: work.nwait=", decnwait, "work.nproc=", work.nproc)
+		throw("work.nwait was > work.nproc")
+	}
+}
+
+// gcEndWork signals to the garbage collector that a new worker has just finished
+// its work. It reports whether it was the last worker and there's no more work
+// to do. If it returns true, the caller must call gcMarkDone.
+// Copyright 2009 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Garbage collector: marking and scanning
+
+package runtime
+
+import (
+	"internal/abi"
+	"internal/goarch"
+	"internal/goexperiment"
+	"internal/runtime/atomic"
+	"internal/runtime/sys"
+	"unsafe"
+)
+
+const (
+	fixedRootFinalizers = iota
+	fixedRootFreeGStacks
+	fixedRootCleanups
+	fixedRootCount
+
+	// rootBlockBytes is the number of bytes to scan per data or
+	// BSS root.
+	rootBlockBytes = 256 << 10
+
+	// maxObletBytes is the maximum bytes of an object to scan at
+	// once. Larger objects will be split up into "oblets" of at
+	// most this size. Since we can scan 1–2 MB/ms, 128 KB bounds
+	// scan preemption at ~100 µs.
+	//
+	// This must be > _MaxSmallSize so that the object base is the
+	// span base.
+	maxObletBytes = 128 << 10
+
+	// drainCheckThreshold specifies how many units of work to do
+	// between self-preemption checks in gcDrain. Assuming a scan
+	// rate of 1 MB/ms, this is ~100 µs. Lower values have higher
+	// overhead in the scan loop (the scheduler check may perform
+	// a syscall, so its overhead is nontrivial). Higher values
+	// make the system less responsive to incoming work.
+	drainCheckThreshold = 100000
+
+	// pagesPerSpanRoot indicates how many pages to scan from a span root
+	// at a time. Used by special root marking.
+	//
+	// Higher values improve throughput by increasing locality, but
+	// increase the minimum latency of a marking operation.
+	//
+	// Must be a multiple of the pageInUse bitmap element size and
+	// must also evenly divide pagesPerArena.
+	pagesPerSpanRoot = min(512, pagesPerArena)
+)
+
+// internalBlocked returns true if the goroutine is blocked due to an
+// internal (non-leaking) waitReason, e.g. waiting for the netpoller or garbage collector.
+// Such goroutines are never leak detection candidates according to the GC.
+//
+//go:nosplit
+func (gp *g) internalBlocked() bool {
+	reason := gp.waitreason
+	return reason < waitReasonChanReceiveNilChan || waitReasonSyncWaitGroupWait < reason
+}
+
+// allGsSnapshotSortedForGC takes a snapshot of allgs and returns a sorted
+// array of Gs. The array is sorted by the G's status, with running Gs
+// first, followed by blocked Gs. The returned index indicates the cutoff
+// between runnable and blocked Gs.
+//
+// The world must be stopped or allglock must be held.
+func allGsSnapshotSortedForGC() ([]*g, int) {
+	assertWorldStoppedOrLockHeld(&allglock)
+
+	// Reset the status of leaked goroutines in order to improve
+	// the precision of goroutine leak detection.
+	for _, gp := range allgs {
+		gp.atomicstatus.CompareAndSwap(_Gleaked, _Gwaiting)
+	}
+
+	allgsSorted := make([]*g, len(allgs))
+
+	// Indices cutting off runnable and blocked Gs.
+	var currIndex, blockedIndex = 0, len(allgsSorted) - 1
+	for _, gp := range allgs {
+		// not sure if we need atomic load because we are stopping the world,
+		// but do it just to be safe for now
+		if status := readgstatus(gp); status != _Gwaiting || gp.internalBlocked() {
+			allgsSorted[currIndex] = gp
+			currIndex++
+		} else {
+			allgsSorted[blockedIndex] = gp
+			blockedIndex--
+		}
+	}
+
+	// Because the world is stopped or allglock is held, allgadd
+	// cannot happen concurrently with this. allgs grows
+	// monotonically and existing entries never change, so we can
+	// simply return a copy of the slice header. For added safety,
+	// we trim everything past len because that can still change.
+	return allgsSorted, blockedIndex + 1
+}
+
+// gcPrepareMarkRoots queues root scanning jobs (stacks, globals, and
+// some miscellany) and initializes scanning-related state.
+//
+// The world must be stopped.
+func gcPrepareMarkRoots() {
+	assertWorldStopped()
+
+	// Compute how many data and BSS root blocks there are.
+	nBlocks := func(bytes uintptr) int {
+		return int(divRoundUp(bytes, rootBlockBytes))
+	}
+
+	work.nDataRoots = 0
+	work.nBSSRoots = 0
+
+	// Scan globals.

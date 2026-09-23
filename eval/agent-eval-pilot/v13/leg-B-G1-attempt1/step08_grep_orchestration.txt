@@ -1,0 +1,6 @@
+mgc.go:997:func gcMarkDone() {
+mgc.go:1360:func gcMarkTermination(stw worldStop) {
+mgc.go:1688:func gcBgMarkStartWorkers() {
+mgc.go:1731:func gcBgMarkPrepare() {
+mgc.go:1766:func gcBgMarkWorker(ready chan struct{}) {
+mgc.go:1972:func gcMark(startTime int64) {

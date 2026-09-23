@@ -1,0 +1,180 @@
+func gcMarkDone() {
+	// Ensure only one thread is running the ragged barrier at a
+	// time.
+	semacquire(&work.markDoneSema)
+
+top:
+	// Re-check transition condition under transition lock.
+	//
+	// It's critical that this checks the global work queues are
+	// empty before performing the ragged barrier. Otherwise,
+	// there could be global work that a P could take after the P
+	// has passed the ragged barrier.
+	if !(gcphase == _GCmark && gcIsMarkDone()) {
+		semrelease(&work.markDoneSema)
+		return
+	}
+
+	// forEachP needs worldsema to execute, and we'll need it to
+	// stop the world later, so acquire worldsema now.
+	semacquire(&worldsema)
+
+	// Prevent weak->strong conversions from generating additional
+	// GC work. forEachP will guarantee that it is observed globally.
+	work.strongFromWeak.block = true
+
+	// Flush all local buffers and collect flushedWork flags.
+	gcMarkDoneFlushed = 0
+	forEachP(waitReasonGCMarkTermination, func(pp *p) {
+		// Flush the write barrier buffer, since this may add
+		// work to the gcWork.
+		wbBufFlush1(pp)
+
+		// Flush the gcWork, since this may create global work
+		// and set the flushedWork flag.
+		//
+		// TODO(austin): Break up these workbufs to
+		// better distribute work.
+		pp.gcw.dispose()
+
+		// Collect the flushedWork flag.
+		if pp.gcw.flushedWork {
+			atomic.Xadd(&gcMarkDoneFlushed, 1)
+			pp.gcw.flushedWork = false
+		}
+	})
+
+	if gcMarkDoneFlushed != 0 {
+		// More grey objects were discovered since the
+		// previous termination check, so there may be more
+		// work to do. Keep going. It's possible the
+		// transition condition became true again during the
+		// ragged barrier, so re-check it.
+		semrelease(&worldsema)
+		goto top
+	}
+
+	// For debugging/testing.
+	for gcDebugMarkDone.spinAfterRaggedBarrier.Load() {
+	}
+
+	// There was no global work, no local work, and no Ps
+	// communicated work since we took markDoneSema. Therefore
+	// there are no grey objects and no more objects can be
+	// shaded. Transition to mark termination.
+	now := nanotime()
+	work.tMarkTerm = now
+	getg().m.preemptoff = "gcing"
+	var stw worldStop
+	systemstack(func() {
+		stw = stopTheWorldWithSema(stwGCMarkTerm)
+	})
+	// The gcphase is _GCmark, it will transition to _GCmarktermination
+	// below. The important thing is that the wb remains active until
+	// all marking is complete. This includes writes made by the GC.
+
+	// Accumulate fine-grained stopping time.
+	work.cpuStats.accumulateGCPauseTime(stw.stoppingCPUTime, 1)
+
+	// There is sometimes work left over when we enter mark termination due
+	// to write barriers performed after the completion barrier above.
+	// Detect this and resume concurrent mark. This is obviously
+	// unfortunate.
+	//
+	// See issue #27993 for details.
+	//
+	// Switch to the system stack to call wbBufFlush1, though in this case
+	// it doesn't matter because we're non-preemptible anyway.
+	restart := false
+	systemstack(func() {
+		for _, p := range allp {
+			wbBufFlush1(p)
+			if !p.gcw.empty() {
+				restart = true
+				break
+			}
+		}
+	})
+
+	// Check whether we need to resume the marking phase because of issue #27993
+	// or because of goroutine leak detection.
+	if restart || (work.goroutineLeak.enabled && !work.goroutineLeak.done) {
+		if restart {
+			// Restart because of issue #27993.
+			gcDebugMarkDone.restartedDueTo27993 = true
+		} else {
+func gcDrainMarkWorkerIdle(gcw *gcWork) {
+	gcDrain(gcw, gcDrainIdle|gcDrainUntilPreempt|gcDrainFlushBgCredit)
+}
+
+// gcDrainMarkWorkerDedicated is a wrapper for gcDrain that exists to better account
+// mark time in profiles.
+func gcDrainMarkWorkerDedicated(gcw *gcWork, untilPreempt bool) {
+	flags := gcDrainFlushBgCredit
+	if untilPreempt {
+		flags |= gcDrainUntilPreempt
+	}
+	gcDrain(gcw, flags)
+}
+
+// gcDrainMarkWorkerFractional is a wrapper for gcDrain that exists to better account
+// mark time in profiles.
+func gcDrainMarkWorkerFractional(gcw *gcWork) {
+	gcDrain(gcw, gcDrainFractional|gcDrainUntilPreempt|gcDrainFlushBgCredit)
+}
+
+// gcNextMarkRoot safely increments work.markrootNext and returns the
+// index of the next root job. The returned boolean is true if the root job
+// is valid, and false if there are no more root jobs to be claimed,
+// i.e. work.markrootNext >= work.markrootJobs.
+func gcNextMarkRoot() (uint32, bool) {
+	if !work.goroutineLeak.enabled {
+		// If not running goroutine leak detection, assume regular GC behavior.
+		job := work.markrootNext.Add(1) - 1
+		return job, job < work.markrootJobs.Load()
+	}
+
+	// Otherwise, use a CAS loop to increment markrootNext.
+	for next, jobs := work.markrootNext.Load(), work.markrootJobs.Load(); next < jobs; next = work.markrootNext.Load() {
+		// There is still work available at the moment.
+		if work.markrootNext.CompareAndSwap(next, next+1) {
+			// We manage to snatch a root job. Return the root index.
+			return next, true
+		}
+	}
+	return 0, false
+}
+
+// gcDrain scans roots and objects in work buffers, blackening grey
+// objects until it is unable to get more work. It may return before
+// GC is done; it's the caller's responsibility to balance work from
+// other Ps.
+//
+// If flags&gcDrainUntilPreempt != 0, gcDrain returns when g.preempt
+// is set.
+//
+// If flags&gcDrainIdle != 0, gcDrain returns when there is other work
+// to do.
+//
+// If flags&gcDrainFractional != 0, gcDrain self-preempts when
+// pollFractionalWorkerExit() returns true. This implies
+// gcDrainNoBlock.
+//
+// If flags&gcDrainFlushBgCredit != 0, gcDrain flushes scan work
+// credit to gcController.bgScanCredit every gcCreditSlack units of
+// scan work.
+//
+// gcDrain will always return if there is a pending STW or forEachP.
+//
+// Disabling write barriers is necessary to ensure that after we've
+// confirmed that we've drained gcw, that we don't accidentally end
+// up flipping that condition by immediately adding work in the form
+// of a write barrier buffer flush.
+//
+// Don't set nowritebarrierrec because it's safe for some callees to
+// have write barriers enabled.
+//
+//go:nowritebarrier
+func gcDrain(gcw *gcWork, flags gcDrainFlags) {
+	if !writeBarrier.enabled {
+		throw("gcDrain phase incorrect")
