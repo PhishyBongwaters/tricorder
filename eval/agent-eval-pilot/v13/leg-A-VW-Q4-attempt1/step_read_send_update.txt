@@ -1,0 +1,20 @@
+349: pub struct WebSocketUsers {
+350:     map: Arc<dashmap::DashMap<String, Vec<UserSenders>>>,
+351: }
+352: 
+353: impl WebSocketUsers {
+354:     async fn send_update(&self, user_id: &UserId, data: &[u8]) {
+355:         if let Some(user) = self.map.get(user_id.as_ref()).map(|v| v.clone()) {
+356:             for (_, sender) in &user {
+357:                 if let Err(e) = sender.send(Message::binary(data)).await {
+358:                     error!("Error sending WS update {e}");
+359:                 }
+360:             }
+361:         }
+362:     }
+363: 
+364:     // NOTE: The last modified date needs to be updated before calling these methods
+365:     pub async fn send_user_update(&self, ut: UpdateType, user: &User, push_uuid: Option<&PushId>, conn: &DbConn) {
+366:         // Skip any processing if both WebSockets and Push are not active
+367:         if *NOTIFICATIONS_DISABLED {
+368:             return;

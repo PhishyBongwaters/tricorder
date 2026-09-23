@@ -1,0 +1,50 @@
+155:         Err(e) => err!(format!("An error occurred during device unregistration: {e}")),
+156:     };
+157:     Ok(())
+158: }
+159: 
+160: pub async fn push_cipher_update(ut: UpdateType, cipher: &Cipher, device: &Device, conn: &DbConn) {
+161:     // We shouldn't send a push notification on cipher update if the cipher belongs to an organization, this isn't implemented in the upstream server too.
+162:     if cipher.organization_uuid.is_some() {
+163:         return;
+164:     }
+165:     let Some(user_id) = &cipher.user_uuid else {
+166:         debug!("Cipher has no uuid");
+167:         return;
+168:     };
+169: 
+170:     if Device::check_user_has_push_device(user_id, conn).await {
+171:         send_to_push_relay(json!({
+172:             "userId": user_id,
+173:             "organizationId": null,
+174:             "deviceId": device.push_uuid, // Should be the records unique uuid of the acting device (unique uuid per user/device)
+175:             "identifier": device.uuid, // Should be the acting device id (aka uuid per device/app)
+176:             "type": ut as i32,
+177:             "payload": {
+178:                 "id": cipher.uuid,
+179:                 "userId": cipher.user_uuid,
+180:                 "organizationId": null,
+181:                 "collectionIds": null,
+182:                 "revisionDate": format_date(&cipher.updated_at)
+183:             },
+184:             "clientType": null,
+185:             "installationId": null
+186:         }))
+187:         .await;
+188:     }
+189: }
+190: 
+191: pub async fn push_logout(user: &User, acting_device: Option<&Device>, conn: &DbConn) {
+192:     if Device::check_user_has_push_device(&user.uuid, conn).await {
+193:         tokio::task::spawn(send_to_push_relay(json!({
+194:             "userId": user.uuid,
+195:             "organizationId": (),
+196:             "deviceId": acting_device.and_then(|d| d.push_uuid.as_ref()),
+197:             "identifier": acting_device.map(|d| &d.uuid),
+198:             "type": UpdateType::LogOut as i32,
+199:             "payload": {
+200:                 "userId": user.uuid,
+201:                 "date": format_date(&user.updated_at)
+202:             },
+203:             "clientType": null,
+204:             "installationId": null

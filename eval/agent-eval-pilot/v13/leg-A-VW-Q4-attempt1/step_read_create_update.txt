@@ -1,0 +1,29 @@
+622:             "Payload": {}
+623:         }
+624:     ]
+625: ]
+626: */
+627: fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id: Option<DeviceId>) -> Vec<u8> {
+628:     use rmpv::Value as V;
+629: 
+630:     let value = V::Array(vec![
+631:         1.into(),
+632:         V::Map(vec![]),
+633:         V::Nil,
+634:         "ReceiveMessage".into(),
+635:         V::Array(vec![V::Map(vec![
+636:             ("ContextId".into(), acting_device_id.map_or(V::Nil, |v| v.to_string().into())),
+637:             ("Type".into(), (ut as i32).into()),
+638:             ("Payload".into(), payload.into()),
+639:         ])]),
+640:     ]);
+641: 
+642:     serialize(&value)
+643: }
+644: 
+645: fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: &UserId) -> Vec<u8> {
+646:     use rmpv::Value as V;
+647: 
+648:     let value = V::Array(vec![
+649:         1.into(),
+650:         V::Map(vec![]),

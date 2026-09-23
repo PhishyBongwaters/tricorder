@@ -1,0 +1,60 @@
+425:         if CONFIG.push_enabled() {
+426:             push_folder_update(ut, folder, device, conn).await;
+427:         }
+428:     }
+429: 
+430:     pub async fn send_cipher_update(
+431:         &self,
+432:         ut: UpdateType,
+433:         cipher: &Cipher,
+434:         user_ids: &[UserId],
+435:         device: &Device,
+436:         collection_uuids: Option<Vec<CollectionId>>,
+437:         conn: &DbConn,
+438:     ) {
+439:         // Skip any processing if both WebSockets and Push are not active
+440:         if *NOTIFICATIONS_DISABLED {
+441:             return;
+442:         }
+443:         let org_id = convert_option(cipher.organization_uuid.as_deref());
+444:         // Depending if there are collections provided or not, we need to have different values for the following variables.
+445:         // The user_uuid should be `null`, and the revision date should be set to now, else the clients won't sync the collection change.
+446:         let (user_id, collection_uuids, revision_date) = if let Some(collection_uuids) = collection_uuids {
+447:             (
+448:                 Value::Nil,
+449:                 Value::Array(collection_uuids.into_iter().map(|v| v.to_string().into()).collect::<Vec<Value>>()),
+450:                 serialize_date(Utc::now().naive_utc()),
+451:             )
+452:         } else {
+453:             (convert_option(cipher.user_uuid.as_deref()), Value::Nil, serialize_date(cipher.updated_at))
+454:         };
+455: 
+456:         let data = create_update(
+457:             vec![
+458:                 ("Id".into(), cipher.uuid.to_string().into()),
+459:                 ("UserId".into(), user_id),
+460:                 ("OrganizationId".into(), org_id),
+461:                 ("CollectionIds".into(), collection_uuids),
+462:                 ("RevisionDate".into(), revision_date),
+463:             ],
+464:             ut,
+465:             Some(device.uuid.clone()), // Acting device id (unique device/app uuid)
+466:         );
+467: 
+468:         if CONFIG.enable_websocket() {
+469:             for uuid in user_ids {
+470:                 self.send_update(uuid, &data).await;
+471:             }
+472:         }
+473: 
+474:         if CONFIG.push_enabled() && user_ids.len() == 1 {
+475:             push_cipher_update(ut, cipher, device, conn).await;
+476:         }
+477:     }
+478: 
+479:     pub async fn send_send_update(
+480:         &self,
+481:         ut: UpdateType,
+482:         send: &DbSend,
+483:         user_ids: &[UserId],
+484:         device: &Device,
