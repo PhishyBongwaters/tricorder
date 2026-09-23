@@ -1,0 +1,29 @@
+1972: func gcMark(startTime int64) {
+1973: 	if gcphase != _GCmarktermination {
+1974: 		throw("in gcMark expecting to see gcphase as _GCmarktermination")
+1975: 	}
+1976: 	work.tstart = startTime
+1977: 
+1978: 	// Check that there's no marking work remaining.
+1979: 	if next, jobs := work.markrootNext.Load(), work.markrootJobs.Load(); work.full != 0 || next < jobs {
+1980: 		print("runtime: full=", hex(work.full), " next=", next, " jobs=", jobs, " nDataRoots=", work.nDataRoots, " nBSSRoots=", work.nBSSRoots, " nSpanRoots=", work.nSpanRoots, " nStackRoots=", work.nStackRoots, "\n")
+1981: 		panic("non-empty mark queue after concurrent mark")
+1982: 	}
+1983: 
+1984: 	if debug.gccheckmark > 0 {
+1985: 		// This is expensive when there's a large number of
+1986: 		// Gs, so only do it if checkmark is also enabled.
+1987: 		gcMarkRootCheck()
+1988: 	}
+1989: 
+1990: 	// Drop allg snapshot. allgs may have grown, in which case
+1991: 	// this is the only reference to the old backing store and
+1992: 	// there's no need to keep it around.
+1993: 	work.stackRoots = nil
+1994: 
+1995: 	// Clear out buffers and double-check that all gcWork caches
+1996: 	// are empty. This should be ensured by gcMarkDone before we
+1997: 	// enter mark termination.
+1998: 	//
+1999: 	// TODO: We could clear out buffers just before mark if this
+2000: 	// has a non-negligible impact on STW time.
