@@ -1,0 +1,6 @@
+abi.go:385:func GenWasmExportWrapper(wrapped *ir.Func) {
+intrinsics.go:2542:func GenIntrinsicBody(fn *ir.Func) {
+pgen.go:305:func Compile(ssacompiler ssa.Compiler, fn *ir.Func, worker int, profile *pgoir.Profile) {
+phi.go:34:func (fwdRefAux) CanBeAnSSAAux() {}
+ssa.go:5386:func (s *state) canSSA(n ir.Node) bool {
+ssa.go:5412:func (s *state) canSSAName(name *ir.Name) bool {

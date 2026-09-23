@@ -1,0 +1,10 @@
+pgen.go:32:func cmpstackvarlt(a, b *ir.Name, mls *liveness.MergeLocalsState) bool {
+pgen.go:106:func needAlloc(n *ir.Name) bool {
+pgen.go:125:func (s *ssafn) AllocFrame(f *ssa.Func) {
+pgen.go:305:func Compile(ssacompiler ssa.Compiler, fn *ir.Func, worker int, profile *pgoir.Profile) {
+pgen.go:306:	f, htmlWriter := buildssa(ssacompiler, fn, worker, inline.IsPgoHotFunc(fn, profile) || inline.HasPgoHotInline(fn))
+pgen.go:350:func RegisterMapInitLsym(s *obj.LSym) {
+pgen.go:361:func weakenGlobalMapInitRelocs(fn *ir.Func) {
+pgen.go:385:func StackOffset(slot ssa.LocalSlot) int32 {
+pgen.go:409:func fieldtrack(fnsym *obj.LSym, tracked map[*obj.LSym]struct{}) {
+pgen.go:440:func CheckLargeStacks() {

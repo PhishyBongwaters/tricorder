@@ -1,0 +1,4 @@
+ssa.go:302:func buildssa(compiler ssa.Compiler, fn *ir.Func, worker int, isPgoHot bool) (*ssa.Func, ssa.HTMLWriter) {
+src/cmd/compile/internal/gc/compile.go:174:				ssagen.Compile(ssacompile.Compiler{}, fn, workerId, profile)
+src/cmd/compile/internal/ssagen/pgen.go:306:	f, htmlWriter := buildssa(ssacompiler, fn, worker, inline.IsPgoHotFunc(fn, profile) || inline.HasPgoHotInline(fn))
+src/cmd/compile/internal/ssagen/ssa.go:302:func buildssa(compiler ssa.Compiler, fn *ir.Func, worker int, isPgoHot bool) (*ssa.Func, ssa.HTMLWriter) {

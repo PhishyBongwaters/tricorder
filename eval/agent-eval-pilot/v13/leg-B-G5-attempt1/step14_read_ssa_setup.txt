@@ -1,0 +1,80 @@
+	cache := &ssaCaches[worker]
+	cache.Reset()
+
+	s.f = ssaConfig.NewFunc(&fe, cache)
+	s.config = ssaConfig
+	s.f.Type = fn.Type()
+	s.f.Name = name
+	s.f.PrintOrHtmlSSA = printssa
+	if fn.Pragma&ir.Nosplit != 0 {
+		s.f.NoSplit = true
+	}
+	s.f.ABI0 = ssaConfig.ABI0
+	s.f.ABI1 = ssaConfig.ABI1
+	s.f.ABIDefault = abiForFunc(nil, ssaConfig.ABI0, ssaConfig.ABI1)
+	s.f.ABISelf = abiSelf
+
+	s.panics = map[funcLine]*ssa.Block{}
+	s.softFloat = s.config.SoftFloat
+
+	// Allocate starting block
+	s.f.Entry = s.f.NewBlock(block.BlockPlain)
+	s.f.Entry.Pos = fn.Pos()
+	s.f.IsPgoHot = isPgoHot
+	var htmlWriter *ssahtml.HTMLWriter
+
+	if printssa {
+		ssaDF := ssaDumpFile
+		if ssaDir != "" {
+			ssaDF = filepath.Join(ssaDir, base.Ctxt.Pkgpath+"."+s.f.NameABI()+".html")
+			ssaD := filepath.Dir(ssaDF)
+			os.MkdirAll(ssaD, 0755)
+		}
+		htmlWriter = ssahtml.NewHTMLWriter(ssaDF, s.f, ssaDumpCFG, compiler.Passes())
+		// TODO: generate and print a mapping from nodes to values and blocks
+		dumpSourcesColumn(htmlWriter, fn)
+		htmlWriter.WriteAST("AST", astBuf)
+		s.f.FatalCleanup = htmlWriter.FatalCleanup
+	}
+
+	// Allocate starting values
+	s.labels = map[string]*ssaLabel{}
+	s.fwdVars = map[ir.Node]*ssa.Value{}
+	s.startmem = s.entryNewValue0(ssaop.OpInitMem, types.TypeMem)
+
+	s.hasOpenDefers = base.Flag.N == 0 && s.hasdefer && !s.curfn.OpenCodedDeferDisallowed()
+	switch {
+	case base.Debug.NoOpenDefer != 0:
+		s.hasOpenDefers = false
+	case s.hasOpenDefers && (base.Ctxt.Flag_shared || base.Ctxt.Flag_dynlink) && base.Ctxt.Arch.Name == "386":
+		// Don't support open-coded defers for 386 ONLY when using shared
+		// libraries, because there is extra code (added by rewriteToUseGot())
+		// preceding the deferreturn/ret code that we don't track correctly.
+		//
+		// TODO this restriction can be removed given adjusted offset in computeDeferReturn in cmd/link/internal/ld/pcln.go
+		s.hasOpenDefers = false
+	}
+	if s.hasOpenDefers && s.instrumentEnterExit {
+		// Skip doing open defers if we need to instrument function
+		// returns for the race detector, since we will not generate that
+		// code in the case of the extra deferreturn/ret segment.
+		s.hasOpenDefers = false
+	}
+	if s.hasOpenDefers {
+		// Similarly, skip if there are any heap-allocated result
+		// parameters that need to be copied back to their stack slots.
+		for _, f := range s.curfn.Type().Results() {
+			if !f.Nname.(*ir.Name).OnStack() {
+				s.hasOpenDefers = false
+				break
+			}
+		}
+	}
+	if s.hasOpenDefers &&
+		s.curfn.NumReturns*s.curfn.NumDefers > 15 {
+		// Since we are generating defer calls at every exit for
+		// open-coded defers, skip doing open-coded defers if there are
+		// too many returns (especially if there are multiple defers).
+		// Open-coded defers are most important for improving performance
+		// for smaller functions (which don't have many returns).
+		s.hasOpenDefers = false

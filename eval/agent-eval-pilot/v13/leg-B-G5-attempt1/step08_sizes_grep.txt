@@ -1,0 +1,13 @@
+src/cmd/compile/internal/ssagen/ssa.go: 274480 bytes
+src/cmd/compile/internal/ssagen/pgen.go: 13624 bytes
+ssa.go:300:// buildssa builds an SSA function for fn.
+ssa.go:302:func buildssa(compiler ssa.Compiler, fn *ir.Func, worker int, isPgoHot bool) (*ssa.Func, ssa.HTMLWriter) {
+ssa.go:330:		ir.FDumpList(astBuf, "buildssa-body", fn.Body)
+ssa.go:1237:			base.Warn("buildssa: unknown position (line 0)")
+ssa.go:7005:// genssa appends entries to pp for each instruction in f.
+ssa.go:7006:func genssa(htmlWriter ssa.HTMLWriter, f *ssa.Func, pp *objw.Progs) {
+ssa.go:7022:		// info that we computed at the end of genssa.
+ssa.go:7041:		f.Logf("genssa %s\n", f.Name)
+ssa.go:7430:	// Doing this before the debug dumps below means -S and GOSSAFUNC's genssa
+ssa.go:7507:		htmlWriter.WriteColumn("genssa", "genssa", "ssa-prog", buf.String())
+ssa.go:7510:		fi := f.DumpFileForPhase("genssa")

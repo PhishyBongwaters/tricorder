@@ -1,0 +1,29 @@
+	for workerId := range base.Flag.LowerC {
+		wg.Go(func() {
+			var closures []*ir.Func
+			for {
+				mu.Lock()
+				compilequeue = append(compilequeue, closures...)
+				remaining := len(compilequeue)
+				if remaining == 0 {
+					mu.Unlock()
+					return
+				}
+				fn := compilequeue[len(compilequeue)-1]
+				compilequeue = compilequeue[:len(compilequeue)-1]
+				mu.Unlock()
+				ssagen.Compile(ssacompile.Compiler{}, fn, workerId, profile)
+				closures = fn.Closures
+
+				// Free IR data that is no longer needed once machine code has been generated.
+				fn.Body = nil
+				fn.Dcl = nil
+				fn.ClosureVars = nil
+				// We need to retain debug info for inlined functions because it is used to build
+				// DWARF for the functions that this function was inlined into.
+				if !fn.LSym.WasInlined() {
+					fn.DebugInfo = nil
+				}
+			}
+		})
+	}

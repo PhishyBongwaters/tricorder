@@ -1,0 +1,18 @@
+{
+ "step01_ls_root.txt": 47,
+ "step02_ls_src.txt": 186,
+ "step03_ls_cmd.txt": 78,
+ "step04_ls_compile.txt": 28,
+ "step05_ls_internal.txt": 155,
+ "step06_ls_ssagen_ssa.txt": 272,
+ "step07_grep_funcs.txt": 131,
+ "step08_sizes_grep.txt": 286,
+ "step09_grep_pgen.txt": 235,
+ "step10_grep_buildssa_recursive.txt": 160,
+ "step11_read_pgen.txt": 672,
+ "step12_read_ssa_head.txt": 698,
+ "step13_read_driver.txt": 233,
+ "step14_read_ssa_setup.txt": 851,
+ "step15_grep_lowering.txt": 299,
+ "step16_read_ssa_tail.txt": 409
+}
