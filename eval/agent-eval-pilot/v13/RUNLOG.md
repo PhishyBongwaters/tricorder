@@ -6,7 +6,9 @@ One repo until satisfied. Sequential legs, one agent at a time.
 
 - **Corpus:** `D:\Projects\Tricorder-Testing-Repos\go` (15,844 files)
 - **Tricorder code:** `main` @ `92e14f1` (determinism fix + max_tokens budgets in)
-- **Agent vehicle:** subagent on `llamacpp/Qwen` (local llama.cpp provider)
+- **Agent vehicle:** subagent, default model (me — same model as the pilot's
+  A-legs). Attempt 1 used `llamacpp/Qwen` against instruction; recorded in
+  `leg-A-G5-attempt1/ATTEMPT.md`. No model override without per-leg approval.
 - **Directive:** v1.3 (exact symbol guess first, NL capped at `--max-results 5`,
   junk-hit retry, ladder map → detect → symbols → read → tier-1 → full file)
 - **B-legs:** same question, same 20-call cap, grep/read/glob only, stay in repo
