@@ -1,0 +1,927 @@
+1: use std::{env, sync::LazyLock};
+2: 
+3: use reqwest::Method;
+4: use rocket::{
+5:     Catcher, Route,
+6:     form::Form,
+7:     http::{Cookie, CookieJar, MediaType, SameSite, Status},
+8:     request::{FromRequest, Outcome, Request},
+9:     response::{Redirect, content::RawHtml as Html},
+10:     serde::json::Json,
+11: };
+12: use serde::de::DeserializeOwned;
+13: use serde_json::Value;
+14: 
+15: use crate::{
+16:     CONFIG, VERSION,
+17:     api::{
+18:         ApiResult, EmptyResult, JsonResult, Notify,
+19:         core::{log_event, two_factor},
+20:         unregister_push_device,
+21:     },
+22:     auth::{ClientIp, Secure, decode_admin, encode_jwt, generate_admin_claims},
+23:     config::ConfigBuilder,
+24:     db::{
+25:         ACTIVE_DB_TYPE, DbConn, DbConnType, backup_sqlite, get_sql_server_version,
+26:         models::{
+27:             Attachment, Cipher, Collection, Device, Event, EventType, Group, Invitation, Membership, MembershipId,
+28:             MembershipType, OrgPolicy, Organization, OrganizationId, SsoUser, TwoFactor, User, UserId,
+29:         },
+30:     },
+31:     error::{Error, MapResult},
+32:     http_client::make_http_request,
+33:     mail,
+34:     sso::FAKE_SSO_IDENTIFIER,
+35:     util::{
+36:         FeatureFlagFilter, NumberOrString, container_base_image, format_naive_datetime_local, get_active_web_release,
+37:         get_display_size, is_running_in_container, parse_experimental_client_feature_flags,
+38:     },
+39: };
+40: 
+41: pub fn routes() -> Vec<Route> {
+42:     if !CONFIG.disable_admin_token() && !CONFIG.is_admin_token_set() {
+43:         return routes![admin_disabled];
+44:     }
+45: 
+46:     routes![
+47:         get_users_json,
+48:         get_user_json,
+49:         get_user_by_mail_json,
+50:         post_admin_login,
+51:         admin_page,
+52:         admin_page_login,
+53:         invite_user,
+54:         logout,
+55:         delete_user,
+56:         delete_sso_user,
+57:         deauth_user,
+58:         disable_user,
+59:         enable_user,
+60:         remove_2fa,
+61:         update_membership_type,
+62:         update_revision_users,
+63:         post_config,
+64:         delete_config,
+65:         backup_db,
+66:         test_smtp,
+67:         users_overview,
+68:         organizations_overview,
+69:         delete_organization,
+70:         diagnostics,
+71:         get_diagnostics_config,
+72:         resend_user_invite,
+73:         get_diagnostics_http,
+74:     ]
+75: }
+76: 
+77: pub fn catchers() -> Vec<Catcher> {
+78:     if !CONFIG.disable_admin_token() && !CONFIG.is_admin_token_set() {
+79:         catchers![]
+80:     } else {
+81:         catchers![admin_login]
+82:     }
+83: }
+84: 
+85: static DB_TYPE: LazyLock<&str> = LazyLock::new(|| match ACTIVE_DB_TYPE.get() {
+86:     #[cfg(mysql)]
+87:     Some(DbConnType::Mysql) => "MySQL",
+88:     #[cfg(postgresql)]
+89:     Some(DbConnType::Postgresql) => "PostgreSQL",
+90:     #[cfg(sqlite)]
+91:     Some(DbConnType::Sqlite) => "SQLite",
+92:     _ => "Unknown",
+93: });
+94: 
+95: #[cfg(sqlite)]
+96: static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| ACTIVE_DB_TYPE.get().is_some_and(|t| *t == DbConnType::Sqlite));
+97: #[cfg(not(sqlite))]
+98: static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| false);
+99: 
+100: #[get("/")]
+101: fn admin_disabled() -> &'static str {
+102:     "The admin panel is disabled, please configure the 'ADMIN_TOKEN' variable to enable it"
+103: }
+104: 
+105: const COOKIE_NAME: &str = "VW_ADMIN";
+106: const ADMIN_PATH: &str = "/admin";
+107: const DT_FMT: &str = "%Y-%m-%d %H:%M:%S %Z";
+108: 
+109: const BASE_TEMPLATE: &str = "admin/base";
+110: 
+111: const ACTING_ADMIN_USER: &str = "vaultwarden-admin-00000-000000000000";
+112: pub const FAKE_ADMIN_UUID: &str = "00000000-0000-0000-0000-000000000000";
+113: 
+114: fn admin_path() -> String {
+115:     format!("{}{ADMIN_PATH}", CONFIG.domain_path())
+116: }
+117: 
+118: #[derive(Debug)]
+119: struct IpHeader(Option<String>);
+120: 
+121: #[rocket::async_trait]
+122: impl<'r> FromRequest<'r> for IpHeader {
+123:     type Error = ();
+124: 
+125:     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+126:         if req.headers().get_one(&CONFIG.ip_header()).is_some() {
+127:             Outcome::Success(IpHeader(Some(CONFIG.ip_header())))
+128:         } else if req.headers().get_one("X-Client-IP").is_some() {
+129:             Outcome::Success(IpHeader(Some(String::from("X-Client-IP"))))
+130:         } else if req.headers().get_one("X-Real-IP").is_some() {
+131:             Outcome::Success(IpHeader(Some(String::from("X-Real-IP"))))
+132:         } else if req.headers().get_one("X-Forwarded-For").is_some() {
+133:             Outcome::Success(IpHeader(Some(String::from("X-Forwarded-For"))))
+134:         } else {
+135:             Outcome::Success(IpHeader(None))
+136:         }
+137:     }
+138: }
+139: 
+140: fn admin_url() -> String {
+141:     format!("{}{}", CONFIG.domain_origin(), admin_path())
+142: }
+143: 
+144: #[derive(Responder)]
+145: enum AdminResponse {
+146:     #[response(status = 200)]
+147:     Ok(ApiResult<Html<String>>),
+148:     #[response(status = 401)]
+149:     Unauthorized(ApiResult<Html<String>>),
+150:     #[response(status = 429)]
+151:     TooManyRequests(ApiResult<Html<String>>),
+152: }
+153: 
+154: #[catch(401)]
+155: fn admin_login(request: &Request<'_>) -> ApiResult<Html<String>> {
+156:     if request.format() == Some(&MediaType::JSON) {
+157:         err_code!("Authorization failed.", Status::Unauthorized.code);
+158:     }
+159:     let redirect = request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
+160:     render_admin_login(None, Some(&redirect))
+161: }
+162: 
+163: fn render_admin_login(msg: Option<&str>, redirect: Option<&str>) -> ApiResult<Html<String>> {
+164:     // If there is an error, show it
+165:     let msg = msg.map(|msg| format!("Error: {msg}"));
+166:     let json = json!({
+167:         "page_content": "admin/login",
+168:         "error": msg,
+169:         "redirect": redirect,
+170:         "urlpath": CONFIG.domain_path()
+171:     });
+172: 
+173:     // Return the page
+174:     let text = CONFIG.render_template(BASE_TEMPLATE, &json)?;
+175:     Ok(Html(text))
+176: }
+177: 
+178: #[derive(FromForm)]
+179: struct LoginForm {
+180:     token: String,
+181:     redirect: Option<String>,
+182: }
+183: 
+184: #[post("/", format = "application/x-www-form-urlencoded", data = "<data>")]
+185: fn post_admin_login(
+186:     data: Form<LoginForm>,
+187:     cookies: &CookieJar<'_>,
+188:     ip: ClientIp,
+189:     secure: Secure,
+190: ) -> Result<Redirect, AdminResponse> {
+191:     let data = data.into_inner();
+192:     let redirect = data.redirect;
+193: 
+194:     if crate::ratelimit::check_limit_admin(&ip.ip).is_err() {
+195:         return Err(AdminResponse::TooManyRequests(render_admin_login(
+196:             Some("Too many requests, try again later."),
+197:             redirect.as_deref(),
+198:         )));
+199:     }
+200: 
+201:     // If the token is invalid, redirect to login page
+202:     if validate_token(&data.token) {
+203:         // If the token received is valid, generate JWT and save it as a cookie
+204:         let claims = generate_admin_claims();
+205:         let jwt = encode_jwt(&claims);
+206: 
+207:         let cookie = Cookie::build((COOKIE_NAME, jwt))
+208:             .path(admin_path())
+209:             .max_age(time::Duration::minutes(CONFIG.admin_session_lifetime()))
+210:             .same_site(SameSite::Strict)
+211:             .http_only(true)
+212:             .secure(secure.https);
+213: 
+214:         cookies.add(cookie);
+215:         if let Some(redirect) = redirect {
+216:             Ok(Redirect::to(format!("{}{redirect}", admin_path())))
+217:         } else {
+218:             Err(AdminResponse::Ok(render_admin_page()))
+219:         }
+220:     } else {
+221:         error!("Invalid admin token. IP: {}", ip.ip);
+222:         Err(AdminResponse::Unauthorized(render_admin_login(
+223:             Some("Invalid admin token, please try again."),
+224:             redirect.as_deref(),
+225:         )))
+226:     }
+227: }
+228: 
+229: fn validate_token(token: &str) -> bool {
+230:     match CONFIG.admin_token().as_ref() {
+231:         None => false,
+232:         Some(t) if t.starts_with("$argon2") => {
+233:             use argon2::password_hash::PasswordVerifier;
+234:             match argon2::password_hash::PasswordHash::new(t) {
+235:                 Ok(h) => {
+236:                     // NOTE: hash params from `ADMIN_TOKEN` are used instead of what is configured in the `Argon2` instance.
+237:                     argon2::Argon2::default().verify_password(token.trim().as_ref(), &h).is_ok()
+238:                 }
+239:                 Err(e) => {
+240:                     error!("The configured Argon2 PHC in `ADMIN_TOKEN` is invalid: {e}");
+241:                     false
+242:                 }
+243:             }
+244:         }
+245:         Some(t) => crate::crypto::ct_eq(t.trim(), token.trim()),
+246:     }
+247: }
+248: 
+249: #[derive(Serialize)]
+250: struct AdminTemplateData {
+251:     page_content: String,
+252:     page_data: Option<Value>,
+253:     logged_in: bool,
+254:     urlpath: String,
+255:     sso_enabled: bool,
+256: }
+257: 
+258: impl AdminTemplateData {
+259:     fn new(page_content: &str, page_data: Value) -> Self {
+260:         Self {
+261:             page_content: String::from(page_content),
+262:             page_data: Some(page_data),
+263:             logged_in: true,
+264:             urlpath: CONFIG.domain_path(),
+265:             sso_enabled: CONFIG.sso_enabled(),
+266:         }
+267:     }
+268: 
+269:     fn render(self) -> Result<String, Error> {
+270:         CONFIG.render_template(BASE_TEMPLATE, &self)
+271:     }
+272: }
+273: 
+274: fn render_admin_page() -> ApiResult<Html<String>> {
+275:     let settings_json = json!({
+276:         "config": CONFIG.prepare_json(),
+277:         "can_backup": *CAN_BACKUP,
+278:     });
+279:     let text = AdminTemplateData::new("admin/settings", settings_json).render()?;
+280:     Ok(Html(text))
+281: }
+282: 
+283: #[get("/")]
+284: fn admin_page(_token: AdminToken) -> ApiResult<Html<String>> {
+285:     render_admin_page()
+286: }
+287: 
+288: #[get("/", rank = 2)]
+289: fn admin_page_login() -> ApiResult<Html<String>> {
+290:     render_admin_login(None, None)
+291: }
+292: 
+293: #[derive(Debug, Deserialize)]
+294: #[serde(rename_all = "camelCase")]
+295: struct InviteData {
+296:     email: String,
+297: }
+298: 
+299: async fn get_user_or_404(user_id: &UserId, conn: &DbConn) -> ApiResult<User> {
+300:     if let Some(user) = User::find_by_uuid(user_id, conn).await {
+301:         Ok(user)
+302:     } else {
+303:         err_code!("User doesn't exist", Status::NotFound.code);
+304:     }
+305: }
+306: 
+307: #[post("/invite", format = "application/json", data = "<data>")]
+308: async fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> JsonResult {
+309:     async fn generate_invite(user: &User, conn: &DbConn) -> EmptyResult {
+310:         if CONFIG.mail_enabled() {
+311:             let org_id: OrganizationId = if CONFIG.sso_enabled() {
+312:                 FAKE_SSO_IDENTIFIER.into()
+313:             } else {
+314:                 FAKE_ADMIN_UUID.into()
+315:             };
+316:             let member_id: MembershipId = FAKE_ADMIN_UUID.to_owned().into();
+317:             mail::send_invite(user, org_id, member_id, &CONFIG.invitation_org_name(), None).await
+318:         } else {
+319:             let invitation = Invitation::new(&user.email);
+320:             invitation.save(conn).await
+321:         }
+322:     }
+323: 
+324:     let data: InviteData = data.into_inner();
+325:     if User::find_by_mail(&data.email, &conn).await.is_some() {
+326:         err_code!("User already exists", Status::Conflict.code)
+327:     }
+328: 
+329:     let mut user = User::new(&data.email, None);
+330: 
+331:     generate_invite(&user, &conn).await.map_err(|e| e.with_code(Status::InternalServerError.code))?;
+332:     user.save(&conn).await.map_err(|e| e.with_code(Status::InternalServerError.code))?;
+333: 
+334:     Ok(Json(user.to_json(&conn).await))
+335: }
+336: 
+337: #[post("/test/smtp", format = "application/json", data = "<data>")]
+338: async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
+339:     let data: InviteData = data.into_inner();
+340: 
+341:     if CONFIG.mail_enabled() {
+342:         mail::send_test(&data.email).await
+343:     } else {
+344:         err!("Mail is not enabled")
+345:     }
+346: }
+347: 
+348: #[get("/logout")]
+349: fn logout(cookies: &CookieJar<'_>) -> Redirect {
+350:     cookies.remove(Cookie::build(COOKIE_NAME).path(admin_path()));
+351:     Redirect::to(admin_path())
+352: }
+353: 
+354: #[get("/users")]
+355: async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
+356:     let users = User::get_all(&conn).await;
+357:     let mut users_json = Vec::with_capacity(users.len());
+358:     for (u, _) in users {
+359:         let mut usr = u.to_json(&conn).await;
+360:         usr["userEnabled"] = json!(u.enabled);
+361:         usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
+362:         usr["lastActive"] = match u.last_active(&conn).await {
+363:             Some(dt) => json!(format_naive_datetime_local(&dt, DT_FMT)),
+364:             None => json!(None::<String>),
+365:         };
+366:         users_json.push(usr);
+367:     }
+368: 
+369:     Json(Value::Array(users_json))
+370: }
+371: 
+372: #[get("/users/overview")]
+373: async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
+374:     let users = User::get_all(&conn).await;
+375:     let mut users_json = Vec::with_capacity(users.len());
+376:     for (u, sso_u) in users {
+377:         let mut usr = u.to_json(&conn).await;
+378:         usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, &conn).await);
+379:         usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, &conn).await);
+380:         usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, &conn).await));
+381:         usr["user_enabled"] = json!(u.enabled);
+382:         usr["created_at"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
+383:         usr["last_active"] = match u.last_active(&conn).await {
+384:             Some(dt) => json!(format_naive_datetime_local(&dt, DT_FMT)),
+385:             None => json!("Never"),
+386:         };
+387: 
+388:         usr["sso_identifier"] = json!(sso_u.map_or(String::new(), |u| u.identifier.to_string()));
+389: 
+390:         users_json.push(usr);
+391:     }
+392: 
+393:     let text = AdminTemplateData::new("admin/users", json!(users_json)).render()?;
+394:     Ok(Html(text))
+395: }
+396: 
+397: #[get("/users/by-mail/<mail>")]
+398: async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> JsonResult {
+399:     if let Some(u) = User::find_by_mail(mail, &conn).await {
+400:         let mut usr = u.to_json(&conn).await;
+401:         usr["userEnabled"] = json!(u.enabled);
+402:         usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
+403:         Ok(Json(usr))
+404:     } else {
+405:         err_code!("User doesn't exist", Status::NotFound.code);
+406:     }
+407: }
+408: 
+409: #[get("/users/<user_id>")]
+410: async fn get_user_json(user_id: UserId, _token: AdminToken, conn: DbConn) -> JsonResult {
+411:     let u = get_user_or_404(&user_id, &conn).await?;
+412:     let mut usr = u.to_json(&conn).await;
+413:     usr["userEnabled"] = json!(u.enabled);
+414:     usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
+415:     Ok(Json(usr))
+416: }
+417: 
+418: #[post("/users/<user_id>/delete", format = "application/json")]
+419: async fn delete_user(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyResult {
+420:     let user = get_user_or_404(&user_id, &conn).await?;
+421: 
+422:     // Get the membership records before deleting the actual user
+423:     let memberships = Membership::find_any_state_by_user(&user_id, &conn).await;
+424:     let res = user.delete(&conn).await;
+425: 
+426:     for membership in memberships {
+427:         log_event(
+428:             EventType::OrganizationUserDeleted as i32,
+429:             &membership.uuid,
+430:             &membership.org_uuid,
+431:             &ACTING_ADMIN_USER.into(),
+432:             14, // Use UnknownBrowser type
+433:             &token.ip.ip,
+434:             &conn,
+435:         )
+436:         .await;
+437:     }
+438: 
+439:     res
+440: }
+441: 
+442: #[delete("/users/<user_id>/sso", format = "application/json")]
+443: async fn delete_sso_user(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyResult {
+444:     let memberships = Membership::find_any_state_by_user(&user_id, &conn).await;
+445:     let res = SsoUser::delete(&user_id, &conn).await;
+446: 
+447:     for membership in memberships {
+448:         log_event(
+449:             EventType::OrganizationUserUnlinkedSso as i32,
+450:             &membership.uuid,
+451:             &membership.org_uuid,
+452:             &ACTING_ADMIN_USER.into(),
+453:             14, // Use UnknownBrowser type
+454:             &token.ip.ip,
+455:             &conn,
+456:         )
+457:         .await;
+458:     }
+459: 
+460:     res
+461: }
+462: 
+463: #[post("/users/<user_id>/deauth", format = "application/json")]
+464: async fn deauth_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+465:     let mut user = get_user_or_404(&user_id, &conn).await?;
+466: 
+467:     nt.send_logout(&user, None, &conn).await;
+468: 
+469:     if CONFIG.push_enabled() {
+470:         for device in Device::find_push_devices_by_user(&user.uuid, &conn).await {
+471:             match unregister_push_device(device.push_uuid.as_ref()).await {
+472:                 Ok(r) => r,
+473:                 Err(e) => error!("Unable to unregister devices from Bitwarden server: {e}"),
+474:             }
+475:         }
+476:     }
+477: 
+478:     Device::delete_all_by_user(&user.uuid, &conn).await?;
+479:     user.reset_security_stamp(&conn).await?;
+480: 
+481:     user.save(&conn).await
+482: }
+483: 
+484: #[post("/users/<user_id>/disable", format = "application/json")]
+485: async fn disable_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+486:     let mut user = get_user_or_404(&user_id, &conn).await?;
+487:     user.reset_security_stamp(&conn).await?;
+488:     user.enabled = false;
+489: 
+490:     let save_result = user.save(&conn).await;
+491: 
+492:     nt.send_logout(&user, None, &conn).await;
+493: 
+494:     Device::delete_all_by_user(&user.uuid, &conn).await?;
+495: 
+496:     save_result
+497: }
+498: 
+499: #[post("/users/<user_id>/enable", format = "application/json")]
+500: async fn enable_user(user_id: UserId, _token: AdminToken, conn: DbConn) -> EmptyResult {
+501:     let mut user = get_user_or_404(&user_id, &conn).await?;
+502:     user.enabled = true;
+503: 
+504:     user.save(&conn).await
+505: }
+506: 
+507: #[post("/users/<user_id>/remove-2fa", format = "application/json")]
+508: async fn remove_2fa(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyResult {
+509:     let mut user = get_user_or_404(&user_id, &conn).await?;
+510:     TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
+511:     two_factor::enforce_2fa_policy(&user, &ACTING_ADMIN_USER.into(), 14, &token.ip.ip, &conn).await?;
+512:     user.totp_recover = None;
+513:     user.save(&conn).await
+514: }
+515: 
+516: #[post("/users/<user_id>/invite/resend", format = "application/json")]
+517: async fn resend_user_invite(user_id: UserId, _token: AdminToken, conn: DbConn) -> EmptyResult {
+518:     if let Some(user) = User::find_by_uuid(&user_id, &conn).await {
+519:         //TODO: replace this with user.status check when it will be available (PR#3397)
+520:         if !user.password_hash.is_empty() {
+521:             err_code!("User already accepted invitation", Status::BadRequest.code);
+522:         }
+523: 
+524:         if CONFIG.mail_enabled() {
+525:             let org_id: OrganizationId = if CONFIG.sso_enabled() {
+526:                 FAKE_SSO_IDENTIFIER.into()
+527:             } else {
+528:                 FAKE_ADMIN_UUID.into()
+529:             };
+530:             let member_id: MembershipId = FAKE_ADMIN_UUID.to_owned().into();
+531:             mail::send_invite(&user, org_id, member_id, &CONFIG.invitation_org_name(), None).await
+532:         } else {
+533:             Ok(())
+534:         }
+535:     } else {
+536:         err_code!("User doesn't exist", Status::NotFound.code);
+537:     }
+538: }
+539: 
+540: #[derive(Debug, Deserialize)]
+541: struct MembershipTypeData {
+542:     user_type: NumberOrString,
+543:     user_uuid: UserId,
+544:     org_uuid: OrganizationId,
+545: }
+546: 
+547: #[post("/users/org_type", format = "application/json", data = "<data>")]
+548: async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToken, conn: DbConn) -> EmptyResult {
+549:     let data: MembershipTypeData = data.into_inner();
+550: 
+551:     let Some(mut member_to_edit) = Membership::find_by_user_and_org(&data.user_uuid, &data.org_uuid, &conn).await
+552:     else {
+553:         err!("The specified user isn't member of the organization")
+554:     };
+555: 
+556:     let new_type = if let Some(new_type) = MembershipType::from_str(&data.user_type.into_string()) {
+557:         new_type as i32
+558:     } else {
+559:         err!("Invalid type")
+560:     };
+561: 
+562:     if member_to_edit.atype == MembershipType::Owner && new_type != MembershipType::Owner {
+563:         // Removing owner permission, check that there is at least one other confirmed owner
+564:         if Membership::count_confirmed_by_org_and_type(&data.org_uuid, MembershipType::Owner, &conn).await <= 1 {
+565:             err!("Can't change the type of the last owner")
+566:         }
+567:     }
+568: 
+569:     member_to_edit.atype = new_type;
+570:     // This check is also done at api::organizations::{accept_invite, _confirm_invite, _activate_member, edit_member}, update_membership_type
+571:     OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
+572: 
+573:     log_event(
+574:         EventType::OrganizationUserUpdated as i32,
+575:         &member_to_edit.uuid,
+576:         &data.org_uuid,
+577:         &ACTING_ADMIN_USER.into(),
+578:         14, // Use UnknownBrowser type
+579:         &token.ip.ip,
+580:         &conn,
+581:     )
+582:     .await;
+583: 
+584:     member_to_edit.save(&conn).await
+585: }
+586: 
+587: #[post("/users/update_revision", format = "application/json")]
+588: async fn update_revision_users(_token: AdminToken, conn: DbConn) -> EmptyResult {
+589:     User::update_all_revisions(&conn).await
+590: }
+591: 
+592: #[get("/organizations/overview")]
+593: async fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
+594:     let organizations = Organization::get_all(&conn).await;
+595:     let mut organizations_json = Vec::with_capacity(organizations.len());
+596:     for o in organizations {
+597:         let mut org = o.to_json();
+598:         org["user_count"] = json!(Membership::count_by_org(&o.uuid, &conn).await);
+599:         org["cipher_count"] = json!(Cipher::count_by_org(&o.uuid, &conn).await);
+600:         org["collection_count"] = json!(Collection::count_by_org(&o.uuid, &conn).await);
+601:         org["group_count"] = json!(Group::count_by_org(&o.uuid, &conn).await);
+602:         org["event_count"] = json!(Event::count_by_org(&o.uuid, &conn).await);
+603:         org["attachment_count"] = json!(Attachment::count_by_org(&o.uuid, &conn).await);
+604:         org["attachment_size"] = json!(get_display_size(Attachment::size_by_org(&o.uuid, &conn).await));
+605:         organizations_json.push(org);
+606:     }
+607: 
+608:     let text = AdminTemplateData::new("admin/organizations", json!(organizations_json)).render()?;
+609:     Ok(Html(text))
+610: }
+611: 
+612: #[post("/organizations/<org_id>/delete", format = "application/json")]
+613: async fn delete_organization(org_id: OrganizationId, _token: AdminToken, conn: DbConn) -> EmptyResult {
+614:     let org = Organization::find_by_uuid(&org_id, &conn).await.map_res("Organization doesn't exist")?;
+615:     org.delete(&conn).await
+616: }
+617: 
+618: #[derive(Deserialize)]
+619: struct GitRelease {
+620:     tag_name: String,
+621: }
+622: 
+623: #[derive(Deserialize)]
+624: struct GitCommit {
+625:     sha: String,
+626: }
+627: 
+628: async fn get_json_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
+629:     Ok(make_http_request(Method::GET, url)?.send().await?.error_for_status()?.json::<T>().await?)
+630: }
+631: 
+632: async fn get_text_api(url: &str) -> Result<String, Error> {
+633:     Ok(make_http_request(Method::GET, url)?.send().await?.error_for_status()?.text().await?)
+634: }
+635: 
+636: async fn has_http_access() -> bool {
+637:     let Ok(req) = make_http_request(Method::HEAD, "https://github.com/dani-garcia/vaultwarden") else {
+638:         return false;
+639:     };
+640:     match req.send().await {
+641:         Ok(r) => r.status().is_success(),
+642:         _ => false,
+643:     }
+644: }
+645: 
+646: use cached::macros::cached;
+647: /// Cache this function to prevent API call rate limit. Github only allows 60 requests per hour, and we use 3 here already
+648: /// It will cache this function for 600 seconds (10 minutes) which should prevent the exhaustion of the rate limit
+649: /// Any cache will be lost if Vaultwarden is restarted
+650: #[cached(ttl = 600, sync_writes = "default")]
+651: async fn get_release_info(has_http_access: bool) -> (String, String, String) {
+652:     // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
+653:     if has_http_access {
+654:         (
+655:             match get_json_api::<GitRelease>("https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest")
+656:                 .await
+657:             {
+658:                 Ok(r) => r.tag_name,
+659:                 _ => "-".to_owned(),
+660:             },
+661:             match get_json_api::<GitCommit>("https://api.github.com/repos/dani-garcia/vaultwarden/commits/main").await {
+662:                 Ok(mut c) => {
+663:                     c.sha.truncate(8);
+664:                     c.sha
+665:                 }
+666:                 _ => "-".to_owned(),
+667:             },
+668:             // Do not fetch the web-vault version when running within a container
+669:             // The web-vault version is embedded within the container it self, and should not be updated manually
+670:             match get_json_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest")
+671:                 .await
+672:             {
+673:                 Ok(r) => r.tag_name.trim_start_matches('v').to_owned(),
+674:                 _ => "-".to_owned(),
+675:             },
+676:         )
+677:     } else {
+678:         ("-".to_owned(), "-".to_owned(), "-".to_owned())
+679:     }
+680: }
+681: 
+682: async fn get_ntp_time(has_http_access: bool) -> String {
+683:     if has_http_access && let Ok(cf_trace) = get_text_api("https://cloudflare.com/cdn-cgi/trace").await {
+684:         for line in cf_trace.lines() {
+685:             if let Some((key, value)) = line.split_once('=')
+686:                 && key == "ts"
+687:             {
+688:                 let ts = value.split_once('.').map_or(value, |(s, _)| s);
+689:                 if let Ok(dt) = chrono::DateTime::parse_from_str(ts, "%s") {
+690:                     return dt.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+691:                 }
+692:                 break;
+693:             }
+694:         }
+695:     }
+696:     String::from("Unable to fetch NTP time.")
+697: }
+698: 
+699: fn web_vault_compare(active: &str, latest: &str) -> i8 {
+700:     use semver::Version;
+701:     use std::cmp::Ordering;
+702: 
+703:     let active_semver = Version::parse(active).unwrap_or_else(|e| {
+704:         warn!("Unable to parse active web-vault version '{active}': {e}");
+705:         Version::parse("2025.1.1").unwrap()
+706:     });
+707:     let latest_semver = Version::parse(latest).unwrap_or_else(|e| {
+708:         warn!("Unable to parse latest web-vault version '{latest}': {e}");
+709:         Version::parse("2025.1.1").unwrap()
+710:     });
+711: 
+712:     match active_semver.cmp(&latest_semver) {
+713:         Ordering::Less => -1,
+714:         Ordering::Equal => 0,
+715:         Ordering::Greater => 1,
+716:     }
+717: }
+718: 
+719: fn check_template_overrides() -> Vec<&'static str> {
+720:     let template_folder = std::path::PathBuf::from(CONFIG.templates_folder());
+721:     let mut overrides = Vec::new();
+722:     for folder in ["admin", "email", "scss"] {
+723:         if folder_has_hbs_files(&template_folder.join(folder)) {
+724:             overrides.push(folder);
+725:         }
+726:     }
+727: 
+728:     if folder_has_hbs_files(&template_folder) {
+729:         overrides.push("other");
+730:     }
+731: 
+732:     overrides
+733: }
+734: 
+735: fn folder_has_hbs_files(dir: &std::path::Path) -> bool {
+736:     let Ok(files) = std::fs::read_dir(dir) else {
+737:         // No files in this directory at all, so we can return false
+738:         return false;
+739:     };
+740: 
+741:     files.flatten().any(|f| {
+742:         // Validate if it is a file and if it has the `.hbs` extension and starts with a-z or 0-9
+743:         f.file_type().is_ok_and(|t| t.is_file())
+744:             && f.path().extension().is_some_and(|e| e.eq_ignore_ascii_case("hbs"))
+745:             && f.file_name().to_str().is_some_and(|n| n.starts_with(|c: char| c.is_ascii_alphanumeric()))
+746:     })
+747: }
+748: 
+749: #[get("/diagnostics")]
+750: async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResult<Html<String>> {
+751:     use chrono::prelude::*;
+752:     use std::net::ToSocketAddrs;
+753: 
+754:     // Execute some environment checks
+755:     let running_within_container = is_running_in_container();
+756:     let has_http_access = has_http_access().await;
+757:     let uses_proxy = env::var_os("HTTP_PROXY").is_some()
+758:         || env::var_os("http_proxy").is_some()
+759:         || env::var_os("HTTPS_PROXY").is_some()
+760:         || env::var_os("https_proxy").is_some();
+761: 
+762:     // Check if we are able to resolve DNS entries
+763:     let dns_resolved = match ("github.com", 0).to_socket_addrs().map(|mut i| i.next()) {
+764:         Ok(Some(a)) => a.ip().to_string(),
+765:         _ => "Unable to resolve domain name.".to_owned(),
+766:     };
+767: 
+768:     let (latest_vw_release, latest_vw_commit, latest_web_release) = get_release_info(has_http_access).await;
+769:     let active_web_release = get_active_web_release();
+770:     let web_vault_compare = web_vault_compare(&active_web_release, &latest_web_release);
+771: 
+772:     let ip_header_name = &ip_header.0.unwrap_or_default();
+773: 
+774:     let invalid_feature_flags: Vec<String> = parse_experimental_client_feature_flags(
+775:         &CONFIG.experimental_client_feature_flags(),
+776:         &FeatureFlagFilter::InvalidOnly,
+777:     )
+778:     .into_keys()
+779:     .collect();
+780: 
+781:     let diagnostics_json = json!({
+782:         "dns_resolved": dns_resolved,
+783:         "current_release": VERSION,
+784:         "latest_release": latest_vw_release,
+785:         "latest_commit": latest_vw_commit,
+786:         "web_vault_enabled": &CONFIG.web_vault_enabled(),
+787:         "active_web_release": active_web_release,
+788:         "latest_web_release": latest_web_release,
+789:         "web_vault_compare": web_vault_compare,
+790:         "running_within_container": running_within_container,
+791:         "container_base_image": if running_within_container { container_base_image() } else { "Not applicable" },
+792:         "has_http_access": has_http_access,
+793:         "ip_header_exists": !ip_header_name.is_empty(),
+794:         "ip_header_match": ip_header_name.eq(&CONFIG.ip_header()),
+795:         "ip_header_name": ip_header_name,
+796:         "ip_header_config": &CONFIG.ip_header(),
+797:         "uses_proxy": uses_proxy,
+798:         "enable_websocket": &CONFIG.enable_websocket(),
+799:         "db_type": *DB_TYPE,
+800:         "db_version": get_sql_server_version(&conn).await,
+801:         "admin_url": format!("{}/diagnostics", admin_url()),
+802:         "overrides": &CONFIG.get_overrides().join(", "),
+803:         "template_overrides": check_template_overrides().join(", "),
+804:         "invalid_feature_flags": invalid_feature_flags,
+805:         "host_arch": env::consts::ARCH,
+806:         "host_os":  env::consts::OS,
+807:         "tz_env": env::var("TZ").unwrap_or_default(),
+808:         "server_time_local": Local::now().format("%Y-%m-%d %H:%M:%S %Z").to_string(),
+809:         "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the server date/time check as late as possible to minimize the time difference
+810:         "ntp_time": get_ntp_time(has_http_access).await, // Run the ntp check as late as possible to minimize the time difference
+811:     });
+812: 
+813:     let text = AdminTemplateData::new("admin/diagnostics", diagnostics_json).render()?;
+814:     Ok(Html(text))
+815: }
+816: 
+817: #[get("/diagnostics/config", format = "application/json")]
+818: fn get_diagnostics_config(_token: AdminToken) -> Json<Value> {
+819:     let support_json = CONFIG.get_support_json();
+820:     Json(support_json)
+821: }
+822: 
+823: #[get("/diagnostics/http?<code>")]
+824: fn get_diagnostics_http(code: u16, _token: AdminToken) -> EmptyResult {
+825:     err_code!(format!("Testing error {code} response"), code);
+826: }
+827: 
+828: #[post("/config", format = "application/json", data = "<data>")]
+829: async fn post_config(data: Json<ConfigBuilder>, _token: AdminToken) -> EmptyResult {
+830:     let data: ConfigBuilder = data.into_inner();
+831:     if let Err(e) = CONFIG.update_config(data, true).await {
+832:         err!(format!("Unable to save config: {e:?}"))
+833:     }
+834:     Ok(())
+835: }
+836: 
+837: #[post("/config/delete", format = "application/json")]
+838: async fn delete_config(_token: AdminToken) -> EmptyResult {
+839:     if let Err(e) = CONFIG.delete_user_config().await {
+840:         err!(format!("Unable to delete config: {e:?}"))
+841:     }
+842:     Ok(())
+843: }
+844: 
+845: #[post("/config/backup_db", format = "application/json")]
+846: fn backup_db(_token: AdminToken) -> ApiResult<String> {
+847:     if *CAN_BACKUP {
+848:         match backup_sqlite() {
+849:             Ok(f) => Ok(format!("Backup to '{f}' was successful")),
+850:             Err(e) => err!(format!("Backup was unsuccessful {e}")),
+851:         }
+852:     } else {
+853:         err!("Can't back up current DB (Only SQLite supports this feature)");
+854:     }
+855: }
+856: 
+857: pub struct AdminToken {
+858:     ip: ClientIp,
+859: }
+860: 
+861: #[rocket::async_trait]
+862: impl<'r> FromRequest<'r> for AdminToken {
+863:     type Error = &'static str;
+864: 
+865:     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+866:         let Outcome::Success(ip) = ClientIp::from_request(request).await else {
+867:             err_handler!("Error getting Client IP")
+868:         };
+869: 
+870:         if !CONFIG.disable_admin_token() {
+871:             let cookies = request.cookies();
+872: 
+873:             let access_token = if let Some(cookie) = cookies.get(COOKIE_NAME) {
+874:                 cookie.value()
+875:             } else {
+876:                 let requested_page =
+877:                     request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
+878:                 // When the requested page is empty, it is `/admin`, in that case, Forward, so it will render the login page
+879:                 // Else, return a 401 failure, which will be caught
+880:                 if requested_page.is_empty() {
+881:                     return Outcome::Forward(Status::Unauthorized);
+882:                 }
+883:                 return Outcome::Error((Status::Unauthorized, "Unauthorized"));
+884:             };
+885: 
+886:             if decode_admin(access_token).is_err() {
+887:                 // Remove admin cookie
+888:                 cookies.remove(Cookie::build(COOKIE_NAME).path(admin_path()));
+889:                 error!("Invalid or expired admin JWT. IP: {}.", ip.ip);
+890:                 return Outcome::Error((Status::Unauthorized, "Session expired"));
+891:             }
+892:         }
+893: 
+894:         Outcome::Success(Self {
+895:             ip,
+896:         })
+897:     }
+898: }
+899: 
+900: #[cfg(test)]
+901: mod tests {
+902:     use super::*;
+903: 
+904:     #[test]
+905:     fn validate_web_vault_compare() {
+906:         // web_vault_compare(active, latest)
+907:         // Test normal versions
+908:         assert!(web_vault_compare("2025.12.0", "2025.12.1") == -1);
+909:         assert!(web_vault_compare("2025.12.1", "2025.12.1") == 0);
+910:         assert!(web_vault_compare("2025.12.2", "2025.12.1") == 1);
+911: 
+912:         // Test patched/+build.n versions
+913:         // Newer latest version
+914:         assert!(web_vault_compare("2025.12.0+build.1", "2025.12.1") == -1);
+915:         assert!(web_vault_compare("2025.12.1", "2025.12.1+build.1") == -1);
+916:         assert!(web_vault_compare("2025.12.0+build.1", "2025.12.1+build.1") == -1);
+917:         assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.2") == -1);
+918:         // Equal versions
+919:         assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.1") == 0);
+920:         assert!(web_vault_compare("2025.12.2+build.2", "2025.12.2+build.2") == 0);
+921:         // Newer active version
+922:         assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1") == 1);
+923:         assert!(web_vault_compare("2025.12.2", "2025.12.1+build.1") == 1);
+924:         assert!(web_vault_compare("2025.12.2+build.1", "2025.12.1+build.1") == 1);
+925:         assert!(web_vault_compare("2025.12.1+build.3", "2025.12.1+build.2") == 1);
+926:     }
+927: }

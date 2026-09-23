@@ -1,0 +1,49 @@
+521:         nbf: time_now.timestamp(),
+522:         exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
+523:         iss: JWT_VERIFYEMAIL_ISSUER.to_string(),
+524:         sub: user_id.to_string(),
+525:     }
+526: }
+527: 
+528: pub fn generate_admin_claims() -> BasicJwtClaims {
+529:     let time_now = Utc::now();
+530:     BasicJwtClaims {
+531:         nbf: time_now.timestamp(),
+532:         exp: (time_now + TimeDelta::try_minutes(CONFIG.admin_session_lifetime()).unwrap()).timestamp(),
+533:         iss: JWT_ADMIN_ISSUER.to_string(),
+534:         sub: "admin_panel".to_owned(),
+535:     }
+536: }
+537: 
+538: pub fn generate_send_claims(send_id: &SendId, file_id: &SendFileId) -> BasicJwtClaims {
+539:     let time_now = Utc::now();
+540:     BasicJwtClaims {
+541:         nbf: time_now.timestamp(),
+542:         exp: (time_now + TimeDelta::try_minutes(2).unwrap()).timestamp(),
+543:         iss: JWT_SEND_ISSUER.to_string(),
+544:         sub: format!("{send_id}/{file_id}"),
+545:     }
+546: }
+547: 
+548: //
+549: // Bearer token authentication
+550: //
+551: pub struct Host {
+552:     pub host: String,
+553: }
+554: 
+555: #[rocket::async_trait]
+556: impl<'r> FromRequest<'r> for Host {
+557:     type Error = &'static str;
+558: 
+559:     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+560:         let headers = request.headers();
+561: 
+562:         // Get host
+563:         let host = if CONFIG.domain_set() {
+564:             CONFIG.domain()
+565:         } else if let Some(referer) = headers.get_one("Referer") {
+566:             referer.to_owned()
+567:         } else {
+568:             // Try to guess from the headers
+569:             let protocol = if let Some(proto) = headers.get_one("X-Forwarded-Proto") {
