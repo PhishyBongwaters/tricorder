@@ -11,13 +11,21 @@ Compile` → `buildssa`) confirmed by second read. 7/20 calls.
 | Cmd | Step | Tokens | Note |
 |---|---|---|---|
 | 1 | MAP 2048 | 0 | timed out at agent's 120s, nothing delivered |
-| 2 | symbols `buildSSA` | 1,035 | exact-first hit, direct answer |
+| 2 | symbols `buildSSA` | 150 | exact-first hit, direct answer |
 | 3 | bad powershell wrap | 0 | harness error, recovered |
-| 4 | read ssa.go 296–335 | 542 | verified entry point |
-| 5 | symbols `compileSSA` | 10,193 | fuzzy junk, correctly NOT read |
-| 6 | detect NL ×5 | 4,159 | caller confirmation |
-| 7 | read pgen.go 301–315 | 220 | verified caller |
-| **Total** | | **16,149** | + unmetered error text (cmd 3) |
+| 4 | read ssa.go 296–335 | 544 | verified entry point |
+| 5 | symbols `compileSSA` | 1,503 | fuzzy junk, correctly NOT read |
+| 6 | detect NL ×5 | 650 | caller confirmation |
+| 7 | read pgen.go 301–315 | 221 | verified caller |
+| **Total** | | **3,068** | + unmetered error text (cmd 3) |
+
+Metering correction (2026-09-23): first-published figures (16,149 total)
+were ~5× inflated — payload artifacts were captured via PowerShell `>`
+redirect (UTF-16LE) and counted as UTF-8, so every NUL byte tokenized.
+`meter_leg.py` now detects NUL bytes and decodes UTF-16; figures above are
+re-metered. The pilot's 58,624 figure is unaffected (captured in-process,
+`meter_go.py`). Corrected comparison: this leg's NL step (650) is ~90×
+smaller than the pilot's uncapped NL blowup.
 
 ## Compliance
 
@@ -32,12 +40,17 @@ Compile` → `buildssa`) confirmed by second read. 7/20 calls.
 
 ## Findings
 
-1. **NL junk class contained, not dead.** Same query class that cost
-   58,624 tokens in the pilot now costs 4,159 (14× smaller: ×5 cap +
-   interleave fix). But cmd 5 shows the fuzzy-rescue junk source still
-   fires (10,193 tokens for a near-miss) — what saved this leg was agent
-   discipline (v1.2), not the absence of junk. Possible product follow-up:
-   cap or flag fuzzy-rescue payloads.
+1. **NL junk class: fixed at the source (post-leg).** Same query class that
+   cost 58,624 tokens in the pilot now costs 650 under the ×5 cap — and the
+   cmd-5 fuzzy junk (1,503 tokens of `*_ssa` test helpers for near-miss
+   "compileSSA") is now a clean empty result (7 tokens,
+   `step_symbols_compileSSA_postfix.txt`). Root cause: the rescue
+   token-overlap gate accepted half-token matches (`overlap*2 >=
+   len(qtok)` — sharing 1 of 2 tokens qualified). Fix: strict majority
+   (`>`), both rescue passes (`core.py` search_identifiers +
+   search_symbols), red-first test `tests/test_rescue_overlap.py` (3
+   tests), full suite 477 passed. v1.2 discipline is still the backstop
+   for other near-miss shapes, but this family no longer fires.
 2. **MAP rung unreachable on Go even warm.** Cmd 1 timed out on a warm DB
    (map-text render is the known slow path — cf. run_go_eval's
    `--map-tokens 0` workaround). Ladder rung 1 is dead on 16k-file repos.

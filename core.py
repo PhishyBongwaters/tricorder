@@ -480,7 +480,11 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                     tj = "".join(tt)
                     d = min(levenshtein(qcore, tn), levenshtein(qcore, tj))
                     overlap = len(qtok & set(tt)) if qtok else 0
-                    if d <= 2 or (qtok and overlap * 2 >= len(qtok)):
+                    # Strict majority: a 2-token near-miss sharing one token
+                    # used to rescue whole junk families (e.g. every *ssa*
+                    # test helper for "compileSSA"). Edit-distance still
+                    # catches typos; overlap needs a real majority.
+                    if d <= 2 or (qtok and overlap * 2 > len(qtok)):
                         scored.append((d, -overlap, tag.kind != "def", tn, tag))
                 scored.sort(key=lambda s: (s[0], s[1], s[2], s[3], s[4].rel_fname, s[4].line))
                 matching_tags = [s[4] for s in scored[:max_results * 2]]
@@ -895,7 +899,9 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                     sj = "".join(st)
                     d = min(levenshtein(qcore, sn), levenshtein(qcore, sj))
                     overlap = len(qtok & set(st)) if qtok else 0
-                    if d <= 2 or (qtok and overlap * 2 >= len(qtok)):
+                    # Strict majority (mirror search_identifiers): sharing
+                    # half the query tokens is not a rescue, it's junk.
+                    if d <= 2 or (qtok and overlap * 2 > len(qtok)):
                         scored.append((d, -overlap, sym.type, sn, sym))
                 scored.sort(key=lambda s: (s[0], s[1], s[2], s[3], s[4].file, s[4].line))
                 results = [s[4].to_dict() for s in scored[:limit * 2]]

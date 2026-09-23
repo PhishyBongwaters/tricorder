@@ -18,8 +18,11 @@ from utils import count_tokens
 legdir = sys.argv[1]
 total = 0
 for p in sorted(glob.glob(os.path.join(legdir, "step_*.txt"))):
-    with open(p, encoding="utf-8", errors="replace") as f:
-        text = f.read()
+    raw = open(p, "rb").read()
+    # PowerShell `>` redirect writes UTF-16LE; reading those bytes as UTF-8
+    # inflates token counts ~4x (NULs tokenize). Detect and decode properly.
+    text = raw.decode("utf-16") if b"\x00" in raw[:64] else \
+        raw.decode("utf-8", errors="replace")
     tk = count_tokens(text)
     total += tk
     print(f"{os.path.basename(p)}: {tk} tokens ({len(text)} chars)")
