@@ -1,0 +1,80 @@
+150:     #[response(status = 429)]
+151:     TooManyRequests(ApiResult<Html<String>>),
+152: }
+153: 
+154: #[catch(401)]
+155: fn admin_login(request: &Request<'_>) -> ApiResult<Html<String>> {
+156:     if request.format() == Some(&MediaType::JSON) {
+157:         err_code!("Authorization failed.", Status::Unauthorized.code);
+158:     }
+159:     let redirect = request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
+160:     render_admin_login(None, Some(&redirect))
+161: }
+162: 
+163: fn render_admin_login(msg: Option<&str>, redirect: Option<&str>) -> ApiResult<Html<String>> {
+164:     // If there is an error, show it
+165:     let msg = msg.map(|msg| format!("Error: {msg}"));
+166:     let json = json!({
+167:         "page_content": "admin/login",
+168:         "error": msg,
+169:         "redirect": redirect,
+170:         "urlpath": CONFIG.domain_path()
+171:     });
+172: 
+173:     // Return the page
+174:     let text = CONFIG.render_template(BASE_TEMPLATE, &json)?;
+175:     Ok(Html(text))
+176: }
+177: 
+178: #[derive(FromForm)]
+179: struct LoginForm {
+180:     token: String,
+181:     redirect: Option<String>,
+182: }
+183: 
+184: #[post("/", format = "application/x-www-form-urlencoded", data = "<data>")]
+185: fn post_admin_login(
+186:     data: Form<LoginForm>,
+187:     cookies: &CookieJar<'_>,
+188:     ip: ClientIp,
+189:     secure: Secure,
+190: ) -> Result<Redirect, AdminResponse> {
+191:     let data = data.into_inner();
+192:     let redirect = data.redirect;
+193: 
+194:     if crate::ratelimit::check_limit_admin(&ip.ip).is_err() {
+195:         return Err(AdminResponse::TooManyRequests(render_admin_login(
+196:             Some("Too many requests, try again later."),
+197:             redirect.as_deref(),
+198:         )));
+199:     }
+200: 
+201:     // If the token is invalid, redirect to login page
+202:     if validate_token(&data.token) {
+203:         // If the token received is valid, generate JWT and save it as a cookie
+204:         let claims = generate_admin_claims();
+205:         let jwt = encode_jwt(&claims);
+206: 
+207:         let cookie = Cookie::build((COOKIE_NAME, jwt))
+208:             .path(admin_path())
+209:             .max_age(time::Duration::minutes(CONFIG.admin_session_lifetime()))
+210:             .same_site(SameSite::Strict)
+211:             .http_only(true)
+212:             .secure(secure.https);
+213: 
+214:         cookies.add(cookie);
+215:         if let Some(redirect) = redirect {
+216:             Ok(Redirect::to(format!("{}{redirect}", admin_path())))
+217:         } else {
+218:             Err(AdminResponse::Ok(render_admin_page()))
+219:         }
+220:     } else {
+221:         error!("Invalid admin token. IP: {}", ip.ip);
+222:         Err(AdminResponse::Unauthorized(render_admin_login(
+223:             Some("Invalid admin token, please try again."),
+224:             redirect.as_deref(),
+225:         )))
+226:     }
+227: }
+228: 
+229: fn validate_token(token: &str) -> bool {

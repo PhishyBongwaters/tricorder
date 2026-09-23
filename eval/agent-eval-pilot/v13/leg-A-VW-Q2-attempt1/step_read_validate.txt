@@ -1,0 +1,76 @@
+229: fn validate_token(token: &str) -> bool {
+230:     match CONFIG.admin_token().as_ref() {
+231:         None => false,
+232:         Some(t) if t.starts_with("$argon2") => {
+233:             use argon2::password_hash::PasswordVerifier;
+234:             match argon2::password_hash::PasswordHash::new(t) {
+235:                 Ok(h) => {
+236:                     // NOTE: hash params from `ADMIN_TOKEN` are used instead of what is configured in the `Argon2` instance.
+237:                     argon2::Argon2::default().verify_password(token.trim().as_ref(), &h).is_ok()
+238:                 }
+239:                 Err(e) => {
+240:                     error!("The configured Argon2 PHC in `ADMIN_TOKEN` is invalid: {e}");
+241:                     false
+242:                 }
+243:             }
+244:         }
+245:         Some(t) => crate::crypto::ct_eq(t.trim(), token.trim()),
+246:     }
+247: }
+248: 
+249: #[derive(Serialize)]
+250: struct AdminTemplateData {
+251:     page_content: String,
+252:     page_data: Option<Value>,
+253:     logged_in: bool,
+254:     urlpath: String,
+255:     sso_enabled: bool,
+256: }
+257: 
+258: impl AdminTemplateData {
+259:     fn new(page_content: &str, page_data: Value) -> Self {
+260:         Self {
+261:             page_content: String::from(page_content),
+262:             page_data: Some(page_data),
+263:             logged_in: true,
+264:             urlpath: CONFIG.domain_path(),
+265:             sso_enabled: CONFIG.sso_enabled(),
+266:         }
+267:     }
+268: 
+269:     fn render(self) -> Result<String, Error> {
+270:         CONFIG.render_template(BASE_TEMPLATE, &self)
+271:     }
+272: }
+273: 
+274: fn render_admin_page() -> ApiResult<Html<String>> {
+275:     let settings_json = json!({
+276:         "config": CONFIG.prepare_json(),
+277:         "can_backup": *CAN_BACKUP,
+278:     });
+279:     let text = AdminTemplateData::new("admin/settings", settings_json).render()?;
+280:     Ok(Html(text))
+281: }
+282: 
+283: #[get("/")]
+284: fn admin_page(_token: AdminToken) -> ApiResult<Html<String>> {
+285:     render_admin_page()
+286: }
+287: 
+288: #[get("/", rank = 2)]
+289: fn admin_page_login() -> ApiResult<Html<String>> {
+290:     render_admin_login(None, None)
+291: }
+292: 
+293: #[derive(Debug, Deserialize)]
+294: #[serde(rename_all = "camelCase")]
+295: struct InviteData {
+296:     email: String,
+297: }
+298: 
+299: async fn get_user_or_404(user_id: &UserId, conn: &DbConn) -> ApiResult<User> {
+300:     if let Some(user) = User::find_by_uuid(user_id, conn).await {
+301:         Ok(user)
+302:     } else {
+303:         err_code!("User doesn't exist", Status::NotFound.code);
+304:     }

@@ -1,0 +1,10 @@
+56: static JWT_ADMIN_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|admin", CONFIG.domain_origin()));
+57: static JWT_SEND_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|send", CONFIG.domain_origin()));
+58: static JWT_ORG_API_KEY_ISSUER: LazyLock<String> =
+59:     LazyLock::new(|| format!("{}|api.organization", CONFIG.domain_origin()));
+60: static JWT_FILE_DOWNLOAD_ISSUER: LazyLock<String> =
+61:     LazyLock::new(|| format!("{}|file_download", CONFIG.domain_origin()));
+62: static JWT_REGISTER_VERIFY_ISSUER: LazyLock<String> =
+63:     LazyLock::new(|| format!("{}|register_verify", CONFIG.domain_origin()));
+64: static JWT_2FA_REMEMBER_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|2faremember", CONFIG.domain_origin()));
+65: 

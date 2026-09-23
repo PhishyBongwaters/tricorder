@@ -1,0 +1,60 @@
+145: }
+146: 
+147: pub fn decode_delete(token: &str) -> Result<BasicJwtClaims, Error> {
+148:     decode_jwt(token, JWT_DELETE_ISSUER.to_string())
+149: }
+150: 
+151: pub fn decode_verify_email(token: &str) -> Result<BasicJwtClaims, Error> {
+152:     decode_jwt(token, JWT_VERIFYEMAIL_ISSUER.to_string())
+153: }
+154: 
+155: pub fn decode_admin(token: &str) -> Result<BasicJwtClaims, Error> {
+156:     decode_jwt(token, JWT_ADMIN_ISSUER.to_string())
+157: }
+158: 
+159: pub fn decode_send(token: &str) -> Result<BasicJwtClaims, Error> {
+160:     decode_jwt(token, JWT_SEND_ISSUER.to_string())
+161: }
+162: 
+163: pub fn decode_api_org(token: &str) -> Result<OrgApiKeyLoginJwtClaims, Error> {
+164:     decode_jwt(token, JWT_ORG_API_KEY_ISSUER.to_string())
+165: }
+166: 
+167: pub fn decode_file_download(token: &str) -> Result<FileDownloadClaims, Error> {
+168:     decode_jwt(token, JWT_FILE_DOWNLOAD_ISSUER.to_string())
+169: }
+170: 
+171: pub fn decode_register_verify(token: &str) -> Result<RegisterVerifyClaims, Error> {
+172:     decode_jwt(token, JWT_REGISTER_VERIFY_ISSUER.to_string())
+173: }
+174: 
+175: pub fn decode_2fa_remember(token: &str) -> Result<TwoFactorRememberClaims, Error> {
+176:     decode_jwt(token, JWT_2FA_REMEMBER_ISSUER.to_string())
+177: }
+178: 
+179: #[derive(Debug, Serialize, Deserialize)]
+180: pub struct LoginJwtClaims {
+181:     // Not before
+182:     pub nbf: i64,
+183:     // Expiration time
+184:     pub exp: i64,
+185:     // Issuer
+186:     pub iss: String,
+187:     // Subject
+188:     pub sub: UserId,
+189: 
+190:     pub premium: bool,
+191:     pub name: String,
+192:     pub email: String,
+193:     pub email_verified: bool,
+194: 
+195:     // ---
+196:     // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
+197:     // Also These key/value pairs are not used anywhere by either Vaultwarden or Bitwarden Clients
+198:     // Because these might get used in the future, and they are added by the Bitwarden Server, lets keep it, but then commented out
+199:     // See: https://github.com/dani-garcia/vaultwarden/issues/4156
+200:     // ---
+201:     // pub orgowner: Vec<String>,
+202:     // pub orgadmin: Vec<String>,
+203:     // pub orguser: Vec<String>,
+204:     // pub orgmanager: Vec<String>,

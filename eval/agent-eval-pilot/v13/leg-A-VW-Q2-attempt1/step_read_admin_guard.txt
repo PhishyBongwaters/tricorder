@@ -1,0 +1,71 @@
+857: pub struct AdminToken {
+858:     ip: ClientIp,
+859: }
+860: 
+861: #[rocket::async_trait]
+862: impl<'r> FromRequest<'r> for AdminToken {
+863:     type Error = &'static str;
+864: 
+865:     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+866:         let Outcome::Success(ip) = ClientIp::from_request(request).await else {
+867:             err_handler!("Error getting Client IP")
+868:         };
+869: 
+870:         if !CONFIG.disable_admin_token() {
+871:             let cookies = request.cookies();
+872: 
+873:             let access_token = if let Some(cookie) = cookies.get(COOKIE_NAME) {
+874:                 cookie.value()
+875:             } else {
+876:                 let requested_page =
+877:                     request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
+878:                 // When the requested page is empty, it is `/admin`, in that case, Forward, so it will render the login page
+879:                 // Else, return a 401 failure, which will be caught
+880:                 if requested_page.is_empty() {
+881:                     return Outcome::Forward(Status::Unauthorized);
+882:                 }
+883:                 return Outcome::Error((Status::Unauthorized, "Unauthorized"));
+884:             };
+885: 
+886:             if decode_admin(access_token).is_err() {
+887:                 // Remove admin cookie
+888:                 cookies.remove(Cookie::build(COOKIE_NAME).path(admin_path()));
+889:                 error!("Invalid or expired admin JWT. IP: {}.", ip.ip);
+890:                 return Outcome::Error((Status::Unauthorized, "Session expired"));
+891:             }
+892:         }
+893: 
+894:         Outcome::Success(Self {
+895:             ip,
+896:         })
+897:     }
+898: }
+899: 
+900: #[cfg(test)]
+901: mod tests {
+902:     use super::*;
+903: 
+904:     #[test]
+905:     fn validate_web_vault_compare() {
+906:         // web_vault_compare(active, latest)
+907:         // Test normal versions
+908:         assert!(web_vault_compare("2025.12.0", "2025.12.1") == -1);
+909:         assert!(web_vault_compare("2025.12.1", "2025.12.1") == 0);
+910:         assert!(web_vault_compare("2025.12.2", "2025.12.1") == 1);
+911: 
+912:         // Test patched/+build.n versions
+913:         // Newer latest version
+914:         assert!(web_vault_compare("2025.12.0+build.1", "2025.12.1") == -1);
+915:         assert!(web_vault_compare("2025.12.1", "2025.12.1+build.1") == -1);
+916:         assert!(web_vault_compare("2025.12.0+build.1", "2025.12.1+build.1") == -1);
+917:         assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.2") == -1);
+918:         // Equal versions
+919:         assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.1") == 0);
+920:         assert!(web_vault_compare("2025.12.2+build.2", "2025.12.2+build.2") == 0);
+921:         // Newer active version
+922:         assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1") == 1);
+923:         assert!(web_vault_compare("2025.12.2", "2025.12.1+build.1") == 1);
+924:         assert!(web_vault_compare("2025.12.2+build.1", "2025.12.1+build.1") == 1);
+925:         assert!(web_vault_compare("2025.12.1+build.3", "2025.12.1+build.2") == 1);
+926:     }
+927: }

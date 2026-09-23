@@ -1,0 +1,50 @@
+105: pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
+106:     match jsonwebtoken::encode(&JWT_HEADER, claims, PRIVATE_RSA_KEY.wait()) {
+107:         Ok(token) => token,
+108:         Err(e) => panic!("Error encoding jwt {e}"),
+109:     }
+110: }
+111: 
+112: pub fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T, Error> {
+113:     let mut validation = jsonwebtoken::Validation::new(JWT_ALGORITHM);
+114:     validation.leeway = 30; // 30 seconds
+115:     validation.validate_exp = true;
+116:     validation.validate_nbf = true;
+117:     validation.set_issuer(&[issuer]);
+118: 
+119:     let token = token.replace(char::is_whitespace, "");
+120:     match jsonwebtoken::decode(&token, PUBLIC_RSA_KEY.wait(), &validation) {
+121:         Ok(d) => Ok(d.claims),
+122:         Err(err) => match *err.kind() {
+123:             ErrorKind::InvalidToken => err!("Token is invalid"),
+124:             ErrorKind::InvalidIssuer => err!("Issuer is invalid"),
+125:             ErrorKind::ExpiredSignature => err!("Token has expired"),
+126:             _ => err!(format!("Error decoding JWT: {:?}", err)),
+127:         },
+128:     }
+129: }
+130: 
+131: pub fn decode_refresh(token: &str) -> Result<RefreshJwtClaims, Error> {
+132:     decode_jwt(token, JWT_LOGIN_ISSUER.to_string())
+133: }
+134: 
+135: pub fn decode_login(token: &str) -> Result<LoginJwtClaims, Error> {
+136:     decode_jwt(token, JWT_LOGIN_ISSUER.to_string())
+137: }
+138: 
+139: pub fn decode_invite(token: &str) -> Result<InviteJwtClaims, Error> {
+140:     decode_jwt(token, JWT_INVITE_ISSUER.to_string())
+141: }
+142: 
+143: pub fn decode_emergency_access_invite(token: &str) -> Result<EmergencyAccessInviteJwtClaims, Error> {
+144:     decode_jwt(token, JWT_EMERGENCY_ACCESS_INVITE_ISSUER.to_string())
+145: }
+146: 
+147: pub fn decode_delete(token: &str) -> Result<BasicJwtClaims, Error> {
+148:     decode_jwt(token, JWT_DELETE_ISSUER.to_string())
+149: }
+150: 
+151: pub fn decode_verify_email(token: &str) -> Result<BasicJwtClaims, Error> {
+152:     decode_jwt(token, JWT_VERIFYEMAIL_ISSUER.to_string())
+153: }
+154: 
