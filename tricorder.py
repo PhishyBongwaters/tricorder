@@ -133,6 +133,36 @@ def _unwritable_canonical_warning(args, root_path, scan_db_path) -> Optional[str
     return None
 
 
+def fit_json_tags(ranked_tags, budget, token_counter):
+    """Longest rank-ordered prefix whose serialized JSON records fit budget.
+
+    The text map path fits to budget; the --format json path serialized the
+    whole ranked list (2026-09-23: 3,856 tags / 218k tokens against a 2048
+    budget). Same fit-loop convention, measured on the delivered JSON bytes
+    (records cost more per tag than text lines). Keeps at least one tag when
+    nothing fits (mirrors the text path's smallest-map fallback).
+    """
+    import json
+
+    def payload(tags):
+        return json.dumps({"tags": [
+            {"name": t.name, "file": t.rel_fname, "line": t.line,
+             "kind": t.kind, "rank": r} for r, t in tags]}, indent=2)
+
+    if not ranked_tags:
+        return []
+    if token_counter(payload(ranked_tags)) <= budget:
+        return list(ranked_tags)
+    lo, hi, best = 1, len(ranked_tags) - 1, 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if token_counter(payload(ranked_tags[:mid])) <= budget:
+            best, lo = mid, mid + 1
+        else:
+            hi = mid - 1
+    return list(ranked_tags[:best])
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -930,6 +960,10 @@ Examples:
                     import json
                     if args.top is not None:
                         ranked_tags = ranked_tags[:args.top]
+                    # Fit to the resolved budget on the delivered bytes —
+                    # serializing the whole ranked list ignores --map-tokens.
+                    fitted = fit_json_tags(
+                        ranked_tags, map_tokens, repo_map.token_count)
                     json_output = {
                         "tags": [
                             {
@@ -939,7 +973,7 @@ Examples:
                                 "kind": tag.kind,
                                 "rank": rank
                             }
-                            for rank, tag in ranked_tags
+                            for rank, tag in fitted
                         ]
                     }
                     map_tokens = repo_map.token_count(map_content)

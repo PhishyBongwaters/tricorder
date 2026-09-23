@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import Tricorder
-from utils import count_tokens
+from utils import Tag, count_tokens
 
 
 def _project():
@@ -55,6 +55,53 @@ class TestMapTokenBudget(unittest.TestCase):
         # smallest map rather than nothing (with a budget warning).
         tree, _ = self.tc.get_ranked_tags_map_uncached([], self.files, 1)
         self.assertTrue(tree)
+
+
+class TestJsonMapBudget(unittest.TestCase):
+    """2026-09-23 finding (agent leg A-VW-Q1): CLI --format json MAP
+    serialized ALL ranked_tags (3,856 tags, 218k tokens) against a 2048
+    budget — the text path fits to budget, the JSON path never did.
+    fit_json_tags must hold the same cap on the delivered bytes."""
+
+    def _ranked(self, n):
+        return [(float(n - i),
+                 Tag(f"f{i}.py", f"/r/f{i}.py", i + 1, f"sym{i}", "def"))
+                for i in range(n)]
+
+    def _payload_tokens(self, tags):
+        import json
+        from tricorder import fit_json_tags
+        from utils import count_tokens as ct
+        fitted = fit_json_tags(tags, self.budget, ct)
+        return fitted, ct(json.dumps({"tags": [
+            {"name": t.name, "file": t.rel_fname, "line": t.line,
+             "kind": t.kind, "rank": r} for r, t in fitted]}, indent=2))
+
+    def test_json_fit_holds_budget(self):
+        import tricorder
+        self.assertTrue(hasattr(tricorder, "fit_json_tags"))
+        for budget in (200, 2048):
+            with self.subTest(budget=budget):
+                self.budget = budget
+                fitted, tok = self._payload_tokens(self._ranked(500))
+                self.assertLessEqual(tok, budget)
+                self.assertLess(len(fitted), 500)
+
+    def test_json_fit_keeps_top_ranks(self):
+        from tricorder import fit_json_tags
+        fitted = fit_json_tags(self._ranked(500), 2048,
+                               __import__("utils").count_tokens)
+        names = [t.name for _, t in fitted]
+        self.assertEqual(names, sorted(names, key=lambda n: int(n[3:])))
+        self.assertTrue(names[0] == "sym0")
+
+    def test_json_fit_generous_budget_keeps_all(self):
+        from tricorder import fit_json_tags
+        import json
+        from utils import count_tokens as ct
+        tags = self._ranked(10)
+        fitted = fit_json_tags(tags, 100000, ct)
+        self.assertEqual(len(fitted), 10)
 
 
 if __name__ == "__main__":

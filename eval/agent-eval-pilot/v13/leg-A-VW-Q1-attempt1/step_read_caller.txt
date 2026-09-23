@@ -1,0 +1,54 @@
+57: async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: Headers, conn: DbConn) -> JsonResult {
+58:     let data: EnableAuthenticatorData = data.into_inner();
+59:     let key = data.key;
+60:     let token = data.token.into_string();
+61: 
+62:     let mut user = headers.user;
+63: 
+64:     PasswordOrOtpData {
+65:         master_password_hash: data.master_password_hash,
+66:         otp: data.otp,
+67:     }
+68:     .validate(&user, true, &conn)
+69:     .await?;
+70: 
+71:     // Validate key as base32 and 20 bytes length
+72:     let decoded_key: Vec<u8> = if let Ok(decoded) = BASE32.decode(key.as_bytes()) {
+73:         decoded
+74:     } else {
+75:         err!("Invalid totp secret")
+76:     };
+77: 
+78:     if decoded_key.len() != 20 {
+79:         err!("Invalid key length")
+80:     }
+81: 
+82:     // Validate the token provided with the key, and save new twofactor
+83:     validate_totp_code(&user.uuid, &token, &key.to_uppercase(), &headers.ip, &conn).await?;
+84: 
+85:     generate_recover_code(&mut user, &conn).await;
+86: 
+87:     log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
+88: 
+89:     Ok(Json(json!({
+90:         "enabled": true,
+91:         "key": key,
+92:         "object": "twoFactorAuthenticator"
+93:     })))
+94: }
+95: 
+96: #[put("/two-factor/authenticator", data = "<data>")]
+97: async fn activate_authenticator_put(data: Json<EnableAuthenticatorData>, headers: Headers, conn: DbConn) -> JsonResult {
+98:     activate_authenticator(data, headers, conn).await
+99: }
+100: 
+101: pub async fn validate_totp_code_str(
+102:     user_id: &UserId,
+103:     totp_code: &str,
+104:     secret: &str,
+105:     ip: &ClientIp,
+106:     conn: &DbConn,
+107: ) -> EmptyResult {
+108:     if !totp_code.chars().all(char::is_numeric) {
+109:         err!("TOTP code is not a number");
+110:     }

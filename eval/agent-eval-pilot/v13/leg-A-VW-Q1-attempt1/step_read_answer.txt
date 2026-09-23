@@ -1,0 +1,85 @@
+101: pub async fn validate_totp_code_str(
+102:     user_id: &UserId,
+103:     totp_code: &str,
+104:     secret: &str,
+105:     ip: &ClientIp,
+106:     conn: &DbConn,
+107: ) -> EmptyResult {
+108:     if !totp_code.chars().all(char::is_numeric) {
+109:         err!("TOTP code is not a number");
+110:     }
+111: 
+112:     validate_totp_code(user_id, totp_code, secret, ip, conn).await
+113: }
+114: 
+115: pub async fn validate_totp_code(
+116:     user_id: &UserId,
+117:     totp_code: &str,
+118:     secret: &str,
+119:     ip: &ClientIp,
+120:     conn: &DbConn,
+121: ) -> EmptyResult {
+122:     use totp_lite::{Sha1, totp_custom};
+123: 
+124:     let Ok(decoded_secret) = BASE32.decode(secret.as_bytes()) else {
+125:         err!("Invalid TOTP secret")
+126:     };
+127: 
+128:     let mut twofactor = match TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Authenticator as i32, conn).await
+129:     {
+130:         Some(tf) => tf,
+131:         _ => TwoFactor::new(user_id.clone(), TwoFactorType::Authenticator, secret.to_owned()),
+132:     };
+133: 
+134:     // The amount of steps back and forward in time
+135:     // Also check if we need to disable time drifted TOTP codes.
+136:     // If that is the case, we set the steps to 0 so only the current TOTP is valid.
+137:     let steps = i64::from(!CONFIG.authenticator_disable_time_drift());
+138: 
+139:     // Get the current system time in UNIX Epoch (UTC)
+140:     let current_time = chrono::Utc::now();
+141:     let current_timestamp = current_time.timestamp();
+142: 
+143:     for step in -steps..=steps {
+144:         let time_step = current_timestamp / 30i64 + step;
+145: 
+146:         // We need to calculate the time offsite and cast it as an u64.
+147:         // Since we only have times into the future and the totp generator needs an u64 instead of the default i64.
+148:         let time: u64 = (current_timestamp + step * 30i64).cast_unsigned();
+149:         let generated = totp_custom::<Sha1>(30, 6, &decoded_secret, time);
+150: 
+151:         // Check the given code equals the generated and if the time_step is larger then the one last used.
+152:         if generated == totp_code && time_step > twofactor.last_used {
+153:             // If the step does not equals 0 the time is drifted either server or client side.
+154:             if step != 0 {
+155:                 warn!("TOTP Time drift detected. The step offset is {step}");
+156:             }
+157: 
+158:             // Save the last used time step so only totp time steps higher then this one are allowed.
+159:             // This will also save a newly created twofactor if the code is correct.
+160:             twofactor.last_used = time_step;
+161:             twofactor.save(conn).await?;
+162:             return Ok(());
+163:         } else if generated == totp_code && time_step <= twofactor.last_used {
+164:             warn!("This TOTP or a TOTP code within {steps} steps back or forward has already been used!");
+165:             err!(
+166:                 format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
+167:                 ErrorEvent {
+168:                     event: EventType::UserFailedLogIn2fa
+169:                 }
+170:             );
+171:         }
+172:     }
+173: 
+174:     // Else no valid code received, deny access
+175:     err!(
+176:         format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
+177:         ErrorEvent {
+178:             event: EventType::UserFailedLogIn2fa
+179:         }
+180:     );
+181: }
+182: 
+183: #[derive(Debug, Deserialize)]
+184: #[serde(rename_all = "camelCase")]
+185: struct DisableAuthenticatorData {
