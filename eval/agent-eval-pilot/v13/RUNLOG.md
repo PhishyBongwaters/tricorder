@@ -28,6 +28,27 @@ One repo until satisfied. Sequential legs, one agent at a time.
    Ground truth: `src/cmd/compile/internal/ssagen/ssa.go:302 func buildssa`.
 2. Further legs (G1/G3 repeats, B-legs) only after leg 1 is graded.
 
+## Scope lock (2026-09-23)
+
+The eval ASSUMES the mapping is done. It does NOT test the ability or
+time to map (scan, rank, render) — it tests USING a prepopulated map
+(detect/symbols/detail efficiency, agent-side). Prescan is sunk and
+uncharged; serve-side speed is product work, out of scope for legs.
+MAP-skip on Go is therefore not a workaround: rung-1 render cost is
+mapping-time by this definition, and no pilot A-leg ever received a MAP
+anyway. Legs measure retrieval given the index, nothing else.
+
+## Deferred product work (NOT built mid-series — would move the ground)
+
+- Ranks precompute: store unpersonalized PageRank in `file_ranks` at scan
+  time (stamped with meta signature + extractor version), serve from the
+  table when no personalization. Kills per-MAP power iteration.
+- Map budget scaling: default budget `max(2048, n_files * R)` with
+  tunable R (initial R=0.5 reproduces today's 8192 default at Go scale,
+  floors small repos at 2048). Explicit `--map-tokens` always wins; legs
+  keep passing explicit budgets.
+- Both recorded here so they survive; build after the series.
+
 ## Records per leg (commit each)
 
 - `v13/<leg>/transcript.md` — agent's commands in order + final answer
