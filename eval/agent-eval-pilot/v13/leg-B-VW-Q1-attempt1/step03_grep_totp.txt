@@ -1,0 +1,47 @@
+src/api/admin.rs:512:    user.totp_recover = None;
+src/api/core/two_factor/authenticator.rs:37:    // It should help prevent TOTP disclosure if someone keeps their vault unlocked.
+src/api/core/two_factor/authenticator.rs:75:        err!("Invalid totp secret")
+src/api/core/two_factor/authenticator.rs:83:    validate_totp_code(&user.uuid, &token, &key.to_uppercase(), &headers.ip, &conn).await?;
+src/api/core/two_factor/authenticator.rs:101:pub async fn validate_totp_code_str(
+src/api/core/two_factor/authenticator.rs:103:    totp_code: &str,
+src/api/core/two_factor/authenticator.rs:108:    if !totp_code.chars().all(char::is_numeric) {
+src/api/core/two_factor/authenticator.rs:109:        err!("TOTP code is not a number");
+src/api/core/two_factor/authenticator.rs:112:    validate_totp_code(user_id, totp_code, secret, ip, conn).await
+src/api/core/two_factor/authenticator.rs:115:pub async fn validate_totp_code(
+src/api/core/two_factor/authenticator.rs:117:    totp_code: &str,
+src/api/core/two_factor/authenticator.rs:122:    use totp_lite::{Sha1, totp_custom};
+src/api/core/two_factor/authenticator.rs:125:        err!("Invalid TOTP secret")
+src/api/core/two_factor/authenticator.rs:135:    // Also check if we need to disable time drifted TOTP codes.
+src/api/core/two_factor/authenticator.rs:136:    // If that is the case, we set the steps to 0 so only the current TOTP is valid.
+src/api/core/two_factor/authenticator.rs:147:        // Since we only have times into the future and the totp generator needs an u64 instead of the default i64.
+src/api/core/two_factor/authenticator.rs:149:        let generated = totp_custom::<Sha1>(30, 6, &decoded_secret, time);
+src/api/core/two_factor/authenticator.rs:152:        if generated == totp_code && time_step > twofactor.last_used {
+src/api/core/two_factor/authenticator.rs:155:                warn!("TOTP Time drift detected. The step offset is {step}");
+src/api/core/two_factor/authenticator.rs:158:            // Save the last used time step so only totp time steps higher then this one are allowed.
+src/api/core/two_factor/authenticator.rs:163:        } else if generated == totp_code && time_step <= twofactor.last_used {
+src/api/core/two_factor/authenticator.rs:164:            warn!("This TOTP or a TOTP code within {steps} steps back or forward has already been used!");
+src/api/core/two_factor/authenticator.rs:166:                format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
+src/api/core/two_factor/authenticator.rs:176:        format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
+src/api/core/two_factor/authenticator.rs:206:            err!(format!("TOTP key for user {} does not match recorded value, cannot deactivate", &user.email));
+src/api/core/two_factor/mod.rs:116:        "code": user.totp_recover,
+src/api/core/two_factor/mod.rs:122:    if user.totp_recover.is_none() {
+src/api/core/two_factor/mod.rs:123:        let totp_recover = crypto::encode_random_bytes::<20>(&BASE32);
+src/api/core/two_factor/mod.rs:124:        user.totp_recover = Some(totp_recover);
+src/api/identity.rs:828:            authenticator::validate_totp_code_str(&user.uuid, twofactor_code, &selected_data?, ip, conn).await?;
+src/api/identity.rs:887:            user.totp_recover = None;
+src/config.rs:720:        /// Disable authenticator time drifted codes to be valid |> Enabling this only allows the current TOTP code to be valid
+src/config.rs:721:        /// TOTP codes of the previous and next 30 seconds will be invalid.
+src/db/models/cipher.rs:339:            // We have UseTotp set to true by default within the Organization model.
+src/db/models/cipher.rs:340:            // This variable together with UsersGetPremium is used to show or hide the TOTP counter.
+src/db/models/cipher.rs:341:            "organizationUseTotp": true,
+src/db/models/organization.rs:211:            "useTotp": true,
+src/db/models/organization.rs:488:            "useTotp": true,
+src/db/models/user.rs:52:    #[diesel(column_name = "totp_secret")] // Note, this is only added to the UserDb structs, not to User
+src/db/models/user.rs:53:    _totp_secret: Option<String>,
+src/db/models/user.rs:54:    pub totp_recover: Option<String>,
+src/db/models/user.rs:141:            _totp_secret: None,
+src/db/models/user.rs:142:            totp_recover: None,
+src/db/models/user.rs:170:        if let Some(ref totp_recover) = self.totp_recover {
+src/db/models/user.rs:171:            crypto::ct_eq(recovery_code, totp_recover.to_lowercase())
+src/db/schema.rs:207:        totp_secret -> Nullable<Text>,
+src/db/schema.rs:208:        totp_recover -> Nullable<Text>,

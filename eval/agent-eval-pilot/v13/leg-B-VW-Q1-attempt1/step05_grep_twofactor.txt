@@ -1,0 +1,385 @@
+src/api/admin.rs:19:        core::{log_event, two_factor},
+src/api/admin.rs:28:            MembershipType, OrgPolicy, Organization, OrganizationId, SsoUser, TwoFactor, User, UserId,
+src/api/admin.rs:510:    TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
+src/api/admin.rs:511:    two_factor::enforce_2fa_policy(&user, &ACTING_ADMIN_USER.into(), 14, &token.ip.ip, &conn).await?;
+src/api/core/accounts.rs:15:        core::{accept_org_invite, log_user_event, two_factor::email},
+src/api/core/accounts.rs:253:        return OrgPolicy::is_enabled_for_member(&member_id, OrgPolicyType::TwoFactorAuthentication, conn).await;
+src/api/core/emergency_access.rs:16:            Membership, MembershipType, OrgPolicy, TwoFactor, User, UserId,
+src/api/core/emergency_access.rs:663:    // Disable TwoFactor providers since they will otherwise block logins
+src/api/core/emergency_access.rs:664:    TwoFactor::delete_all_by_user(&grantor_user.uuid, &conn).await?;
+src/api/core/mod.rs:2:pub mod two_factor;
+src/api/core/mod.rs:47:    routes.append(&mut two_factor::routes());
+src/api/core/organizations.rs:12:        core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
+src/api/core/organizations.rs:2116:    // When enabling the TwoFactorAuthentication policy, revoke all members that do not have 2FA
+src/api/core/organizations.rs:2117:    if pol_type_enum == OrgPolicyType::TwoFactorAuthentication && data.enabled {
+src/api/core/organizations.rs:2118:        two_factor::enforce_2fa_policy_for_org(
+src/api/core/organizations.rs:2936:    reset_two_factor: bool,
+src/api/core/organizations.rs:2976:    if req.reset_master_password && !req.reset_two_factor {
+src/api/core/sends.rs:37:        twofactor_remember: None,
+src/api/core/two_factor/authenticator.rs:5:    api::{EmptyResult, JsonResult, PasswordOrOtpData, core::log_user_event, core::two_factor::generate_recover_code},
+src/api/core/two_factor/authenticator.rs:10:        models::{EventType, TwoFactor, TwoFactorType, UserId},
+src/api/core/two_factor/authenticator.rs:28:    let type_ = TwoFactorType::Authenticator as i32;
+src/api/core/two_factor/authenticator.rs:29:    let twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await;
+src/api/core/two_factor/authenticator.rs:31:    let (enabled, key) = match twofactor {
+src/api/core/two_factor/authenticator.rs:39:    // See: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Auth/Controllers/TwoFactorController.cs#L94
+src/api/core/two_factor/authenticator.rs:82:    // Validate the token provided with the key, and save new twofactor
+src/api/core/two_factor/authenticator.rs:128:    let mut twofactor = match TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Authenticator as i32, conn).await
+src/api/core/two_factor/authenticator.rs:131:        _ => TwoFactor::new(user_id.clone(), TwoFactorType::Authenticator, secret.to_owned()),
+src/api/core/two_factor/authenticator.rs:152:        if generated == totp_code && time_step > twofactor.last_used {
+src/api/core/two_factor/authenticator.rs:159:            // This will also save a newly created twofactor if the code is correct.
+src/api/core/two_factor/authenticator.rs:160:            twofactor.last_used = time_step;
+src/api/core/two_factor/authenticator.rs:161:            twofactor.save(conn).await?;
+src/api/core/two_factor/authenticator.rs:163:        } else if generated == totp_code && time_step <= twofactor.last_used {
+src/api/core/two_factor/authenticator.rs:200:    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
+src/api/core/two_factor/authenticator.rs:201:        if twofactor.data == data.key {
+src/api/core/two_factor/authenticator.rs:202:            twofactor.delete(&conn).await?;
+src/api/core/two_factor/authenticator.rs:210:    if TwoFactor::find_by_user(&user.uuid, &conn).await.is_empty() {
+src/api/core/two_factor/duo.rs:9:        core::two_factor::generate_recover_code,
+src/api/core/two_factor/duo.rs:15:        models::{EventType, TwoFactor, TwoFactorType, User, UserId},
+src/api/core/two_factor/duo.rs:179:    let type_ = TwoFactorType::Duo;
+src/api/core/two_factor/duo.rs:180:    let twofactor = TwoFactor::new(user.uuid.clone(), type_, data_str);
+src/api/core/two_factor/duo.rs:181:    twofactor.save(&conn).await?;
+src/api/core/two_factor/duo.rs:233:    let type_ = TwoFactorType::Duo as i32;
+src/api/core/two_factor/duo.rs:236:    let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, type_, conn).await else {
+src/api/core/two_factor/duo.rs:241:    if let Ok(data) = serde_json::from_str(&twofactor.data) {
+src/api/core/two_factor/duo_oidc.rs:13:    api::{EmptyResult, core::two_factor::duo::get_duo_keys_email},
+src/api/core/two_factor/duo_oidc.rs:17:        models::{DeviceId, EventType, TwoFactorDuoContext},
+src/api/core/two_factor/duo_oidc.rs:41:// If increasing this above 64, also increase the size of the twofactor_duo_ctx.state and
+src/api/core/two_factor/duo_oidc.rs:42:// twofactor_duo_ctx.nonce database columns for postgres and mariadb.
+src/api/core/two_factor/duo_oidc.rs:322:    let ctx: TwoFactorDuoContext = match TwoFactorDuoContext::find_by_state(state, conn).await {
+src/api/core/two_factor/duo_oidc.rs:349:        TwoFactorDuoContext::purge_expired_duo_contexts(&conn).await;
+src/api/core/two_factor/duo_oidc.rs:409:    match TwoFactorDuoContext::save(state.as_str(), email, nonce.as_str(), CTX_VALIDITY_SECS, conn).await {
+src/api/core/two_factor/duo_oidc.rs:419:    two_factor_token: &str,
+src/api/core/two_factor/duo_oidc.rs:425:    let split: Vec<&str> = two_factor_token.split('|').collect();
+src/api/core/two_factor/email.rs:8:        core::{log_user_event, two_factor::generate_recover_code},
+src/api/core/two_factor/email.rs:14:        models::{AuthRequest, AuthRequestId, DeviceId, EventType, TwoFactor, TwoFactorType, User, UserId},
+src/api/core/two_factor/email.rs:110:    let type_ = TwoFactorType::Email as i32;
+src/api/core/two_factor/email.rs:111:    let mut twofactor = TwoFactor::find_by_user_and_type(user_id, type_, conn).await.map_res("Two factor not found")?;
+src/api/core/two_factor/email.rs:115:    let mut twofactor_data = EmailTokenData::from_json(&twofactor.data)?;
+src/api/core/two_factor/email.rs:116:    twofactor_data.set_token(generated_token);
+src/api/core/two_factor/email.rs:117:    twofactor.data = twofactor_data.to_json();
+src/api/core/two_factor/email.rs:118:    twofactor.save(conn).await?;
+src/api/core/two_factor/email.rs:120:    mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?).await?;
+src/api/core/two_factor/email.rs:134:        match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email as i32, &conn).await {
+src/api/core/two_factor/email.rs:136:                let twofactor_data = EmailTokenData::from_json(&x.data)?;
+src/api/core/two_factor/email.rs:137:                (true, json!(twofactor_data.email))
+src/api/core/two_factor/email.rs:175:    let type_ = TwoFactorType::Email as i32;
+src/api/core/two_factor/email.rs:177:    if let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
+src/api/core/two_factor/email.rs:182:    let twofactor_data = EmailTokenData::new(data.email, generated_token);
+src/api/core/two_factor/email.rs:185:    let twofactor = TwoFactor::new(user.uuid, TwoFactorType::EmailVerificationChallenge, twofactor_data.to_json());
+src/api/core/two_factor/email.rs:186:    twofactor.save(&conn).await?;
+src/api/core/two_factor/email.rs:188:    mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?).await?;
+src/api/core/two_factor/email.rs:216:    let type_ = TwoFactorType::EmailVerificationChallenge as i32;
+src/api/core/two_factor/email.rs:217:    let mut twofactor =
+src/api/core/two_factor/email.rs:218:        TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await.map_res("Two factor not found")?;
+src/api/core/two_factor/email.rs:220:    let mut email_data = EmailTokenData::from_json(&twofactor.data)?;
+src/api/core/two_factor/email.rs:231:    twofactor.atype = TwoFactorType::Email as i32;
+src/api/core/two_factor/email.rs:232:    twofactor.data = email_data.to_json();
+src/api/core/two_factor/email.rs:233:    twofactor.save(&conn).await?;
+src/api/core/two_factor/email.rs:246:/// Validate the email code when used as TwoFactor token mechanism
+src/api/core/two_factor/email.rs:255:    let mut twofactor = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Email as i32, conn)
+src/api/core/two_factor/email.rs:272:        twofactor.data = email_data.to_json();
+src/api/core/two_factor/email.rs:273:        twofactor.save(conn).await?;
+src/api/core/two_factor/email.rs:284:    twofactor.data = email_data.to_json();
+src/api/core/two_factor/email.rs:285:    twofactor.save(conn).await?;
+src/api/core/two_factor/email.rs:301:/// Data stored in the TwoFactor table in the db
+src/api/core/two_factor/email.rs:357:    let twofactor_data = EmailTokenData::new(user.email.clone(), String::new());
+src/api/core/two_factor/email.rs:358:    let twofactor = TwoFactor::new(user.uuid.clone(), TwoFactorType::Email, twofactor_data.to_json());
+src/api/core/two_factor/email.rs:359:    twofactor.save(conn).await
+src/api/core/two_factor/mod.rs:19:            DeviceType, EventType, Membership, MembershipType, OrgPolicyType, Organization, OrganizationId, TwoFactor,
+src/api/core/two_factor/mod.rs:20:            TwoFactorIncomplete, TwoFactorType, User, UserId,
+src/api/core/two_factor/mod.rs:39:pub fn is_twofactor_provider_usable(provider_type: &TwoFactorType, provider_data: Option<&str>) -> bool {
+src/api/core/two_factor/mod.rs:48:        TwoFactorType::Authenticator | TwoFactorType::RecoveryCode => true,
+src/api/core/two_factor/mod.rs:49:        TwoFactorType::Email => CONFIG._enable_email_2fa(),
+src/api/core/two_factor/mod.rs:50:        TwoFactorType::Duo | TwoFactorType::OrganizationDuo => {
+src/api/core/two_factor/mod.rs:56:        TwoFactorType::YubiKey => {
+src/api/core/two_factor/mod.rs:59:        TwoFactorType::Webauthn => CONFIG.is_webauthn_2fa_supported(),
+src/api/core/two_factor/mod.rs:60:        TwoFactorType::Remember => !CONFIG.disable_2fa_remember(),
+src/api/core/two_factor/mod.rs:61:        TwoFactorType::U2f
+src/api/core/two_factor/mod.rs:62:        | TwoFactorType::U2fRegisterChallenge
+src/api/core/two_factor/mod.rs:63:        | TwoFactorType::U2fLoginChallenge
+src/api/core/two_factor/mod.rs:64:        | TwoFactorType::EmailVerificationChallenge
+src/api/core/two_factor/mod.rs:65:        | TwoFactorType::WebauthnRegisterChallenge
+src/api/core/two_factor/mod.rs:66:        | TwoFactorType::WebauthnLoginChallenge
+src/api/core/two_factor/mod.rs:67:        | TwoFactorType::ProtectedActions => false,
+src/api/core/two_factor/mod.rs:73:        get_twofactor,
+src/api/core/two_factor/mod.rs:75:        disable_twofactor,
+src/api/core/two_factor/mod.rs:76:        disable_twofactor_put,
+src/api/core/two_factor/mod.rs:91:async fn get_twofactor(headers: Headers, conn: DbConn) -> Json<Value> {
+src/api/core/two_factor/mod.rs:92:    let twofactors = TwoFactor::find_by_user(&headers.user.uuid, &conn).await;
+src/api/core/two_factor/mod.rs:93:    let twofactors_json: Vec<Value> = twofactors
+src/api/core/two_factor/mod.rs:96:            let provider_type = TwoFactorType::from_i32(tf.atype)?;
+src/api/core/two_factor/mod.rs:97:            is_twofactor_provider_usable(&provider_type, Some(&tf.data)).then(|| TwoFactor::to_json_provider(tf))
+src/api/core/two_factor/mod.rs:102:        "data": twofactors_json,
+src/api/core/two_factor/mod.rs:131:struct DisableTwoFactorData {
+src/api/core/two_factor/mod.rs:138:async fn disable_twofactor(data: Json<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
+src/api/core/two_factor/mod.rs:139:    let data: DisableTwoFactorData = data.into_inner();
+src/api/core/two_factor/mod.rs:152:    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
+src/api/core/two_factor/mod.rs:153:        twofactor.delete(&conn).await?;
+src/api/core/two_factor/mod.rs:158:    if TwoFactor::find_by_user(&user.uuid, &conn).await.is_empty() {
+src/api/core/two_factor/mod.rs:170:async fn disable_twofactor_put(data: Json<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
+src/api/core/two_factor/mod.rs:171:    disable_twofactor(data, headers, conn).await
+src/api/core/two_factor/mod.rs:181:    for member in Membership::find_by_user_and_policy(&user.uuid, OrgPolicyType::TwoFactorAuthentication, conn).await {
+src/api/core/two_factor/mod.rs:218:        if member.atype < MembershipType::Admin && TwoFactor::find_by_user(&member.user_uuid, conn).await.is_empty() {
+src/api/core/two_factor/mod.rs:258:    let incomplete_logins = TwoFactorIncomplete::find_logins_before(&time_before, &conn).await;
+src/api/core/two_factor/protected_actions.rs:11:        models::{TwoFactor, TwoFactorType, UserId},
+src/api/core/two_factor/protected_actions.rs:21:/// Data stored in the TwoFactor table in the db
+src/api/core/two_factor/protected_actions.rs:75:    if let Some(pa) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::ProtectedActions as i32, &conn).await
+src/api/core/two_factor/protected_actions.rs:91:    let twofactor = TwoFactor::new(user.uuid, TwoFactorType::ProtectedActions, pa_data.to_json());
+src/api/core/two_factor/protected_actions.rs:92:    twofactor.save(&conn).await?;
+src/api/core/two_factor/protected_actions.rs:128:    let mut pa = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::ProtectedActions as i32, conn)
+src/api/core/two_factor/webauthn.rs:21:        core::{log_user_event, two_factor::generate_recover_code},
+src/api/core/two_factor/webauthn.rs:27:        models::{EventType, TwoFactor, TwoFactorType, UserId},
+src/api/core/two_factor/webauthn.rs:156:    let type_ = TwoFactorType::WebauthnRegisterChallenge;
+src/api/core/two_factor/webauthn.rs:157:    TwoFactor::new(user.uuid.clone(), type_, serde_json::to_string(&state)?).save(&conn).await?;
+src/api/core/two_factor/webauthn.rs:268:    let type_ = TwoFactorType::WebauthnRegisterChallenge as i32;
+src/api/core/two_factor/webauthn.rs:269:    let state = if let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
+src/api/core/two_factor/webauthn.rs:291:    TwoFactor::new(user.uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&registrations)?)
+src/api/core/two_factor/webauthn.rs:326:        TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::Webauthn as i32, &conn).await
+src/api/core/two_factor/webauthn.rs:343:    if let Some(mut u2f) = TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::U2f as i32, &conn).await
+src/api/core/two_factor/webauthn.rs:371:    let type_ = TwoFactorType::Webauthn as i32;
+src/api/core/two_factor/webauthn.rs:372:    match TwoFactor::find_by_user_and_type(user_id, type_, conn).await {
+src/api/core/two_factor/webauthn.rs:410:    TwoFactor::new(user_id.clone(), TwoFactorType::WebauthnLoginChallenge, serde_json::to_string(&state)?)
+src/api/core/two_factor/webauthn.rs:419:    let type_ = TwoFactorType::WebauthnLoginChallenge as i32;
+src/api/core/two_factor/webauthn.rs:420:    let mut state = if let Some(tf) = TwoFactor::find_by_user_and_type(user_id, type_, conn).await {
+src/api/core/two_factor/webauthn.rs:451:                TwoFactor::new(user_id.clone(), TwoFactorType::Webauthn, serde_json::to_string(&registrations)?)
+src/api/core/two_factor/yubikey.rs:13:        core::{log_user_event, two_factor::generate_recover_code},
+src/api/core/two_factor/yubikey.rs:18:        models::{EventType, TwoFactor, TwoFactorType},
+src/api/core/two_factor/yubikey.rs:128:    let yubikey_type = TwoFactorType::YubiKey as i32;
+src/api/core/two_factor/yubikey.rs:130:    let r = TwoFactor::find_by_user_and_type(user_id, yubikey_type, &conn).await;
+src/api/core/two_factor/yubikey.rs:164:        match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::YubiKey as i32, &conn).await {
+src/api/core/two_factor/yubikey.rs:166:            None => TwoFactor::new(user.uuid.clone(), TwoFactorType::YubiKey, String::new()),
+src/api/core/two_factor/yubikey.rs:214:pub async fn validate_yubikey_login(response: &str, twofactor_data: &str) -> EmptyResult {
+src/api/core/two_factor/yubikey.rs:219:    let yubikey_metadata: YubikeyMetadata = serde_json::from_str(twofactor_data).expect("Can't parse Yubikey Metadata");
+src/api/identity.rs:19:            two_factor::{
+src/api/identity.rs:20:                authenticator, duo, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn,
+src/api/identity.rs:34:            OrganizationApiKey, OrganizationId, SendId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete,
+src/api/identity.rs:35:            TwoFactorType, User, UserId,
+src/api/identity.rs:282:    let (user, mut device, twofactor_token, sso_user) = match user_with_sso {
+src/api/identity.rs:330:            let twofactor_token = twofactor_auth(&mut user, &data, &mut device, ip, client_version, conn).await?;
+src/api/identity.rs:349:            (user, device, twofactor_token, sso_user)
+src/api/identity.rs:359:    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
+src/api/identity.rs:477:    let twofactor_token = twofactor_auth(&mut user, &data, &mut device, ip, client_version, conn).await?;
+src/api/identity.rs:481:    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
+src/api/identity.rs:488:    twofactor_token: Option<String>,
+src/api/identity.rs:576:    if let Some(token) = twofactor_token {
+src/api/identity.rs:577:        result["TwoFactorToken"] = Value::String(token);
+src/api/identity.rs:775:async fn twofactor_auth(
+src/api/identity.rs:783:    let twofactors = TwoFactor::find_by_user(&user.uuid, conn).await;
+src/api/identity.rs:785:    // No twofactor token if twofactor is disabled
+src/api/identity.rs:786:    if twofactors.is_empty() {
+src/api/identity.rs:791:    TwoFactorIncomplete::mark_incomplete(&user.uuid, &device.uuid, &device.name, device.atype, ip, conn).await?;
+src/api/identity.rs:793:    let twofactor_ids: Vec<_> = twofactors
+src/api/identity.rs:796:            let provider_type = TwoFactorType::from_i32(tf.atype)?;
+src/api/identity.rs:797:            (tf.enabled && is_twofactor_provider_usable(&provider_type, Some(&tf.data))).then_some(tf.atype)
+src/api/identity.rs:800:    if twofactor_ids.is_empty() {
+src/api/identity.rs:804:    let selected_id = data.two_factor_provider.unwrap_or(twofactor_ids[0]); // If we aren't given a two factor provider, assume the first one
+src/api/identity.rs:806:    if ![TwoFactorType::Remember as i32, TwoFactorType::RecoveryCode as i32].contains(&selected_id)
+src/api/identity.rs:807:        && !twofactor_ids.contains(&selected_id)
+src/api/identity.rs:810:            json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
+src/api/identity.rs:815:    let Some(ref twofactor_code) = data.two_factor_token else {
+src/api/identity.rs:817:            json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
+src/api/identity.rs:822:    let selected_twofactor = twofactors.into_iter().find(|tf| tf.atype == selected_id && tf.enabled);
+src/api/identity.rs:824:    let selected_data = selected_data(selected_twofactor);
+src/api/identity.rs:826:    match TwoFactorType::from_i32(selected_id) {
+src/api/identity.rs:827:        Some(TwoFactorType::Authenticator) => {
+src/api/identity.rs:828:            authenticator::validate_totp_code_str(&user.uuid, twofactor_code, &selected_data?, ip, conn).await?;
+src/api/identity.rs:830:        Some(TwoFactorType::Webauthn) => webauthn::validate_webauthn_login(&user.uuid, twofactor_code, conn).await?,
+src/api/identity.rs:831:        Some(TwoFactorType::YubiKey) => yubikey::validate_yubikey_login(twofactor_code, &selected_data?).await?,
+src/api/identity.rs:832:        Some(TwoFactorType::Duo) => {
+src/api/identity.rs:835:                duo::validate_duo_login(&user.email, twofactor_code, conn).await?;
+src/api/identity.rs:840:                    twofactor_code,
+src/api/identity.rs:848:        Some(TwoFactorType::Email) => {
+src/api/identity.rs:849:            email::validate_email_code_str(&user.uuid, twofactor_code, &selected_data?, &ip.ip, conn).await?;
+src/api/identity.rs:851:        Some(TwoFactorType::Remember) => {
+src/api/identity.rs:852:            match device.twofactor_remember {
+src/api/identity.rs:857:                        && (crypto::ct_eq(token, twofactor_code)
+src/api/identity.rs:858:                            && auth::decode_2fa_remember(twofactor_code)
+src/api/identity.rs:861:                    // Always delete the current twofactor remember token here if it exists
+src/api/identity.rs:862:                    if device.twofactor_remember.is_some() {
+src/api/identity.rs:863:                        device.delete_twofactor_remember();
+src/api/identity.rs:868:                        json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
+src/api/identity.rs:874:        Some(TwoFactorType::RecoveryCode) => {
+src/api/identity.rs:876:            if !user.check_valid_recovery_code(twofactor_code) {
+src/api/identity.rs:880:            // Remove all twofactors from the user
+src/api/identity.rs:881:            TwoFactor::delete_all_by_user(&user.uuid, conn).await?;
+src/api/identity.rs:886:            // Remove the recovery code, not needed without twofactors
+src/api/identity.rs:898:    TwoFactorIncomplete::mark_complete(&user.uuid, &device.uuid, conn).await?;
+src/api/identity.rs:900:    let remember = data.two_factor_remember.unwrap_or(0);
+src/api/identity.rs:901:    let two_factor = if !CONFIG.disable_2fa_remember() && remember == 1 {
+src/api/identity.rs:902:        Some(device.refresh_twofactor_remember())
+src/api/identity.rs:906:    Ok(two_factor)
+src/api/identity.rs:909:fn selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
+src/api/identity.rs:913:async fn json_err_twofactor(
+src/api/identity.rs:923:        "TwoFactorProviders" : providers.iter().map(ToString::to_string).collect::<Vec<String>>(),
+src/api/identity.rs:924:        "TwoFactorProviders2" : {}, // { "0" : null }
+src/api/identity.rs:931:        result["TwoFactorProviders2"][provider.to_string()] = Value::Null;
+src/api/identity.rs:933:        match TwoFactorType::from_i32(*provider) {
+src/api/identity.rs:934:            Some(TwoFactorType::Webauthn) if CONFIG.is_webauthn_2fa_supported() => {
+src/api/identity.rs:936:                result["TwoFactorProviders2"][provider.to_string()] = request.0;
+src/api/identity.rs:939:            Some(TwoFactorType::Duo) => {
+src/api/identity.rs:949:                    result["TwoFactorProviders2"][provider.to_string()] = json!({
+src/api/identity.rs:963:                    result["TwoFactorProviders2"][provider.to_string()] = json!({
+src/api/identity.rs:969:            Some(tf_type @ TwoFactorType::YubiKey) => {
+src/api/identity.rs:970:                let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, tf_type as i32, conn).await else {
+src/api/identity.rs:974:                let yubikey_metadata: yubikey::YubikeyMetadata = serde_json::from_str(&twofactor.data)?;
+src/api/identity.rs:976:                result["TwoFactorProviders2"][provider.to_string()] = json!({
+src/api/identity.rs:981:            Some(tf_type @ TwoFactorType::Email) => {
+src/api/identity.rs:982:                let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, tf_type as i32, conn).await else {
+src/api/identity.rs:983:                    err!("No twofactor email registered")
+src/api/identity.rs:999:                let email_data = email::EmailTokenData::from_json(&twofactor.data)?;
+src/api/identity.rs:1000:                result["TwoFactorProviders2"][provider.to_string()] = json!({
+src/api/identity.rs:1007:                TwoFactorType::Authenticator
+src/api/identity.rs:1008:                | TwoFactorType::EmailVerificationChallenge
+src/api/identity.rs:1009:                | TwoFactorType::OrganizationDuo
+src/api/identity.rs:1010:                | TwoFactorType::ProtectedActions
+src/api/identity.rs:1011:                | TwoFactorType::RecoveryCode
+src/api/identity.rs:1012:                | TwoFactorType::Remember
+src/api/identity.rs:1013:                | TwoFactorType::U2f
+src/api/identity.rs:1014:                | TwoFactorType::U2fLoginChallenge
+src/api/identity.rs:1015:                | TwoFactorType::U2fRegisterChallenge
+src/api/identity.rs:1016:                | TwoFactorType::Webauthn
+src/api/identity.rs:1017:                | TwoFactorType::WebauthnLoginChallenge
+src/api/identity.rs:1018:                | TwoFactorType::WebauthnRegisterChallenge,
+src/api/identity.rs:1147:    #[field(name = uncased("two_factor_provider"))]
+src/api/identity.rs:1148:    #[field(name = uncased("twofactorprovider"))]
+src/api/identity.rs:1149:    two_factor_provider: Option<i32>,
+src/api/identity.rs:1150:    #[field(name = uncased("two_factor_token"))]
+src/api/identity.rs:1151:    #[field(name = uncased("twofactortoken"))]
+src/api/identity.rs:1152:    two_factor_token: Option<String>,
+src/api/identity.rs:1153:    #[field(name = uncased("two_factor_remember"))]
+src/api/identity.rs:1154:    #[field(name = uncased("twofactorremember"))]
+src/api/identity.rs:1155:    two_factor_remember: Option<i32>,
+src/api/mod.rs:20:    core::two_factor::send_incomplete_2fa_notifications,
+src/api/mod.rs:62:        use crate::api::core::two_factor::protected_actions::validate_protected_action_otp;
+src/auth.rs:175:pub fn decode_2fa_remember(token: &str) -> Result<TwoFactorRememberClaims, Error> {
+src/auth.rs:460:pub struct TwoFactorRememberClaims {
+src/auth.rs:473:pub fn generate_2fa_remember_claims(device_uuid: DeviceId, user_uuid: UserId) -> TwoFactorRememberClaims {
+src/auth.rs:475:    TwoFactorRememberClaims {
+src/config.rs:1763:    reg!("email/twofactor_email", ".html");
+src/db/models/device.rs:35:    pub twofactor_remember: Option<String>,
+src/db/models/device.rs:55:            twofactor_remember: None,
+src/db/models/device.rs:76:    pub fn refresh_twofactor_remember(&mut self) -> String {
+src/db/models/device.rs:79:        let two_factor_remember_claim = generate_2fa_remember_claims(self.uuid.clone(), self.user_uuid.clone());
+src/db/models/device.rs:80:        let two_factor_remember_string = encode_jwt(&two_factor_remember_claim);
+src/db/models/device.rs:81:        self.twofactor_remember = Some(two_factor_remember_string.clone());
+src/db/models/device.rs:83:        two_factor_remember_string
+src/db/models/device.rs:86:    pub fn delete_twofactor_remember(&mut self) {
+src/db/models/device.rs:87:        self.twofactor_remember = None;
+src/db/models/mod.rs:16:mod two_factor;
+src/db/models/mod.rs:17:mod two_factor_duo_context;
+src/db/models/mod.rs:18:mod two_factor_incomplete;
+src/db/models/mod.rs:39:pub use self::two_factor::{TwoFactor, TwoFactorType};
+src/db/models/mod.rs:40:pub use self::two_factor_duo_context::TwoFactorDuoContext;
+src/db/models/mod.rs:41:pub use self::two_factor_incomplete::TwoFactorIncomplete;
+src/db/models/org_policy.rs:8:    api::{EmptyResult, core::two_factor},
+src/db/models/org_policy.rs:16:use super::{Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId, TwoFactor, UserId};
+src/db/models/org_policy.rs:32:    TwoFactorAuthentication = 0,
+src/db/models/org_policy.rs:285:            // Enforce TwoFactor/TwoStep login
+src/db/models/org_policy.rs:286:            if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::TwoFactorAuthentication, conn).await
+src/db/models/org_policy.rs:288:                && TwoFactor::find_by_user(&m.user_uuid, conn).await.is_empty()
+src/db/models/org_policy.rs:291:                    two_factor::email::find_and_activate_email_2fa(&m.user_uuid, conn).await?;
+src/db/models/organization.rs:28:    OrgPolicyType, TwoFactor, User, UserId,
+src/db/models/organization.rs:559:        let twofactor_enabled = !TwoFactor::find_by_user(&user.uuid, conn).await.is_empty();
+src/db/models/organization.rs:665:            "twoFactorEnabled": twofactor_enabled,
+src/db/models/two_factor.rs:8:    api::{EmptyResult, core::two_factor::webauthn::WebauthnRegistration},
+src/db/models/two_factor.rs:9:    db::{DbConn, schema::twofactor},
+src/db/models/two_factor.rs:16:#[diesel(table_name = twofactor)]
+src/db/models/two_factor.rs:18:pub struct TwoFactor {
+src/db/models/two_factor.rs:19:    pub uuid: TwoFactorId,
+src/db/models/two_factor.rs:28:pub enum TwoFactorType {
+src/db/models/two_factor.rs:51:impl TwoFactor {
+src/db/models/two_factor.rs:52:    pub fn new(user_uuid: UserId, atype: TwoFactorType, data: String) -> Self {
+src/db/models/two_factor.rs:54:            uuid: TwoFactorId(crate::util::get_uuid()),
+src/db/models/two_factor.rs:81:impl TwoFactor {
+src/db/models/two_factor.rs:85:                match diesel::replace_into(twofactor::table)
+src/db/models/two_factor.rs:92:                        diesel::update(twofactor::table)
+src/db/models/two_factor.rs:93:                            .filter(twofactor::uuid.eq(&self.uuid))
+src/db/models/two_factor.rs:96:                            .map_res("Error saving twofactor")
+src/db/models/two_factor.rs:99:                }.map_res("Error saving twofactor")
+src/db/models/two_factor.rs:105:                let _: () = diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(&self.user_uuid)).filter(twofactor::atype.eq(&self.atype)))
+src/db/models/two_factor.rs:107:                    .map_res("Error deleting twofactor for insert")?;
+src/db/models/two_factor.rs:109:                diesel::insert_into(twofactor::table)
+src/db/models/two_factor.rs:111:                    .on_conflict(twofactor::uuid)
+src/db/models/two_factor.rs:115:                    .map_res("Error saving twofactor")
+src/db/models/two_factor.rs:122:            diesel::delete(twofactor::table.filter(twofactor::uuid.eq(self.uuid)))
+src/db/models/two_factor.rs:124:                .map_res("Error deleting twofactor")
+src/db/models/two_factor.rs:131:            twofactor::table
+src/db/models/two_factor.rs:132:                .filter(twofactor::user_uuid.eq(user_uuid))
+src/db/models/two_factor.rs:133:                .filter(twofactor::atype.lt(1000)) // Filter implementation types
+src/db/models/two_factor.rs:135:                .expect("Error loading twofactor")
+src/db/models/two_factor.rs:142:            twofactor::table
+src/db/models/two_factor.rs:143:                .filter(twofactor::user_uuid.eq(user_uuid))
+src/db/models/two_factor.rs:144:                .filter(twofactor::atype.eq(atype))
+src/db/models/two_factor.rs:153:            diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(user_uuid)))
+src/db/models/two_factor.rs:155:                .map_res("Error deleting twofactors")
+src/db/models/two_factor.rs:161:        use crate::api::core::two_factor::webauthn::{U2FRegistration, get_webauthn_registrations};
+src/db/models/two_factor.rs:167:                twofactor::table
+src/db/models/two_factor.rs:168:                    .filter(twofactor::atype.eq(TwoFactorType::U2f as i32))
+src/db/models/two_factor.rs:170:                    .expect("Error loading twofactor")
+src/db/models/two_factor.rs:230:            TwoFactor::new(u2f.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&webauthn_regs)?)
+src/db/models/two_factor.rs:241:                twofactor::table
+src/db/models/two_factor.rs:242:                    .filter(twofactor::atype.eq(TwoFactorType::Webauthn as i32))
+src/db/models/two_factor.rs:244:                    .expect("Error loading twofactor")
+src/db/models/two_factor.rs:257:            TwoFactor::new(webauthn_factor.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&regs)?)
+src/db/models/two_factor.rs:267:pub struct TwoFactorId(String);
+src/db/models/two_factor_duo_context.rs:6:    db::{DbConn, schema::twofactor_duo_ctx},
+src/db/models/two_factor_duo_context.rs:11:#[diesel(table_name = twofactor_duo_ctx)]
+src/db/models/two_factor_duo_context.rs:13:pub struct TwoFactorDuoContext {
+src/db/models/two_factor_duo_context.rs:20:impl TwoFactorDuoContext {
+src/db/models/two_factor_duo_context.rs:23:            twofactor_duo_ctx::table.filter(twofactor_duo_ctx::state.eq(state)).first::<Self>(conn).ok()
+src/db/models/two_factor_duo_context.rs:38:            diesel::insert_into(twofactor_duo_ctx::table)
+src/db/models/two_factor_duo_context.rs:40:                    twofactor_duo_ctx::state.eq(state),
+src/db/models/two_factor_duo_context.rs:41:                    twofactor_duo_ctx::user_email.eq(user_email),
+src/db/models/two_factor_duo_context.rs:42:                    twofactor_duo_ctx::nonce.eq(nonce),
+src/db/models/two_factor_duo_context.rs:43:                    twofactor_duo_ctx::exp.eq(exp),
+src/db/models/two_factor_duo_context.rs:46:                .map_res("Error saving context to twofactor_duo_ctx")
+src/db/models/two_factor_duo_context.rs:54:            twofactor_duo_ctx::table
+src/db/models/two_factor_duo_context.rs:55:                .filter(twofactor_duo_ctx::exp.lt(now))
+src/db/models/two_factor_duo_context.rs:57:                .expect("Error finding expired contexts in twofactor_duo_ctx")
+src/db/models/two_factor_duo_context.rs:64:            diesel::delete(twofactor_duo_ctx::table.filter(twofactor_duo_ctx::state.eq(&self.state)))
+src/db/models/two_factor_duo_context.rs:66:                .map_res("Error deleting from twofactor_duo_ctx")
+src/db/models/two_factor_incomplete.rs:11:        schema::twofactor_incomplete,
+src/db/models/two_factor_incomplete.rs:17:#[diesel(table_name = twofactor_incomplete)]
+src/db/models/two_factor_incomplete.rs:19:pub struct TwoFactorIncomplete {
+src/db/models/two_factor_incomplete.rs:31:impl TwoFactorIncomplete {
+src/db/models/two_factor_incomplete.rs:53:            diesel::insert_into(twofactor_incomplete::table)
+src/db/models/two_factor_incomplete.rs:55:                    twofactor_incomplete::user_uuid.eq(user_uuid),
+src/db/models/two_factor_incomplete.rs:56:                    twofactor_incomplete::device_uuid.eq(device_uuid),
+src/db/models/two_factor_incomplete.rs:57:                    twofactor_incomplete::device_name.eq(device_name),
+src/db/models/two_factor_incomplete.rs:58:                    twofactor_incomplete::device_type.eq(device_type),
+src/db/models/two_factor_incomplete.rs:59:                    twofactor_incomplete::login_time.eq(Utc::now().naive_utc()),
+src/db/models/two_factor_incomplete.rs:60:                    twofactor_incomplete::ip_address.eq(ip.ip.to_string()),
+src/db/models/two_factor_incomplete.rs:63:                .map_res("Error adding twofactor_incomplete record")
+src/db/models/two_factor_incomplete.rs:78:            twofactor_incomplete::table
+src/db/models/two_factor_incomplete.rs:79:                .filter(twofactor_incomplete::user_uuid.eq(user_uuid))
+src/db/models/two_factor_incomplete.rs:80:                .filter(twofactor_incomplete::device_uuid.eq(device_uuid))
+src/db/models/two_factor_incomplete.rs:89:            twofactor_incomplete::table
+src/db/models/two_factor_incomplete.rs:90:                .filter(twofactor_incomplete::login_time.lt(dt))
+src/db/models/two_factor_incomplete.rs:92:                .expect("Error loading twofactor_incomplete")
+src/db/models/two_factor_incomplete.rs:104:                twofactor_incomplete::table
+src/db/models/two_factor_incomplete.rs:105:                    .filter(twofactor_incomplete::user_uuid.eq(user_uuid))
+src/db/models/two_factor_incomplete.rs:106:                    .filter(twofactor_incomplete::device_uuid.eq(device_uuid)),
+src/db/models/two_factor_incomplete.rs:109:            .map_res("Error in twofactor_incomplete::delete_by_user_and_device()")
+src/db/models/two_factor_incomplete.rs:116:            diesel::delete(twofactor_incomplete::table.filter(twofactor_incomplete::user_uuid.eq(user_uuid)))
+src/db/models/two_factor_incomplete.rs:118:                .map_res("Error in twofactor_incomplete::delete_all_by_user()")
+src/db/models/user.rs:13:        schema::{invitations, sso_users, twofactor_incomplete, users},
+src/db/models/user.rs:22:    Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
+src/db/models/user.rs:262:        let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).await.is_empty();
+src/db/models/user.rs:297:            "twoFactorEnabled": twofactor_enabled,
+src/db/models/user.rs:358:        TwoFactor::delete_all_by_user(&self.uuid, conn).await?;
+src/db/models/user.rs:359:        TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn).await?;
+src/db/models/user.rs:417:                twofactor_incomplete::table
+src/db/models/user.rs:418:                    .filter(twofactor_incomplete::device_uuid.eq(device_uuid))
+src/db/models/user.rs:419:                    .order_by(twofactor_incomplete::login_time.desc())
+src/db/models/user.rs:420:                    .select(twofactor_incomplete::user_uuid)
+src/db/schema.rs:57:        twofactor_remember -> Nullable<Text>,
+src/db/schema.rs:157:    twofactor (uuid) {
+src/db/schema.rs:168:    twofactor_incomplete (user_uuid, device_uuid) {
+src/db/schema.rs:179:    twofactor_duo_ctx (state) {
+src/db/schema.rs:369:joinable!(twofactor -> users (user_uuid));
+src/db/schema.rs:400:    twofactor,
+src/mail.rs:560:        "email/twofactor_email",
+src/main.rs:67:    WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS, core::two_factor::duo_oidc::purge_duo_contexts, purge_auth_requests,
+src/main.rs:92:    db::models::TwoFactor::migrate_u2f_to_webauthn(&pool.get().await.unwrap()).await.unwrap();
+src/main.rs:93:    db::models::TwoFactor::migrate_credential_to_passkey(&pool.get().await.unwrap()).await.unwrap();
