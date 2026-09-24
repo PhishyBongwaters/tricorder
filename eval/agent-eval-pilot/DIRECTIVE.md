@@ -58,3 +58,14 @@ warm DB (see below) and say so in the prompt.
   windows (12,747 of 17,357 tokens, 73%) after rungs 2–3 had already
   identified the file. Literal v1.1 ("a floor, not a ceiling") permitted
   it; rung-4 intent forbade it. Leg keeps its compliance-fail tag.
+
+## v1.5 (one window per file; grep justifies the second)
+
+- **One read window per file.** A second window on the same file needs a
+  locating grep first (in-file search or symbols hit naming the target
+  symbol + line) — the grep IS the substitute. Elixir attempt 2 proved it:
+  4 greps, 290 tok, zero blind second windows.
+- Evidence: A-Vue-Q1 covered state.ts 1–200 and scheduler.ts 1–199 in
+  chained ≤120-line pairs with no locating grep between windows. Per-call
+  caps held; chaining persisted at ≤200-line scale. Recorded as minor
+  exceedance, not fail.
