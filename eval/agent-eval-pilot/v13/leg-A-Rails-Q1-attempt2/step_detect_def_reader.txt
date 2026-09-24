@@ -1,0 +1,12 @@
+{
+  "results": [
+    {
+      "file": "activesupport\\test\\core_ext\\module\\attribute_accessor_test.rb",
+      "line": 38,
+      "name": "def_reader",
+      "kind": "ref",
+      "context": "activesupport\\test\\core_ext\\module\\attribute_accessor_test.rb\n  37:     assert_equal \"default_accessor_value\", @module.def_accessor\n  38:     assert_equal \"default_reader_value\", @module.def_reader\n  39:     assert_equal \"default_writer_value\", @module.class_variable_get(:@@def_writer)",
+      "quality": "fuzzy"
+    }
+  ]
+}

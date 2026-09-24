@@ -1,0 +1,80 @@
+      #   stores a symbol for later use. As explained in the previous section,
+      #   you get a warning when/if the query is executed.
+      #
+      # * Access to the reflection object of the association as in
+      #   <tt>Author.reflect_on_association(:posts)</tt> or
+      #   <tt>Author.reflect_on_all_associations</tt> does not warn.
+      #
+      # === Configuration
+      #
+      # Reporting deprecated usage can be configured:
+      #
+      #     config.active_record.deprecated_associations_options = { ... }
+      #
+      # If present, this has to be a hash with keys +:mode+ and/or +:backtrace+.
+      #
+      # ==== Mode
+      #
+      # * In +:warn+ mode, usage issues a warning that includes the
+      #   application-level place where the access happened, if any. This is the
+      #   default mode.
+      #
+      # * In +:raise+ mode, usage raises an
+      #   ActiveRecord::DeprecatedAssociationError with a similar message and a
+      #   clean backtrace in the exception object.
+      #
+      # * In +:notify+ mode, a <tt>deprecated_association.active_record</tt>
+      #   Active Support notification is published. The event payload has the
+      #   association reflection (+:reflection+), the application-level location
+      #   (+:location+) where the access happened (a Thread::Backtrace::Location
+      #   object, or +nil+), and a deprecation message (+:message+).
+      #
+      # ==== Backtrace
+      #
+      # If +:backtrace+ is true, warnings include a clean backtrace in the message
+      # and notifications have a +:backtrace+ key in the payload with an array
+      # of clean Thread::Backtrace::Location objects. Exceptions always get a
+      # clean stack trace set.
+      #
+      # Clean backtraces are computed using the Active Record backtrace cleaner.
+      # In Rails applications, that is by the default the same as
+      # <tt>Rails.backtrace_cleaner</tt>.
+      #
+      # == Type safety with ActiveRecord::AssociationTypeMismatch
+      #
+      # If you attempt to assign an object to an association that doesn't match the inferred
+      # or specified <tt>:class_name</tt>, you'll get an ActiveRecord::AssociationTypeMismatch.
+      #
+      # == Options
+      #
+      # All of the association macros can be specialized through options. This makes cases
+      # more complex than the simple and guessable ones possible.
+      module ClassMethods
+        # Specifies a one-to-many association. The following methods for retrieval and query of
+        # collections of associated objects will be added:
+        #
+        # +collection+ is a placeholder for the symbol passed as the +name+ argument, so
+        # <tt>has_many :clients</tt> would add among others <tt>clients.empty?</tt>.
+        #
+        # [<tt>collection</tt>]
+        #   Returns a Relation of all the associated objects.
+        #   An empty Relation is returned if none are found.
+        # [<tt>collection<<(object, ...)</tt>]
+        #   Adds one or more objects to the collection by setting their foreign keys to the collection's primary key.
+        #   Note that this operation instantly fires update SQL without waiting for the save or update call on the
+        #   parent object, unless the parent object is a new record.
+        #   This will also run validations and callbacks of associated object(s).
+        # [<tt>collection.delete(object, ...)</tt>]
+        #   Removes one or more objects from the collection by setting their foreign keys to +NULL+.
+        #   Objects will be in addition destroyed if they're associated with <tt>dependent: :destroy</tt>,
+        #   and deleted if they're associated with <tt>dependent: :delete_all</tt>.
+        #
+        #   If the <tt>:through</tt> option is used, then the join records are deleted (rather than
+        #   nullified) by default, but you can specify <tt>dependent: :destroy</tt> or
+        #   <tt>dependent: :nullify</tt> to override this.
+        # [<tt>collection.destroy(object, ...)</tt>]
+        #   Removes one or more objects from the collection by running <tt>destroy</tt> on
+        #   each record, regardless of any dependent option, ensuring callbacks are run.
+        #
+        #   If the <tt>:through</tt> option is used, then the join records are destroyed
+        #   instead, not the objects themselves.

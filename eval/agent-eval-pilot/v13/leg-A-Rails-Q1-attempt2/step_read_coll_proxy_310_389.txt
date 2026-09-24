@@ -1,0 +1,80 @@
+      #   # => [
+      #   #      #<Pet id: nil, name: "Spook", person_id: 1>,
+      #   #      #<Pet id: nil, name: "Choo-Choo", person_id: 1>,
+      #   #      #<Pet id: nil, name: "Brain", person_id: 1>
+      #   #    ]
+      #
+      #   person.pets.size  # => 5 # size of the collection
+      #   person.pets.count # => 0 # count from database
+      def build(attributes = {}, &block)
+        @association.build(attributes, &block)
+      end
+      alias_method :new, :build
+
+      # Returns a new object of the collection type that has been instantiated with
+      # attributes, linked to this object and that has already been saved (if it
+      # passes the validations).
+      #
+      #   class Person
+      #     has_many :pets
+      #   end
+      #
+      #   person.pets.create(name: 'Fancy-Fancy')
+      #   # => #<Pet id: 1, name: "Fancy-Fancy", person_id: 1>
+      #
+      #   person.pets.create([{name: 'Spook'}, {name: 'Choo-Choo'}])
+      #   # => [
+      #   #      #<Pet id: 2, name: "Spook", person_id: 1>,
+      #   #      #<Pet id: 3, name: "Choo-Choo", person_id: 1>
+      #   #    ]
+      #
+      #   person.pets.size  # => 3
+      #   person.pets.count # => 3
+      #
+      #   person.pets.find(1, 2, 3)
+      #   # => [
+      #   #       #<Pet id: 1, name: "Fancy-Fancy", person_id: 1>,
+      #   #       #<Pet id: 2, name: "Spook", person_id: 1>,
+      #   #       #<Pet id: 3, name: "Choo-Choo", person_id: 1>
+      #   #    ]
+      def create(attributes = {}, &block)
+        @association.create(attributes, &block)
+      end
+
+      # Like #create, except that if the record is invalid, raises an exception.
+      #
+      #   class Person
+      #     has_many :pets
+      #   end
+      #
+      #   class Pet
+      #     validates :name, presence: true
+      #   end
+      #
+      #   person.pets.create!(name: nil)
+      #   # => ActiveRecord::RecordInvalid: Validation failed: Name can't be blank
+      def create!(attributes = {}, &block)
+        @association.create!(attributes, &block)
+      end
+
+      # Replaces this collection with +other_array+. This will perform a diff
+      # and delete/add only records that have changed.
+      #
+      #   class Person < ActiveRecord::Base
+      #     has_many :pets
+      #   end
+      #
+      #   person.pets
+      #   # => [#<Pet id: 1, name: "Gorby", group: "cats", person_id: 1>]
+      #
+      #   other_pets = [Pet.new(name: 'Puff', group: 'celebrities')]
+      #
+      #   person.pets.replace(other_pets)
+      #
+      #   person.pets
+      #   # => [#<Pet id: 2, name: "Puff", group: "celebrities", person_id: 1>]
+      #
+      # If the supplied array has an incorrect association type, it raises
+      # an ActiveRecord::AssociationTypeMismatch error:
+      #
+      #   person.pets.replace(["doo", "ggie", "gaga"])

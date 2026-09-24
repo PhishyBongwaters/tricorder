@@ -1,0 +1,80 @@
+              You need to explicitly set the query constraints for this association.
+            MSG
+          end
+        end
+
+        def derive_join_table
+          ModelSchema.derive_join_table_name active_record.table_name, klass.table_name
+        end
+    end
+
+    class HasManyReflection < AssociationReflection # :nodoc:
+      def macro; :has_many; end
+
+      def collection?; true; end
+
+      def association_class
+        if options[:through]
+          Associations::HasManyThroughAssociation
+        else
+          Associations::HasManyAssociation
+        end
+      end
+    end
+
+    class HasOneReflection < AssociationReflection # :nodoc:
+      def macro; :has_one; end
+
+      def has_one?; true; end
+
+      def association_class
+        if options[:through]
+          Associations::HasOneThroughAssociation
+        else
+          Associations::HasOneAssociation
+        end
+      end
+    end
+
+    class BelongsToReflection < AssociationReflection # :nodoc:
+      def macro; :belongs_to; end
+
+      def belongs_to?; true; end
+
+      def association_class
+        if polymorphic?
+          Associations::BelongsToPolymorphicAssociation
+        else
+          Associations::BelongsToAssociation
+        end
+      end
+
+      # klass option is necessary to support loading polymorphic associations
+      def association_primary_key(klass = nil)
+        if options[:primary_key]
+          return @association_primary_key ||= ActiveRecord::Key.for(options[:primary_key]).name
+        end
+
+        if polymorphic? && options[:inverse_of] && klass
+          inverse = klass.reflect_on_association(options[:inverse_of])
+          if inverse && inverse.options[:primary_key] && !inverse.options[:query_constraints]
+            return ActiveRecord::Key.for(inverse.options[:primary_key]).name
+          end
+        end
+
+        klass ||= self.klass
+
+        if klass.has_query_constraints? && options[:foreign_key] && !options[:query_constraints]
+          return klass.primary_key_definition.inferred_id || primary_key(klass).freeze
+        end
+
+        derive_primary_key(klass) { |model| model.composite_query_constraints_list }
+      end
+
+      def join_primary_key(klass = nil)
+        polymorphic? ? association_primary_key(klass) : association_primary_key
+      end
+
+      def join_foreign_key
+        foreign_key
+      end

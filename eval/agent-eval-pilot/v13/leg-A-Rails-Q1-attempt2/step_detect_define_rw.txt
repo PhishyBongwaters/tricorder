@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "activerecord\\lib\\active_record\\associations\\builder\\association.rb",
+      "line": 95,
+      "name": "define_accessors",
+      "kind": "def",
+      "context": "activerecord\\lib\\active_record\\associations\\builder\\association.rb\n  94:     # Post.first.comments and Post.first.comments= methods are defined by this method...\n  95:     def self.define_accessors(model, reflection)\n  96:       mixin = model.generated_association_methods",
+      "quality": "content"
+    },
+    {
+      "file": "activerecord\\lib\\active_record\\associations\\builder\\singular_association.rb",
+      "line": 11,
+      "name": "define_accessors",
+      "kind": "def",
+      "context": "activerecord\\lib\\active_record\\associations\\builder\\singular_association.rb\n  11:     def self.define_accessors(model, reflection)\n  12:       super",
+      "quality": "content"
+    },
+    {
+      "file": "activemodel\\lib\\active_model\\attribute_methods.rb",
+      "line": 629,
+      "name": "define_attribute_accessor_method",
+      "kind": "def",
+      "context": "activemodel\\lib\\active_model\\attribute_methods.rb\n  628:         # key the @attributes in read_attribute.\n  629:         def self.define_attribute_accessor_method(attr_name, writer: false)\n  630:           method_name = \"#{attr_name}#{'=' if writer}\"",
+      "quality": "content"
+    },
+    {
+      "file": "actionview\\lib\\action_view\\lookup_context.rb",
+      "line": 43,
+      "name": "Accessors",
+      "kind": "def",
+      "context": "actionview\\lib\\action_view\\lookup_context.rb\n  42:     # Holds accessors for the registered details.\n  43:     module Accessors # :nodoc:\n  44:     end",
+      "quality": "content"
+    },
+    {
+      "file": "activerecord\\lib\\active_record\\encryption\\encryptable_record.rb",
+      "line": 109,
+      "name": "override_accessors_to_preserve_original",
+      "kind": "def",
+      "context": "activerecord\\lib\\active_record\\encryption\\encryptable_record.rb\n  109:           def override_accessors_to_preserve_original(name, original_attribute_name)\n  110:             include(Module.new do",
+      "quality": "content"
+    }
+  ]
+}

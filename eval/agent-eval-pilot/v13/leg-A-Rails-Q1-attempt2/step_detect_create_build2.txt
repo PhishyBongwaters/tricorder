@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "activerecord\\lib\\active_record\\connection_adapters\\abstract\\schema_statements.rb",
+      "line": 2015,
+      "name": ":extract_new_comment_value",
+      "kind": "def",
+      "context": "activerecord\\lib\\active_record\\connection_adapters\\abstract\\schema_statements.rb\n  2014:         end\n  2015:         alias :extract_new_comment_value :extract_new_default_value",
+      "quality": "content"
+    },
+    {
+      "file": "activerecord\\lib\\active_record\\persistence.rb",
+      "line": 287,
+      "name": "_build_update_manager",
+      "kind": "def",
+      "context": "activerecord\\lib\\active_record\\persistence.rb\n  287:         def _build_update_manager(values, constraints)\n  288:           constraints = constraints.map { |name, value| predicate_builder[name, value] }",
+      "quality": "content"
+    },
+    {
+      "file": "actionview\\lib\\action_view\\view_paths.rb",
+      "line": 31,
+      "name": "_build_view_paths",
+      "kind": "def",
+      "context": "actionview\\lib\\action_view\\view_paths.rb\n  31:       def _build_view_paths(paths) # :nodoc:\n  32:         return paths if ActionView::PathSet === paths",
+      "quality": "content"
+    },
+    {
+      "file": "activerecord\\lib\\active_record\\association_relation.rb",
+      "line": 35,
+      "name": "_create",
+      "kind": "def",
+      "context": "activerecord\\lib\\active_record\\association_relation.rb\n  35:       def _create(attributes, &block)\n  36:         @association.create(attributes, &block)",
+      "quality": "content"
+    },
+    {
+      "file": "activerecord\\lib\\active_record\\relation.rb",
+      "line": 1426,
+      "name": "_create",
+      "kind": "def",
+      "context": "activerecord\\lib\\active_record\\relation.rb\n  1426:       def _create(attributes, &block)\n  1427:         model.create(attributes, &block)",
+      "quality": "content"
+    }
+  ]
+}

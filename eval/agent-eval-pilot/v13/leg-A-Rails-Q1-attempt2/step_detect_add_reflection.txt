@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "activerecord\\lib\\active_record\\reflection.rb",
+      "line": 23,
+      "name": "add_reflection",
+      "kind": "def",
+      "context": "activerecord\\lib\\active_record\\reflection.rb\n  23:       def add_reflection(ar, name, reflection)\n  24:         ar.clear_reflections_cache",
+      "quality": "exact"
+    },
+    {
+      "file": "activerecord\\lib\\active_record\\associations.rb",
+      "line": 1428,
+      "name": "add_reflection",
+      "kind": "ref",
+      "context": "activerecord\\lib\\active_record\\associations.rb\n  1427:           reflection = Builder::HasMany.build(self, name, scope, options, &extension)\n  1428:           Reflection.add_reflection(self, name, reflection)\n  1429:         end",
+      "quality": "exact"
+    },
+    {
+      "file": "activerecord\\lib\\active_record\\reflection.rb",
+      "line": 23,
+      "name": "add_reflection",
+      "kind": "ref",
+      "context": "activerecord\\lib\\active_record\\reflection.rb\n  23:       def add_reflection(ar, name, reflection)\n  24:         ar.clear_reflections_cache",
+      "quality": "exact"
+    },
+    {
+      "file": "activerecord\\lib\\active_record\\associations.rb",
+      "line": 1629,
+      "name": "add_reflection",
+      "kind": "ref",
+      "context": "activerecord\\lib\\active_record\\associations.rb\n  1628:           reflection = Builder::HasOne.build(self, name, scope, options)\n  1629:           Reflection.add_reflection(self, name, reflection)\n  1630:         end",
+      "quality": "exact"
+    },
+    {
+      "file": "activerecord\\lib\\active_record\\associations.rb",
+      "line": 1825,
+      "name": "add_reflection",
+      "kind": "ref",
+      "context": "activerecord\\lib\\active_record\\associations.rb\n  1824:           reflection = Builder::BelongsTo.build(self, name, scope, options)\n  1825:           Reflection.add_reflection(self, name, reflection)\n  1826:         end",
+      "quality": "exact"
+    }
+  ]
+}

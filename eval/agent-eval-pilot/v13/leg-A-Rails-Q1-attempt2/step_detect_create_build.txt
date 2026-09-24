@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "activemodel\\test\\cases\\validations\\validates_test.rb",
+      "line": 13,
+      "name": "reset_callbacks",
+      "kind": "def",
+      "context": "activemodel\\test\\cases\\validations\\validates_test.rb\n  13:   def reset_callbacks\n  14:     Person.clear_validators!",
+      "quality": "content"
+    },
+    {
+      "file": "activerecord\\test\\cases\\test_case.rb",
+      "line": 213,
+      "name": "reset_callbacks",
+      "kind": "def",
+      "context": "activerecord\\test\\cases\\test_case.rb\n  213:     def reset_callbacks(klass, kind)\n  214:       old_callbacks = {}",
+      "quality": "content"
+    },
+    {
+      "file": "activesupport\\lib\\active_support\\callbacks.rb",
+      "line": 864,
+      "name": "reset_callbacks",
+      "kind": "def",
+      "context": "activesupport\\lib\\active_support\\callbacks.rb\n  863:         # Remove all set callbacks for the given event.\n  864:         def reset_callbacks(name)\n  865:           callbacks = get_callbacks name",
+      "quality": "content"
+    },
+    {
+      "file": "activerecord\\lib\\active_record\\counter_cache.rb",
+      "line": 37,
+      "name": "reset_counters",
+      "kind": "def",
+      "context": "activerecord\\lib\\active_record\\counter_cache.rb\n  36:       #   Post.reset_counters(1, :comments, touch: true)\n  37:       def reset_counters(id, *counters, touch: nil)\n  38:         pk = primary_key_definition",
+      "quality": "content"
+    },
+    {
+      "file": "activerecord\\lib\\active_record\\associations\\association.rb",
+      "line": 66,
+      "name": "reset_negative_cache",
+      "kind": "def",
+      "context": "activerecord\\lib\\active_record\\associations\\association.rb\n  66:       def reset_negative_cache # :nodoc:\n  67:         reset if loaded? && target.nil?",
+      "quality": "content"
+    }
+  ]
+}

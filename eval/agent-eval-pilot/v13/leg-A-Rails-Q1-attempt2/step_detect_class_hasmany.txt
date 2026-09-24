@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "activerecord\\test\\cases\\associations\\has_many_associations_test.rb",
+      "line": 2705,
+      "name": "test_abstract_class_with_polymorphic_has_many",
+      "kind": "def",
+      "context": "activerecord\\test\\cases\\associations\\has_many_associations_test.rb\n  2705:   def test_abstract_class_with_polymorphic_has_many\n  2706:     post = SubStiPost.create! title: \"fooo\", body: \"baa\"",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "activerecord\\test\\cases\\associations\\join_model_test.rb",
+      "line": 396,
+      "name": "test_has_many_through_has_many_find_all_with_custom_class",
+      "kind": "def",
+      "context": "activerecord\\test\\cases\\associations\\join_model_test.rb\n  396:   def test_has_many_through_has_many_find_all_with_custom_class\n  397:     assert_equal comments(:greetings), authors(:david).funky_comments.order(\"comments.id\").to_a.first",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "activerecord\\test\\cases\\associations\\has_many_associations_test.rb",
+      "line": 2623,
+      "name": "test_defining_has_many_association_with_delete_all_dependency_lazily_evaluates_target_class",
+      "kind": "def",
+      "context": "activerecord\\test\\cases\\associations\\has_many_associations_test.rb\n  2623:   def test_defining_has_many_association_with_delete_all_dependency_lazily_evaluates_target_class\n  2624:     assert_not_called_on_instance_of(",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "activerecord\\test\\cases\\associations\\join_model_test.rb",
+      "line": 101,
+      "name": "test_polymorphic_has_many_create_model_with_inheritance_and_custom_base_class",
+      "kind": "def",
+      "context": "activerecord\\test\\cases\\associations\\join_model_test.rb\n  101:   def test_polymorphic_has_many_create_model_with_inheritance_and_custom_base_class\n  102:     post = SubAbstractStiPost.create title: \"SubAbstractStiPost\", body: \"SubAbstractStiPost body\"",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "activerecord\\test\\cases\\associations\\has_many_associations_test.rb",
+      "line": 2636,
+      "name": "test_defining_has_many_association_with_nullify_dependency_lazily_evaluates_target_class",
+      "kind": "def",
+      "context": "activerecord\\test\\cases\\associations\\has_many_associations_test.rb\n  2636:   def test_defining_has_many_association_with_nullify_dependency_lazily_evaluates_target_class\n  2637:     assert_not_called_on_instance_of(",
+      "quality": "fuzzy"
+    }
+  ]
+}

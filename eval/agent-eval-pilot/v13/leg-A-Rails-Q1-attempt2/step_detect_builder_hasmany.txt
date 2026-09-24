@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "activerecord\\test\\cases\\associations\\has_many_associations_test.rb",
+      "line": 3362,
+      "name": "AsyncHasManyAssociationsTest",
+      "kind": "def",
+      "context": "activerecord\\test\\cases\\associations\\has_many_associations_test.rb\n  3362: class AsyncHasManyAssociationsTest < ActiveRecord::TestCase\n  3363:   include WaitForTestHelper",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "activerecord\\test\\cases\\associations\\has_many_through_associations_test.rb",
+      "line": 1775,
+      "name": "DeprecatedHasManyThroughAssociationsTest",
+      "kind": "def",
+      "context": "activerecord\\test\\cases\\associations\\has_many_through_associations_test.rb\n  1775: class DeprecatedHasManyThroughAssociationsTest < ActiveRecord::TestCase\n  1776:   include DeprecatedAssociationsTestHelpers",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "activerecord\\test\\models\\developer.rb",
+      "line": 356,
+      "name": "DeveloperWithIncorrectlyOrderedHasManyThrough",
+      "kind": "def",
+      "context": "activerecord\\test\\models\\developer.rb\n  356: class DeveloperWithIncorrectlyOrderedHasManyThrough < ActiveRecord::Base\n  357:   self.table_name = \"developers\"",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "activerecord\\test\\models\\dl_keyed_has_many.rb",
+      "line": 3,
+      "name": "DlKeyedHasMany",
+      "kind": "def",
+      "context": "activerecord\\test\\models\\dl_keyed_has_many.rb\n  3: class DlKeyedHasMany < ActiveRecord::Base\n  4:   self.primary_key = \"many_key\"",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "activerecord\\test\\models\\dl_keyed_has_many_through.rb",
+      "line": 3,
+      "name": "DlKeyedHasManyThrough",
+      "kind": "def",
+      "context": "activerecord\\test\\models\\dl_keyed_has_many_through.rb\n  3: class DlKeyedHasManyThrough < ActiveRecord::Base\n  4:   self.primary_key = :through_key",
+      "quality": "fuzzy"
+    }
+  ]
+}

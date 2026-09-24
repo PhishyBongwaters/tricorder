@@ -1,0 +1,80 @@
+        # [<tt>collection=objects</tt>]
+        #   Replaces the collections content by deleting and adding objects as appropriate. If the <tt>:through</tt>
+        #   option is true callbacks in the join models are triggered except destroy callbacks, since deletion is
+        #   direct by default. You can specify <tt>dependent: :destroy</tt> or
+        #   <tt>dependent: :nullify</tt> to override this.
+        # [<tt>collection_singular_ids</tt>]
+        #   Returns an array of the associated objects' ids
+        # [<tt>collection_singular_ids=ids</tt>]
+        #   Replace the collection with the objects identified by the primary keys in +ids+. This
+        #   method loads the models and calls <tt>collection=</tt>. See above.
+        # [<tt>collection.clear</tt>]
+        #   Removes every object from the collection. This destroys the associated objects if they
+        #   are associated with <tt>dependent: :destroy</tt>, deletes them directly from the
+        #   database if <tt>dependent: :delete_all</tt>, otherwise sets their foreign keys to +NULL+.
+        #   If the <tt>:through</tt> option is true no destroy callbacks are invoked on the join models.
+        #   Join models are directly deleted.
+        # [<tt>collection.empty?</tt>]
+        #   Returns +true+ if there are no associated objects.
+        # [<tt>collection.size</tt>]
+        #   Returns the number of associated objects.
+        # [<tt>collection.find(...)</tt>]
+        #   Finds an associated object according to the same rules as ActiveRecord::FinderMethods#find.
+        # [<tt>collection.exists?(...)</tt>]
+        #   Checks whether an associated object with the given conditions exists.
+        #   Uses the same rules as ActiveRecord::FinderMethods#exists?.
+        # [<tt>collection.build(attributes = {}, ...)</tt>]
+        #   Returns one or more new objects of the collection type that have been instantiated
+        #   with +attributes+ and linked to this object through a foreign key, but have not yet
+        #   been saved.
+        # [<tt>collection.create(attributes = {})</tt>]
+        #   Returns a new object of the collection type that has been instantiated
+        #   with +attributes+, linked to this object through a foreign key, and that has already
+        #   been saved (if it passed the validation). *Note*: This only works if the base model
+        #   already exists in the DB, not if it is a new (unsaved) record!
+        # [<tt>collection.create!(attributes = {})</tt>]
+        #   Does the same as <tt>collection.create</tt>, but raises ActiveRecord::RecordInvalid
+        #   if the record is invalid.
+        # [<tt>collection.reload</tt>]
+        #   Returns a Relation of all of the associated objects, forcing a database read.
+        #   An empty Relation is returned if none are found.
+        #
+        # ==== Example
+        #
+        #   class Firm < ActiveRecord::Base
+        #     has_many :clients
+        #   end
+        #
+        # Declaring <tt>has_many :clients</tt> adds the following methods (and more):
+        #
+        #   firm = Firm.find(2)
+        #   client = Client.find(6)
+        #
+        #   firm.clients                       # similar to Client.where(firm_id: 2)
+        #   firm.clients << client
+        #   firm.clients.delete(client)
+        #   firm.clients.destroy(client)
+        #   firm.clients = [client]
+        #   firm.client_ids
+        #   firm.client_ids = [6]
+        #   firm.clients.clear
+        #   firm.clients.empty?                # similar to firm.clients.size == 0
+        #   firm.clients.size                  # similar to Client.count "firm_id = 2"
+        #   firm.clients.find                  # similar to Client.where(firm_id: 2).find(6)
+        #   firm.clients.exists?(name: 'ACME') # similar to Client.exists?(name: 'ACME', firm_id: 2)
+        #   firm.clients.build                 # similar to Client.new(firm_id: 2)
+        #   firm.clients.create                # similar to Client.create(firm_id: 2)
+        #   firm.clients.create!               # similar to Client.create!(firm_id: 2)
+        #   firm.clients.reload
+        #
+        # The declaration can also include an +options+ hash to specialize the behavior of the association.
+        #
+        # ==== Scopes
+        #
+        # You can pass a second argument +scope+ as a callable (i.e. proc or
+        # lambda) to retrieve a specific set of records or customize the generated
+        # query when you access the associated collection.
+        #
+        # Scope examples:
+        #   has_many :comments, -> { where(author_id: 1) }
+        #   has_many :employees, -> { joins(:address) }

@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "activerecord\\lib\\active_record\\associations.rb",
+      "line": 1426,
+      "name": "has_many",
+      "kind": "def",
+      "context": "activerecord\\lib\\active_record\\associations.rb\n  1425:         #   has_many :comments, index_errors: :nested_attributes_order\n  1426:         def has_many(name, scope = nil, **options, &extension)\n  1427:           reflection = Builder::HasMany.build(self, name, scope, options, &extension)",
+      "quality": "exact"
+    },
+    {
+      "file": "activestorage\\lib\\active_storage\\attached\\model.rb",
+      "line": 233,
+      "name": "has_many_attached",
+      "kind": "def",
+      "context": "activestorage\\lib\\active_storage\\attached\\model.rb\n  232:       # the corresponding rows.\n  233:       def has_many_attached(name, dependent: :purge_later, service: nil, strict_loading: false, analyze: nil)\n  234:         Attached::Model.validate_service_configuration(service, self, name) unless service.is_a?(Proc)",
+      "quality": "exact"
+    },
+    {
+      "file": "activerecord\\test\\cases\\associations\\callbacks_test.rb",
+      "line": 65,
+      "name": "test_has_many_callbacks_halt_execution_when_abort_is_trown_when_adding_to_association",
+      "kind": "def",
+      "context": "activerecord\\test\\cases\\associations\\callbacks_test.rb\n  65:   def test_has_many_callbacks_halt_execution_when_abort_is_trown_when_adding_to_association\n  66:     author = Author.create!(name: \"Roger\")",
+      "quality": "exact"
+    },
+    {
+      "file": "activerecord\\test\\cases\\associations\\eager_test.rb",
+      "line": 196,
+      "name": "test_has_many_through_with_order",
+      "kind": "def",
+      "context": "activerecord\\test\\cases\\associations\\eager_test.rb\n  196:   def test_has_many_through_with_order\n  197:     authors = Author.includes(:favorite_authors).to_a",
+      "quality": "exact"
+    },
+    {
+      "file": "activerecord\\test\\cases\\associations\\has_and_belongs_to_many_associations_test.rb",
+      "line": 808,
+      "name": "test_has_many_through_polymorphic_has_manys_works",
+      "kind": "def",
+      "context": "activerecord\\test\\cases\\associations\\has_and_belongs_to_many_associations_test.rb\n  808:   def test_has_many_through_polymorphic_has_manys_works\n  809:     assert_equal [\"$10.00\", \"$20.00\"].to_set, pirates(:redbeard).treasure_estimates.map(&:price).to_set",
+      "quality": "exact"
+    }
+  ]
+}
