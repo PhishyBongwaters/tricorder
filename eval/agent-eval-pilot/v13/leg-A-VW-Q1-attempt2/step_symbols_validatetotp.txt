@@ -1,0 +1,34 @@
+{
+  "symbols": [
+    {
+      "name": "validate_totp_code",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\api\\core\\two_factor\\authenticator.rs",
+      "line": 115,
+      "end_line": 181,
+      "signature": "validate_totp_code (\n    user_id: &UserId,\n    totp_code: &str,\n    secret: &str,\n    ip: &ClientIp,\n    conn: &DbConn,\n)  -> EmptyResult",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "validate_totp_code_str",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\api\\core\\two_factor\\authenticator.rs",
+      "line": 101,
+      "end_line": 113,
+      "signature": "validate_totp_code_str (\n    user_id: &UserId,\n    totp_code: &str,\n    secret: &str,\n    ip: &ClientIp,\n    conn: &DbConn,\n)  -> EmptyResult",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    }
+  ]
+}

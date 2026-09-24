@@ -1,0 +1,20 @@
+    };
+
+    let selected_twofactor = twofactors.into_iter().find(|tf| tf.atype == selected_id && tf.enabled);
+
+    let selected_data = selected_data(selected_twofactor);
+
+    match TwoFactorType::from_i32(selected_id) {
+        Some(TwoFactorType::Authenticator) => {
+            authenticator::validate_totp_code_str(&user.uuid, twofactor_code, &selected_data?, ip, conn).await?;
+        }
+        Some(TwoFactorType::Webauthn) => webauthn::validate_webauthn_login(&user.uuid, twofactor_code, conn).await?,
+        Some(TwoFactorType::YubiKey) => yubikey::validate_yubikey_login(twofactor_code, &selected_data?).await?,
+        Some(TwoFactorType::Duo) => {
+            if CONFIG.duo_use_iframe() {
+                // Legacy iframe prompt flow
+                duo::validate_duo_login(&user.email, twofactor_code, conn).await?;
+            } else {
+                // OIDC based flow
+                duo_oidc::validate_duo_login(
+                    &user.email,

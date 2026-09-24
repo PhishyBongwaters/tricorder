@@ -1,0 +1,9 @@
+{
+ "step_probe.txt": 64,
+ "step_detect_totpverify.txt": 529,
+ "step_detect_totp.txt": 517,
+ "step_symbols_validatetotp.txt": 359,
+ "step_tier1.txt": 2040,
+ "step_read_auth101_185.txt": 791,
+ "step_read_ident820_839.txt": 238
+}

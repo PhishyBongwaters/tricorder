@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "playwright\\tests\\setups\\sso.ts",
+      "line": 59,
+      "name": "logUser",
+      "kind": "def",
+      "context": "playwright\\tests\\setups\\sso.ts\n  58:  */\n  59: export async function logUser(\n  60:     test: Test,",
+      "quality": "content"
+    },
+    {
+      "file": "src\\api\\core\\mod.rs",
+      "line": 189,
+      "name": "now",
+      "kind": "def",
+      "context": "src\\api\\core\\mod.rs\n  188: #[get(\"/now\")]\n  189: pub fn now() -> Json<String> {\n  190:     Json(crate::util::format_date(&chrono::Utc::now().naive_utc()))",
+      "quality": "content"
+    },
+    {
+      "file": "src\\db\\models\\user.rs",
+      "line": 29,
+      "name": "User",
+      "kind": "def",
+      "context": "src\\db\\models\\user.rs\n  28: #[diesel(primary_key(uuid))]\n  29: pub struct User {\n  30:     pub uuid: UserId,",
+      "quality": "content"
+    },
+    {
+      "file": "playwright\\tests\\setups\\2fa.ts",
+      "line": 7,
+      "name": "activateTOTP",
+      "kind": "def",
+      "context": "playwright\\tests\\setups\\2fa.ts\n  7: export async function activateTOTP(test: Test, page: Page, user: { name: string, password: string }): OTPAuth.TOTP {\n  8:     return await test.step('Activate TOTP 2FA', async () => {",
+      "quality": "content"
+    },
+    {
+      "file": "src\\api\\core\\two_factor\\authenticator.rs",
+      "line": 115,
+      "name": "validate_totp_code",
+      "kind": "def",
+      "context": "src\\api\\core\\two_factor\\authenticator.rs\n  115: pub async fn validate_totp_code(\n  116:     user_id: &UserId,",
+      "quality": "content"
+    }
+  ]
+}

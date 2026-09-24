@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "playwright\\tests\\setups\\2fa.ts",
+      "line": 30,
+      "name": "disableTOTP",
+      "kind": "def",
+      "context": "playwright\\tests\\setups\\2fa.ts\n  30: export async function disableTOTP(test: Test, page: Page, user: { password: string }) {\n  31:     await test.step('Disable TOTP 2FA', async () => {",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\api\\core\\two_factor\\authenticator.rs",
+      "line": 101,
+      "name": "validate_totp_code_str",
+      "kind": "def",
+      "context": "src\\api\\core\\two_factor\\authenticator.rs\n  101: pub async fn validate_totp_code_str(\n  102:     user_id: &UserId,",
+      "quality": "exact"
+    },
+    {
+      "file": "playwright\\tests\\login.spec.ts",
+      "line": 50,
+      "name": "disableTOTP",
+      "kind": "ref",
+      "context": "playwright\\tests\\login.spec.ts\n  50:     await disableTOTP(test, page, users.user1);\n  51: });",
+      "quality": "exact"
+    },
+    {
+      "file": "playwright\\tests\\sso_login.spec.ts",
+      "line": 50,
+      "name": "disableTOTP",
+      "kind": "ref",
+      "context": "playwright\\tests\\sso_login.spec.ts\n  50:     await disableTOTP(test, page, users.user1);\n  51: });",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\api\\identity.rs",
+      "line": 828,
+      "name": "validate_totp_code_str",
+      "kind": "ref",
+      "context": "src\\api\\identity.rs\n  827:         Some(TwoFactorType::Authenticator) => {\n  828:             authenticator::validate_totp_code_str(&user.uuid, twofactor_code, &selected_data?, ip, conn).await?;\n  829:         }",
+      "quality": "exact"
+    }
+  ]
+}

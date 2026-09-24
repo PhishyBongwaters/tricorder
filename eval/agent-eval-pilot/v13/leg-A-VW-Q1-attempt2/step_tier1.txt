@@ -1,0 +1,240 @@
+{
+  "tags": [
+    {
+      "name": "toType",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 65,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "isWindow",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 75,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "isArrayLike",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 79,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "DOMEval",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 101,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "jQuery",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 124,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "toArray",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 141,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "get",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 147,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "pushStack",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 160,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "each",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 173,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "map",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 177,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "slice",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 183,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "first",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 187,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "last",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 191,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "even",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 195,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "odd",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 201,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "eq",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 207,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "end",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 213,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "extend",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 218,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "error",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 298,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "noop",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 302,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "isPlainObject",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 304,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "isEmptyObject",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 325,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "globalEval",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 336,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "each",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 340,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "text",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 363,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "makeArray",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 395,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "inArray",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 412,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "isXMLDoc",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 416,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "contains",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 426,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "merge",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 439,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "grep",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 453,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "map",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 473,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    },
+    {
+      "name": "nodeName",
+      "file": "src\\static\\scripts\\jquery-4.0.0.slim.js",
+      "line": 522,
+      "kind": "def",
+      "rank": 0.2581616535551481
+    }
+  ],
+  "budget": {
+    "token_estimate": 2047,
+    "full_repo_estimate": 755518,
+    "savings_pct": 99.7
+  }
+}
