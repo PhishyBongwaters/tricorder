@@ -1,0 +1,34 @@
+{
+  "symbols": [
+    {
+      "name": "Collection::is_coll_manageable_by_user",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\db\\models\\collection.rs",
+      "line": 570,
+      "end_line": 627,
+      "signature": "Collection::is_coll_manageable_by_user (uuid: &CollectionId, user_uuid: &UserId, conn: &DbConn)  -> is_coll_manageable_by_user",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "Collection::is_coll_manageable_by_user",
+      "type": "method",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\db\\models\\collection.rs",
+      "line": 570,
+      "end_line": 627,
+      "signature": "Collection::is_coll_manageable_by_user (uuid: &CollectionId, user_uuid: &UserId, conn: &DbConn)  -> is_coll_manageable_by_user",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.method",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    }
+  ]
+}
