@@ -1,0 +1,127 @@
+import Dep from './dep'
+import VNode from '../vdom/vnode'
+import { arrayMethods } from './array'
+import {
+  def,
+  warn,
+  hasOwn,
+  isArray,
+  hasProto,
+  isPlainObject,
+  isPrimitive,
+  isUndef,
+  isValidArrayIndex,
+  isServerRendering,
+  hasChanged,
+  noop
+} from '../util/index'
+import { isReadonly, isRef, TrackOpTypes, TriggerOpTypes } from '../../v3'
+
+const arrayKeys = Object.getOwnPropertyNames(arrayMethods)
+
+const NO_INITIAL_VALUE = {}
+
+/**
+ * In some cases we may want to disable observation inside a component's
+ * update computation.
+ */
+export let shouldObserve: boolean = true
+
+export function toggleObserving(value: boolean) {
+  shouldObserve = value
+}
+
+// ssr mock dep
+const mockDep = {
+  notify: noop,
+  depend: noop,
+  addSub: noop,
+  removeSub: noop
+} as Dep
+
+/**
+ * Observer class that is attached to each observed
+ * object. Once attached, the observer converts the target
+ * object's property keys into getter/setters that
+ * collect dependencies and dispatch updates.
+ */
+export class Observer {
+  dep: Dep
+  vmCount: number // number of vms that have this object as root $data
+
+  constructor(public value: any, public shallow = false, public mock = false) {
+    // this.value = value
+    this.dep = mock ? mockDep : new Dep()
+    this.vmCount = 0
+    def(value, '__ob__', this)
+    if (isArray(value)) {
+      if (!mock) {
+        if (hasProto) {
+          /* eslint-disable no-proto */
+          ;(value as any).__proto__ = arrayMethods
+          /* eslint-enable no-proto */
+        } else {
+          for (let i = 0, l = arrayKeys.length; i < l; i++) {
+            const key = arrayKeys[i]
+            def(value, key, arrayMethods[key])
+          }
+        }
+      }
+      if (!shallow) {
+        this.observeArray(value)
+      }
+    } else {
+      /**
+       * Walk through all properties and convert them into
+       * getter/setters. This method should only be called when
+       * value type is Object.
+       */
+      const keys = Object.keys(value)
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i]
+        defineReactive(value, key, NO_INITIAL_VALUE, undefined, shallow, mock)
+      }
+    }
+  }
+
+  /**
+   * Observe a list of Array items.
+   */
+  observeArray(value: any[]) {
+    for (let i = 0, l = value.length; i < l; i++) {
+      observe(value[i], false, this.mock)
+    }
+  }
+}
+
+// helpers
+
+/**
+ * Attempt to create an observer instance for a value,
+ * returns the new observer if successfully observed,
+ * or the existing observer if the value already has one.
+ */
+export function observe(
+  value: any,
+  shallow?: boolean,
+  ssrMockReactivity?: boolean
+): Observer | void {
+  if (value && hasOwn(value, '__ob__') && value.__ob__ instanceof Observer) {
+    return value.__ob__
+  }
+  if (
+    shouldObserve &&
+    (ssrMockReactivity || !isServerRendering()) &&
+    (isArray(value) || isPlainObject(value)) &&
+    Object.isExtensible(value) &&
+    !value.__v_skip /* ReactiveFlags.SKIP */ &&
+    !isRef(value) &&
+    !(value instanceof VNode)
+  ) {
+    return new Observer(value, shallow, ssrMockReactivity)
+  }
+}
+
+/**
+ * Define a reactive property on an Object.
+ */

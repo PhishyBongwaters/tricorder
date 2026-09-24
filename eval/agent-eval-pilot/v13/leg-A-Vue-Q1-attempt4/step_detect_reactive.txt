@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "src\\v3\\reactivity\\reactive.ts",
+      "line": 12,
+      "name": "ReactiveFlags",
+      "kind": "def",
+      "context": "src\\v3\\reactivity\\reactive.ts\n  12: export const enum ReactiveFlags {\n  13:   SKIP = '__v_skip',",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\observer\\index.ts",
+      "line": 128,
+      "name": "defineReactive",
+      "kind": "def",
+      "context": "src\\core\\observer\\index.ts\n  127:  */\n  128: export function defineReactive(\n  129:   obj: object,",
+      "quality": "exact"
+    },
+    {
+      "file": "packages\\server-renderer\\test\\ssr-reactivity.spec.ts",
+      "line": 28,
+      "name": "reactive",
+      "kind": "ref",
+      "context": "packages\\server-renderer\\test\\ssr-reactivity.spec.ts\n  27:   it('reactive behavior should be consistent in SSR', () => {\n  28:     const obj = reactive({\n  29:       foo: ref(1),",
+      "quality": "exact"
+    },
+    {
+      "file": "test\\unit\\features\\v3\\apiInject.spec.ts",
+      "line": 215,
+      "name": "reactive",
+      "kind": "ref",
+      "context": "test\\unit\\features\\v3\\apiInject.spec.ts\n  214:   it('reactivity with objects', async () => {\n  215:     const rootState = reactive({ count: 1 })",
+      "quality": "exact"
+    },
+    {
+      "file": "test\\unit\\features\\v3\\apiLifecycle.spec.ts",
+      "line": 296,
+      "name": "reactive",
+      "kind": "ref",
+      "context": "test\\unit\\features\\v3\\apiLifecycle.spec.ts\n  295:     })\n  296:     const obj = reactive({ foo: 1, bar: 2 })",
+      "quality": "exact"
+    }
+  ]
+}
