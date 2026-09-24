@@ -95,6 +95,10 @@ anyway. Legs measure retrieval given the index, nothing else.
 5. **JSON MAP budget ignored** (218k tok) → fixed by `fit_json_tags`, red-first tests added
 6. **Baseline broad greps mirror tricorder junk class** — tricorder now has 3 stacked defenses (exact-first, ×5 cap, strict-majority)
 
+## Infrastructure Fixes (2026-09-24)
+
+- **Database file exclusion from auto-scan (commit 93a74a3):** The tricorder database file (`idx.db`) was being discovered by auto-scan on subsequent runs (since it's created during the first run). Added `.db`, `.sqlite`, `.sqlite3`, `.db3` to `_ARCHIVE_EXTS` in `utils.py` — database files are now excluded from source discovery. Fixed the "empty stdout on second run" bug that blocked CLI testing of `--mention` flag. Verified by 5 sequential `--quiet --format json` runs all succeeding.
+
 ## Deferred: distill stable directive rules into the skill (2026-09-24)
 
 - Once the directive stops evolving ("perfected"), port the STABLE
