@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "file": "lib\\elixir\\lib\\gen_server.ex",
+      "line": 5,
+      "name": "GenServer",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\gen_server.ex\n  5: defmodule GenServer do\n  6:   @moduledoc \"\"\"",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\test\\elixir\\gen_server_test.exs",
+      "line": 7,
+      "name": "GenServerTest",
+      "kind": "def",
+      "context": "lib\\elixir\\test\\elixir\\gen_server_test.exs\n  7: defmodule GenServerTest do\n  8:   use ExUnit.Case, async: true",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\logger\\test\\logger\\translator_test.exs",
+      "line": 8,
+      "name": "MyGenServer",
+      "kind": "def",
+      "context": "lib\\logger\\test\\logger\\translator_test.exs\n  8:   defmodule MyGenServer do\n  9:     use GenServer",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\agent.ex",
+      "line": 279,
+      "name": "GenServer",
+      "kind": "ref",
+      "context": "lib\\elixir\\lib\\agent.ex\n  278:   \"\"\"\n  279:   @spec start_link((-> term), GenServer.options()) :: on_start\n  280:   def start_link(fun, options \\\\ []) when is_function(fun, 0) do",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\agent\\server.ex",
+      "line": 8,
+      "name": "GenServer",
+      "kind": "ref",
+      "context": "lib\\elixir\\lib\\agent\\server.ex\n  8:   use GenServer",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\dynamic_supervisor.ex",
+      "line": 142,
+      "name": "GenServer",
+      "kind": "ref",
+      "context": "lib\\elixir\\lib\\dynamic_supervisor.ex\n  142:   @behaviour GenServer",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\partition_supervisor.ex",
+      "line": 373,
+      "name": "GenServer",
+      "kind": "ref",
+      "context": "lib\\elixir\\lib\\partition_supervisor.ex\n  372:     supervisor =\n  373:       GenServer.whereis(name) || exit({:noproc, {__MODULE__, :resize!, [name, partitions]}})",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\registry.ex",
+      "line": 1821,
+      "name": "GenServer",
+      "kind": "ref",
+      "context": "lib\\elixir\\lib\\registry.ex\n  1820:   # its own pid table.\n  1821:   use GenServer\n  1822:   @all_info -1",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\string_io.ex",
+      "line": 28,
+      "name": "GenServer",
+      "kind": "ref",
+      "context": "lib\\elixir\\lib\\string_io.ex\n  27:   # function as it doesn't make sense to be started under a supervisor.\n  28:   @behaviour GenServer",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\supervisor.ex",
+      "line": 1198,
+      "name": "GenServer",
+      "kind": "ref",
+      "context": "lib\\elixir\\lib\\supervisor.ex\n  1197:   def stop(supervisor, reason \\\\ :normal, timeout \\\\ :infinity) do\n  1198:     GenServer.stop(supervisor, reason, timeout)\n  1199:   end",
+      "quality": "exact"
+    }
+  ]
+}

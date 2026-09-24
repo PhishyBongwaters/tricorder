@@ -1,0 +1,3 @@
+117:        def start_link(default) when is_binary(default) do
+304:        def start_link(_) do
+1077:  def start_link(module, init_arg, options \\ []) when is_atom(module) and is_list(options) do

@@ -1,0 +1,10 @@
+577:  @callback init(init_arg :: term) ::
+647:  @callback handle_call(request :: term, from, state :: term) ::
+685:  @callback handle_cast(request :: term, state :: term) ::
+702:  @callback handle_info(msg :: :timeout | term, state :: term) ::
+719:  @callback handle_continue(continue_arg, state :: term) ::
+787:  @callback terminate(reason, state :: term) :: term
+811:  @callback code_change(old_vsn, state :: term, extra :: term) ::
+845:  @callback format_status(status :: :gen_server.format_status()) ::
+850:  @callback format_status(reason, pdict_and_state :: list) :: term
+853:  @optional_callbacks code_change: 3,
