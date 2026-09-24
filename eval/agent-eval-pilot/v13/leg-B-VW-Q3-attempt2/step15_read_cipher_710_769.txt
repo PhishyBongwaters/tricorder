@@ -1,0 +1,60 @@
+                .expect("Error getting group access restrictions")
+        })
+        .await
+    }
+
+    pub async fn is_write_accessible_to_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
+        match self.get_access_restrictions(user_uuid, None, conn).await {
+            Some((read_only, _hide_passwords, manage)) => !read_only || manage,
+            None => false,
+        }
+    }
+
+    // used for checking if collection can be edited (only if user has access to a collection they
+    // can write to and also passwords are not hidden to prevent privilege escalation)
+    pub async fn is_in_editable_collection_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
+        match self.get_access_restrictions(user_uuid, None, conn).await {
+            Some((read_only, hide_passwords, manage)) => (!read_only && !hide_passwords) || manage,
+            None => false,
+        }
+    }
+
+    pub async fn is_accessible_to_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
+        self.get_access_restrictions(user_uuid, None, conn).await.is_some()
+    }
+
+    // Returns whether this cipher is a favorite of the specified user.
+    pub async fn is_favorite(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
+        Favorite::is_favorite(&self.uuid, user_uuid, conn).await
+    }
+
+    // Sets whether this cipher is a favorite of the specified user.
+    pub async fn set_favorite(&self, favorite: Option<bool>, user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
+        match favorite {
+            None => Ok(()), // No change requested.
+            Some(status) => Favorite::set_favorite(status, &self.uuid, user_uuid, conn).await,
+        }
+    }
+
+    pub async fn get_archived_at(&self, user_uuid: &UserId, conn: &DbConn) -> Option<NaiveDateTime> {
+        Archive::get_archived_at(&self.uuid, user_uuid, conn).await
+    }
+
+    pub async fn set_archived_at(&self, archived_at: NaiveDateTime, user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
+        Archive::save(user_uuid, &self.uuid, archived_at, conn).await
+    }
+
+    pub async fn unarchive(&self, user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
+        Archive::delete_by_cipher(user_uuid, &self.uuid, conn).await
+    }
+
+    pub async fn get_folder_uuid(&self, user_uuid: &UserId, conn: &DbConn) -> Option<FolderId> {
+        conn.run(move |conn| {
+            folders_ciphers::table
+                .inner_join(folders::table)
+                .filter(folders::user_uuid.eq(&user_uuid))
+                .filter(folders_ciphers::cipher_uuid.eq(&self.uuid))
+                .select(folders_ciphers::folder_uuid)
+                .first::<FolderId>(conn)
+                .ok()
+        })

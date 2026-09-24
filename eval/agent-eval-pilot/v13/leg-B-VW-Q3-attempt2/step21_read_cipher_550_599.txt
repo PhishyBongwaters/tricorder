@@ -1,0 +1,50 @@
+    pub fn is_owned_by_user(&self, user_uuid: &UserId) -> bool {
+        self.user_uuid.is_some() && self.user_uuid.as_ref().unwrap() == user_uuid
+    }
+
+    /// Returns whether this cipher is owned by an org in which the user has full access.
+    async fn is_in_full_access_org(
+        &self,
+        user_uuid: &UserId,
+        cipher_sync_data: Option<&CipherSyncData>,
+        conn: &DbConn,
+    ) -> bool {
+        if let Some(ref org_uuid) = self.organization_uuid {
+            if let Some(cipher_sync_data) = cipher_sync_data {
+                if let Some(cached_member) = cipher_sync_data.members.get(org_uuid) {
+                    return cached_member.has_full_access();
+                }
+            } else if let Some(member) = Membership::find_confirmed_by_user_and_org(user_uuid, org_uuid, conn).await {
+                return member.has_full_access();
+            }
+        }
+        false
+    }
+
+    /// Returns whether this cipher is owned by an group in which the user has full access.
+    async fn is_in_full_access_group(
+        &self,
+        user_uuid: &UserId,
+        cipher_sync_data: Option<&CipherSyncData>,
+        conn: &DbConn,
+    ) -> bool {
+        if !CONFIG.org_groups_enabled() {
+            return false;
+        }
+        if let Some(ref org_uuid) = self.organization_uuid {
+            if let Some(cipher_sync_data) = cipher_sync_data {
+                return cipher_sync_data.user_group_full_access_for_organizations.contains(org_uuid);
+            }
+            return Group::is_in_full_access_group(user_uuid, org_uuid, conn).await;
+        }
+        false
+    }
+
+    /// Returns the user's access restrictions to this cipher. A return value
+    /// of None means that this cipher does not belong to the user, and is
+    /// not in any collection the user has access to. Otherwise, the user has
+    /// access to this cipher, and Some(read_only, hide_passwords, manage) represents
+    /// the access restrictions.
+    pub async fn get_access_restrictions(
+        &self,
+        user_uuid: &UserId,

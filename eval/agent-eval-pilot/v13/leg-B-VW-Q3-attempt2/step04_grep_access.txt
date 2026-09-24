@@ -1,0 +1,6 @@
+src/api/core/organizations.rs:43:        post_bulk_access_collections,
+src/auth.rs:31:            AttachmentId, CipherId, Collection, CollectionId, Device, DeviceId, DeviceType, EmergencyAccessId,
+src/db/models/cipher.rs:420:                    // users having access to the collection
+src/db/models/collection.rs:111:                    // Only let a manager manage collections when the have full read/write access
+src/db/models/group.rs:571:    pub async fn has_access_to_collection_by_member(
+src/db/models/organization.rs:228:            "allowAdminAccessToAllCollectionItems": true,

@@ -1,0 +1,60 @@
+                .load::<Self>(conn)
+                .expect("Error loading groups for user")
+        })
+        .await
+    }
+
+    pub async fn has_access_to_collection_by_member(
+        collection_uuid: &CollectionId,
+        member_uuid: &MembershipId,
+        conn: &DbConn,
+    ) -> bool {
+        conn.run(move |conn| {
+            groups_users::table
+                .inner_join(collections_groups::table.on(collections_groups::groups_uuid.eq(groups_users::groups_uuid)))
+                .inner_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)))
+                .inner_join(
+                    collections::table.on(collections::uuid
+                        .eq(collections_groups::collections_uuid)
+                        .and(collections::org_uuid.eq(groups::organizations_uuid))),
+                )
+                .filter(collections_groups::collections_uuid.eq(collection_uuid))
+                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0)
+                != 0
+        })
+        .await
+    }
+
+    pub async fn has_full_access_by_member(
+        org_uuid: &OrganizationId,
+        member_uuid: &MembershipId,
+        conn: &DbConn,
+    ) -> bool {
+        conn.run(move |conn| {
+            groups_users::table
+                .inner_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)))
+                .filter(groups::organizations_uuid.eq(org_uuid))
+                .filter(groups::access_all.eq(true))
+                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0)
+                != 0
+        })
+        .await
+    }
+
+    pub async fn update_user_revision(&self, conn: &DbConn) {
+        match Membership::find_by_uuid(&self.users_organizations_uuid, conn).await {
+            Some(member) => User::update_uuid_revision(&member.user_uuid, conn).await,
+            None => warn!("Member could not be found!"),
+        }
+    }
+
+    pub async fn delete_by_group_and_member(
+        group_uuid: &GroupId,
+        member_uuid: &MembershipId,
+        conn: &DbConn,

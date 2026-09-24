@@ -1,0 +1,10 @@
+src/api/core/ciphers.rs:2180:            .map(|uc| (uc.collection_uuid.clone(), uc))
+src/api/core/events.rs:305:            event.collection_uuid = Some(source_uuid.to_owned().into());
+src/api/core/organizations.rs:456:            .filter(|collection_member| collection_member.collection_uuid == col.uuid)
+src/api/notifications.rs:436:        collection_uuids: Option<Vec<CollectionId>>,
+src/db/models/cipher.rs:675:                    users_collections::table.on(ciphers_collections::collection_uuid
+src/db/models/collection.rs:38:#[diesel(primary_key(user_uuid, collection_uuid))]
+src/db/models/event.rs:32:    pub collection_uuid: Option<CollectionId>,
+src/db/models/group.rs:425:    pub async fn find_by_collection(collection_uuid: &CollectionId, conn: &DbConn) -> Vec<Self> {
+src/db/models/organization.rs:581:                    .map(|cu| (cu.collection_uuid.clone(), cu))
+src/db/schema.rs:31:    ciphers_collections (cipher_uuid, collection_uuid) {

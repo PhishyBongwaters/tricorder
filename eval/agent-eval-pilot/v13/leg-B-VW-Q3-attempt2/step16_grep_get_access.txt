@@ -1,0 +1,1 @@
+src/db/models/cipher.rs:182:            if let Some((ro, hp, mn)) = self.get_access_restrictions(user_uuid, cipher_sync_data, conn).await {

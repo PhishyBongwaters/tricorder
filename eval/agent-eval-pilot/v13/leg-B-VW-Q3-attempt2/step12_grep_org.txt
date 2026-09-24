@@ -1,0 +1,7 @@
+src/api/admin.rs:42:    if !CONFIG.disable_admin_token() && !CONFIG.is_admin_token_set() {
+src/api/core/ciphers.rs:827:                if collection.is_writable_by_user(&headers.user.uuid, &conn).await {
+src/api/core/events.rs:10:    auth::{AdminHeaders, Headers},
+src/api/core/organizations.rs:14:    auth::{AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite},
+src/auth.rs:816:pub struct AdminHeaders {
+src/config.rs:1630:    pub fn is_admin_token_set(&self) -> bool {
+src/db/models/collection.rs:134:                Some(m) if m.atype == MembershipType::Manager && self.is_manageable_by_user(user_uuid, conn).await => {

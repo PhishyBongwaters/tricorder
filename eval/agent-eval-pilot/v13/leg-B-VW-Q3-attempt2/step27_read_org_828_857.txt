@@ -1,0 +1,30 @@
+        self.atype == user_type as i32
+    }
+
+    pub fn has_full_access(&self) -> bool {
+        (self.access_all || self.atype >= MembershipType::Admin) && self.has_status(MembershipStatus::Confirmed)
+    }
+
+    pub async fn find_by_uuid(uuid: &MembershipId, conn: &DbConn) -> Option<Self> {
+        conn.run(move |conn| {
+            users_organizations::table.filter(users_organizations::uuid.eq(uuid)).first::<Self>(conn).ok()
+        })
+        .await
+    }
+
+    pub async fn find_by_uuid_and_org(uuid: &MembershipId, org_uuid: &OrganizationId, conn: &DbConn) -> Option<Self> {
+        conn.run(move |conn| {
+            users_organizations::table
+                .filter(users_organizations::uuid.eq(uuid))
+                .filter(users_organizations::org_uuid.eq(org_uuid))
+                .first::<Self>(conn)
+                .ok()
+        })
+        .await
+    }
+
+    pub async fn find_confirmed_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
+        conn.run(move |conn| {
+            users_organizations::table
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))

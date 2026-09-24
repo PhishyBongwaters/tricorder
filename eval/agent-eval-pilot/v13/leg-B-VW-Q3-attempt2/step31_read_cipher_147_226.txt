@@ -1,0 +1,80 @@
+    pub async fn to_json(
+        &self,
+        host: &str,
+        user_uuid: &UserId,
+        cipher_sync_data: Option<&CipherSyncData>,
+        sync_type: CipherSyncType,
+        conn: &DbConn,
+    ) -> Result<Value, crate::Error> {
+        use crate::util::{format_date, validate_and_format_date};
+
+        let mut attachments_json: Value = Value::Null;
+        if let Some(cipher_sync_data) = cipher_sync_data {
+            if let Some(attachments) = cipher_sync_data.cipher_attachments.get(&self.uuid)
+                && !attachments.is_empty()
+            {
+                let mut attachments_json_vec = vec![];
+                for attachment in attachments {
+                    attachments_json_vec.push(attachment.to_json(host).await?);
+                }
+                attachments_json = Value::Array(attachments_json_vec);
+            }
+        } else {
+            let attachments = Attachment::find_by_cipher(&self.uuid, conn).await;
+            if !attachments.is_empty() {
+                let mut attachments_json_vec = vec![];
+                for attachment in attachments {
+                    attachments_json_vec.push(attachment.to_json(host).await?);
+                }
+                attachments_json = Value::Array(attachments_json_vec);
+            }
+        }
+
+        // We don't need these values at all for Organizational syncs
+        // Skip any other database calls if this is the case and just return false.
+        let (read_only, hide_passwords, _) = if sync_type == CipherSyncType::User {
+            if let Some((ro, hp, mn)) = self.get_access_restrictions(user_uuid, cipher_sync_data, conn).await {
+                (ro, hp, mn)
+            } else {
+                error!("Cipher ownership assertion failure");
+                (true, true, false)
+            }
+        } else {
+            (false, false, false)
+        };
+
+        let fields_json: Vec<_> = self
+            .fields
+            .as_ref()
+            .and_then(|s| {
+                serde_json::from_str::<Vec<LowerCase<Value>>>(s)
+                    .inspect_err(|e| warn!("Error parsing fields {e:?} for {}", self.uuid))
+                    .ok()
+            })
+            .map(|d| {
+                d.into_iter()
+                    .map(|mut f| {
+                        // Check if the `type` key is a number, strings break some clients
+                        // The fallback type is the hidden type `1`. this should prevent accidental data disclosure
+                        // If not try to convert the string value to a number and fallback to `1`
+                        // If it is both not a number and not a string, fallback to `1`
+                        match f.data.get("type") {
+                            Some(t) if t.is_number() => {}
+                            Some(t) if t.is_string() => {
+                                let type_num = &t.as_str().unwrap_or("1").parse::<u8>().unwrap_or(1);
+                                f.data["type"] = json!(type_num);
+                            }
+                            _ => {
+                                f.data["type"] = json!(1);
+                            }
+                        }
+                        f.data
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let password_history_json: Vec<_> = self
+            .password_history
+            .as_ref()
+            .and_then(|s| {

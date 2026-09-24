@@ -1,0 +1,6 @@
+src/api/core/ciphers.rs:456:                    || member.has_full_access()
+src/api/core/organizations.rs:393:    if !headers.membership.has_full_access() {
+src/db/models/cipher.rs:564:                    return cached_member.has_full_access();
+src/db/models/collection.rs:109:                Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Manager),
+src/db/models/group.rs:595:    pub async fn has_full_access_by_member(
+src/db/models/organization.rs:595:                    let (read_only, hide_passwords, manage) = if self.has_full_access() {

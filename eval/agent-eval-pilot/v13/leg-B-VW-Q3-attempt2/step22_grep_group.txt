@@ -1,0 +1,3 @@
+src/api/core/organizations.rs:423:        || (CONFIG.org_groups_enabled() && GroupUser::has_full_access_by_member(&org_id, &member.uuid, &conn).await);
+src/db/models/collection.rs:158:                || CollectionUser::has_access_to_collection_by_user(col_id, &member.user_uuid, conn).await
+src/db/models/group.rs:571:    pub async fn has_access_to_collection_by_member(

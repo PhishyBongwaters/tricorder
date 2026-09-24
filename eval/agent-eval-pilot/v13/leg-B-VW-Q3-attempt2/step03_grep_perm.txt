@@ -1,0 +1,4 @@
+src/api/core/organizations.rs:510:        err!("You don't have permission to create collections")
+src/db/models/cipher.rs:628:            let user_permissions = self.get_user_collections_access_flags(user_uuid, conn).await;
+src/db/models/collection.rs:662:                    // Manage permission on a collection assigned directly or via a group.
+src/db/models/organization.rs:460:                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission

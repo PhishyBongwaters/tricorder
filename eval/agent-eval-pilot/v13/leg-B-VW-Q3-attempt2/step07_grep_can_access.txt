@@ -1,0 +1,2 @@
+src/api/core/organizations.rs:840:            let assigned = Collection::can_access_collection(&member, &collection.uuid, &conn).await;
+src/db/models/collection.rs:155:    pub async fn can_access_collection(member: &Membership, col_id: &CollectionId, conn: &DbConn) -> bool {

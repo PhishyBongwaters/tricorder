@@ -1,0 +1,40 @@
+    // The collections and members are checked below, the groups only here.
+    let org_groups = Group::find_by_organization(&org_id, &conn).await;
+    let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
+    if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
+        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id, org_id))
+    }
+
+    for col_id in data.collection_ids {
+        let Some(collection) = Collection::find_by_uuid_and_org(&col_id, &org_id, &conn).await else {
+            err!("Collection not found")
+        };
+
+        if !collection.is_manageable_by_user(&headers.membership.user_uuid, &conn).await {
+            err!("Collection not found", "The current user isn't a manager for this collection")
+        }
+
+        // update collection modification date
+        collection.save(&conn).await?;
+
+        log_event(
+            EventType::CollectionUpdated as i32,
+            &collection.uuid,
+            &org_id,
+            &headers.user.uuid,
+            headers.device.atype,
+            &headers.ip.ip,
+            &conn,
+        )
+        .await;
+
+        CollectionGroup::delete_all_by_collection(&col_id, &org_id, &conn).await?;
+        for group in &data.groups {
+            CollectionGroup::new(col_id.clone(), group.id.clone(), group.read_only, group.hide_passwords, group.manage)
+                .save(&org_id, &conn)
+                .await?;
+        }
+
+        CollectionUser::delete_all_by_collection(&col_id, &conn).await?;
+        for user in &data.users {
+            let Some(member) = Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await else {

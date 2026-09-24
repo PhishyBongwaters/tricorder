@@ -1,0 +1,2 @@
+src/api/core/organizations.rs:592:        if !collection.is_manageable_by_user(&headers.membership.user_uuid, &conn).await {
+src/db/models/collection.rs:134:                Some(m) if m.atype == MembershipType::Manager && self.is_manageable_by_user(user_uuid, conn).await => {

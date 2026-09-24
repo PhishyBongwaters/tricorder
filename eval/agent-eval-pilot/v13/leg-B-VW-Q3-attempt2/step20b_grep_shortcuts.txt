@@ -1,0 +1,3 @@
+src/db/models/cipher.rs:550:    pub fn is_owned_by_user(&self, user_uuid: &UserId) -> bool {
+src/db/models/group.rs:269:    pub async fn is_in_full_access_group(user_uuid: &UserId, org_uuid: &OrganizationId, conn: &DbConn) -> bool {
+src/db/models/organization.rs:572:            CONFIG.org_groups_enabled() && Group::is_in_full_access_group(&self.user_uuid, &self.org_uuid, conn).await;

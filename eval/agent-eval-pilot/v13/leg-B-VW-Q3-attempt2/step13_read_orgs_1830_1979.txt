@@ -1,0 +1,150 @@
+    // Since we check for the size of the encrypted note length, we need to do that here to pre-validate it.
+    // TODO: See if we can optimize the whole cipher adding/importing and prevent duplicate code and checks.
+    Cipher::validate_cipher_data(&data.ciphers)?;
+
+    let existing_collections: HashMap<CollectionId, Collection> =
+        Collection::find_by_organization(&org_id, &conn).await.into_iter().map(|c| (c.uuid.clone(), c)).collect();
+    let mut collections: Vec<CollectionId> = Vec::with_capacity(data.collections.len());
+    for col in data.collections {
+        let existing = col.id.as_ref().and_then(|col_id| existing_collections.get(col_id));
+        let collection_uuid = if let Some(collection) = existing {
+            // When not an Owner or Admin, check if the member is allowed to write to the collection.
+            if headers.membership.atype < MembershipType::Admin
+                && !collection.is_writable_by_user(&headers.membership.user_uuid, &conn).await
+            {
+                err!(Compact, "The current user isn't allowed to manage this collection")
+            }
+            collection.uuid.clone()
+        } else {
+            // We do not allow users or managers which can not manage all collections to create new collections
+            // If there is any collection other than an existing import collection, abort the import.
+            if headers.membership.atype <= MembershipType::Manager && !headers.membership.has_full_access() {
+                err!(Compact, "The current user isn't allowed to create new collections")
+            }
+            let new_collection = Collection::new(org_id.clone(), col.name, col.external_id);
+            new_collection.save(&conn).await?;
+            new_collection.uuid
+        };
+
+        collections.push(collection_uuid);
+    }
+
+    // Read the relations between collections and ciphers
+    // Ciphers can be in multiple collections at the same time
+    let mut relations = Vec::with_capacity(data.collection_relationships.len());
+    for relation in data.collection_relationships {
+        relations.push((relation.key, relation.value));
+    }
+
+    let headers: Headers = headers.into();
+
+    let mut ciphers: Vec<CipherId> = Vec::with_capacity(data.ciphers.len());
+    for mut cipher_data in data.ciphers {
+        // Always clear folder_id's via an organization import
+        cipher_data.folder_id = None;
+        // Replace the client-provided, unvalidated organizationId with the real target org
+        cipher_data.organization_id = Some(org_id.clone());
+        let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
+        update_cipher_from_data(
+            &mut cipher,
+            cipher_data,
+            &headers,
+            Some(collections.clone()),
+            &conn,
+            &nt,
+            UpdateType::None,
+        )
+        .await
+        .ok();
+        ciphers.push(cipher.uuid);
+    }
+
+    // Assign the collections
+    for (cipher_index, col_index) in relations {
+        let (Some(cipher_id), Some(col_id)) = (ciphers.get(cipher_index), collections.get(col_index)) else {
+            err!(Compact, "Invalid collection relationship")
+        };
+        CollectionCipher::save(cipher_id, col_id, &conn).await?;
+    }
+
+    let mut user = headers.user;
+    user.update_revision(&conn).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BulkCollectionsData {
+    organization_id: OrganizationId,
+    cipher_ids: Vec<CipherId>,
+    collection_ids: HashSet<CollectionId>,
+    remove_collections: bool,
+}
+
+// This endpoint is only reachable via the organization view, therefore this endpoint is located here
+// Also Bitwarden does not send out Notifications for these changes, it only does this for individual cipher collection updates
+#[post("/ciphers/bulk-collections", data = "<data>")]
+async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: BulkCollectionsData = data.into_inner();
+
+    if Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &data.organization_id, &conn).await.is_none() {
+        err!("You need to be a Member of the Organization to call this endpoint")
+    }
+
+    // Get all the collection available to the user in one query
+    // Also filter based upon the provided collections
+    let user_collections: HashMap<CollectionId, Collection> =
+        Collection::find_by_organization_and_user_uuid(&data.organization_id, &headers.user.uuid, &conn)
+            .await
+            .into_iter()
+            .filter_map(|c| {
+                if data.collection_ids.contains(&c.uuid) {
+                    Some((c.uuid.clone(), c))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+    // Verify if all the collections requested exists and are writable for the user, else abort
+    for collection_uuid in &data.collection_ids {
+        match user_collections.get(collection_uuid) {
+            Some(collection) if collection.is_writable_by_user(&headers.user.uuid, &conn).await => (),
+            _ => err_code!("Resource not found", "User does not have access to a collection", 404),
+        }
+    }
+
+    for cipher_id in &data.cipher_ids {
+        // Only act on existing cipher uuid's
+        // Do not abort the operation just ignore it, it could be a cipher was just deleted for example
+        if let Some(cipher) = Cipher::find_by_uuid_and_org(cipher_id, &data.organization_id, &conn).await
+            && cipher.is_write_accessible_to_user(&headers.user.uuid, &conn).await
+        {
+            // When selecting a specific collection from the left filter list, and use the bulk option, you can remove an item from that collection
+            // In these cases the client will call this endpoint twice, once for adding the new collections and a second for deleting.
+            if data.remove_collections {
+                for collection in &data.collection_ids {
+                    CollectionCipher::delete(&cipher.uuid, collection, &conn).await?;
+                }
+            } else {
+                for collection in &data.collection_ids {
+                    CollectionCipher::save(&cipher.uuid, collection, &conn).await?;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[get("/organizations/<org_id>/policies")]
+async fn list_policies(org_id: OrganizationId, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+    let policies = OrgPolicy::find_by_org(&org_id, &conn).await;
+    let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
+
+    Ok(Json(json!({
+        "data": policies_json,
+        "object": "list",
+        "continuationToken": null

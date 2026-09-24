@@ -1,0 +1,3 @@
+src/api/core/ciphers.rs:231:    if !cipher.is_accessible_to_user(&headers.user.uuid, &conn).await {
+src/api/core/events.rs:207:                    && cipher.is_accessible_to_user(&headers.user.uuid, &conn).await
+src/db/models/cipher.rs:731:    pub async fn is_accessible_to_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
