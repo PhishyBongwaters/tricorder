@@ -1,0 +1,200 @@
+
+  Note that specifying a module `MyServer` would be the same as specifying
+  the  tuple `{MyServer, []}`.
+
+  `use GenServer` also accepts a list of options which configures the
+  child specification and therefore how it runs under a supervisor.
+  The generated `child_spec/1` can be customized with the following options:
+
+    * `:id` - the child specification identifier, defaults to the current module
+    * [`:restart`](`m:Supervisor#module-restart-values-restart`) - when the
+      child should be restarted, defaults to `:permanent`
+    * [`:shutdown`](`m:Supervisor#module-shutdown-values-shutdown`) - how to
+      shut down the child, either immediately or by giving it time to shut down,
+      defaults to `5_000`
+
+  For example:
+
+      use GenServer, restart: :transient, shutdown: 10_000
+
+  See the ["Child specification"](`m:Supervisor#module-child-specification`) section in the `Supervisor` module for more
+  detailed information. The `@doc` annotation immediately preceding
+  `use GenServer` will be attached to the generated `child_spec/1` function.
+
+  When stopping the GenServer, for example by returning a `{:stop, reason, new_state}`
+  tuple from a callback, the exit reason is used by the supervisor to determine
+  whether the GenServer needs to be restarted. See the "Exit reasons and restarts"
+  section in the `Supervisor` module.
+
+  ## Name registration
+
+  Both `start_link/3` and `start/3` support the `GenServer` to register
+  a name on start via the `:name` option. Registered names are also
+  automatically cleaned up on termination. The supported values are:
+
+    * `nil` (default) - the GenServer is not registered with a name.
+
+    * an atom - the GenServer is registered locally (to the current node)
+      with the given name using `Process.register/2`.
+
+    * `{:global, term}` - the GenServer is registered globally with the given
+      term using the functions in the [`:global` module](`:global`).
+
+    * `{:via, module, term}` - the GenServer is registered with the given
+      mechanism and name. The `:via` option expects a module that exports
+      `register_name/2`, `unregister_name/1`, `whereis_name/1` and `send/2`.
+      One such example is the [`:global` module](`:global`) which uses these functions
+      for keeping the list of names of processes and their associated PIDs
+      that are available globally for a network of Elixir nodes. Elixir also
+      ships with a local, decentralized and scalable registry called `Registry`
+      for locally storing names that are generated dynamically.
+
+  For example, we could start and register our `Stack` server locally as follows:
+
+      # Start the server and register it locally with name MyStack
+      {:ok, _} = GenServer.start_link(Stack, "hello", name: MyStack)
+
+      # Now messages can be sent directly to MyStack
+      GenServer.call(MyStack, :pop)
+      #=> "hello"
+
+  Once the server is started, the remaining functions in this module (`call/3`,
+  `cast/2`, and friends) will also accept an atom, or any `{:global, ...}` or
+  `{:via, ...}` tuples. In general, the following formats are supported:
+
+    * a PID
+    * an atom if the server is locally registered
+    * `{atom, node}` if the server is locally registered at another node
+    * `{:global, term}` if the server is globally registered
+    * `{:via, module, name}` if the server is registered through an alternative
+      registry
+
+  If there is an interest to register dynamic names locally, do not use
+  atoms, as atoms are never garbage-collected and therefore dynamically
+  generated atoms won't be garbage-collected. For such cases, you can
+  set up your own local registry by using the `Registry` module.
+
+  For example:
+
+      {:ok, _} = Registry.start_link(keys: :unique, name: :stacks)
+      name = {:via, Registry, {:stacks, "stack 1"}}
+      {:ok, _pid} = GenServer.start_link(Stack, "hello", name: name)
+      GenServer.whereis(name)
+      #=> #PID<0.150.0>
+
+  ## Receiving "regular" messages
+
+  The goal of a `GenServer` is to abstract the "receive" loop for developers,
+  automatically handling system messages, supporting code change, synchronous
+  calls and more. Therefore, you should never call your own "receive" inside
+  the GenServer callbacks as doing so will cause the GenServer to misbehave.
+
+  Besides the synchronous and asynchronous communication provided by `call/3`
+  and `cast/2`, "regular" messages sent by functions such as `send/2`,
+  `Process.send_after/4` and similar, can be handled inside the `c:handle_info/2`
+  callback.
+
+  `c:handle_info/2` can be used in many situations, such as handling monitor
+  DOWN messages sent by `Process.monitor/1`. Another use case for `c:handle_info/2`
+  is to perform periodic work, with the help of `Process.send_after/4`:
+
+      defmodule MyApp.Periodically do
+        use GenServer
+
+        def start_link(_) do
+          GenServer.start_link(__MODULE__, %{})
+        end
+
+        @impl true
+        def init(state) do
+          # Schedule work to be performed on start
+          schedule_work()
+
+          {:ok, state}
+        end
+
+        @impl true
+        def handle_info(:work, state) do
+          # Do the desired work here
+          # ...
+
+          # Reschedule once more
+          schedule_work()
+
+          {:noreply, state}
+        end
+
+        defp schedule_work do
+          # We schedule the work to happen in 2 hours (written in milliseconds).
+          # Alternatively, one might write :timer.hours(2)
+          Process.send_after(self(), :work, 2 * 60 * 60 * 1000)
+        end
+      end
+
+  ## Timeouts
+
+  The return value of `c:init/1` or any of the `handle_*` callbacks may include
+  a timeout value in milliseconds; if not, `:infinity` is assumed.
+  The timeout can be used to detect a lull in incoming messages.
+
+  The `timeout()` value is used as follows:
+
+    * If the process has any message already waiting when the `timeout()` value
+      is returned, the timeout is ignored and the waiting message is handled as
+      usual. This means that even a timeout of `0` milliseconds is not guaranteed
+      to execute (if you want to take another action immediately and unconditionally,
+      use a `:continue` instruction instead).
+
+    * If any message arrives before the specified number of milliseconds
+      elapse, the timeout is cleared and that message is handled as usual.
+
+    * Otherwise, when the specified number of milliseconds have elapsed with no
+      message arriving, `handle_info/2` is called with `:timeout` as the first
+      argument.
+
+  For example:
+
+      defmodule Counter do
+        use GenServer
+
+        @timeout to_timeout(second: 5)
+
+        @impl true
+        def init(count) do
+          {:ok, count, @timeout}
+        end
+
+        @impl true
+        def handle_call(:increment, _from, count) do
+          new_count = count + 1
+          {:reply, new_count, new_count, @timeout}
+        end
+
+        @impl true
+        def handle_info(:timeout, count) do
+          {:stop, :normal, count}
+        end
+      end
+
+  A `Counter` server will exit with `:normal` if there are no messages in 5 seconds
+  after the initialization or after the last `:increment` call:
+
+      {:ok, counter_pid} = GenServer.start(Counter, 50)
+      GenServer.call(counter_pid, :increment)
+      #=> 51
+
+      # After 5 seconds
+      Process.alive?(counter_pid)
+      #=> false
+
+  ## When (not) to use a GenServer
+
+  So far, we have learned that a `GenServer` can be used as a supervised process
+  that handles sync and async calls. It can also handle system messages, such as
+  periodic messages and monitoring events. GenServer processes may also be named.
+
+  A GenServer, or a process in general, must be used to model runtime characteristics
+  of your system. A GenServer must never be used for code organization purposes.
+
+  In Elixir, code organization is done by modules and functions, processes are not
+  necessary. For example, imagine you are implementing a calculator and you decide

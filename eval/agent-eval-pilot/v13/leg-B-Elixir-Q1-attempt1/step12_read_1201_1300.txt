@@ -1,0 +1,100 @@
+  @spec cast(server, term) :: :ok
+  def cast(server, request)
+
+  def cast({:global, name}, request) do
+    try do
+      :global.send(name, cast_msg(request))
+      :ok
+    catch
+      _, _ -> :ok
+    end
+  end
+
+  def cast({:via, mod, name}, request) do
+    try do
+      mod.send(name, cast_msg(request))
+      :ok
+    catch
+      _, _ -> :ok
+    end
+  end
+
+  def cast({name, node}, request) when is_atom(name) and is_atom(node),
+    do: do_send({name, node}, cast_msg(request))
+
+  def cast(dest, request) when is_atom(dest) or is_pid(dest), do: do_send(dest, cast_msg(request))
+
+  @doc """
+  Casts all servers locally registered as `name` at the specified nodes.
+
+  This function returns immediately and ignores nodes that do not exist, or where the
+  server name does not exist.
+
+  See `multi_call/4` for more information.
+  """
+  @spec abcast([node], name :: atom, term) :: :abcast
+  def abcast(nodes \\ [node() | Node.list()], name, request)
+      when is_list(nodes) and is_atom(name) do
+    msg = cast_msg(request)
+    _ = for node <- nodes, do: do_send({name, node}, msg)
+    :abcast
+  end
+
+  defp cast_msg(req) do
+    {:"$gen_cast", req}
+  end
+
+  defp do_send(dest, msg) do
+    try do
+      send(dest, msg)
+      :ok
+    catch
+      _, _ -> :ok
+    end
+  end
+
+  @doc """
+  Calls all servers locally registered as `name` at the specified `nodes`.
+
+  First, the `request` is sent to every node in `nodes`; then, the caller waits
+  for the replies. This function returns a two-element tuple `{replies,
+  bad_nodes}` where:
+
+    * `replies` - is a list of `{node, reply}` tuples where `node` is the node
+      that replied and `reply` is its reply
+    * `bad_nodes` - is a list of nodes that either did not exist or where a
+      server with the given `name` did not exist or did not reply
+
+  `nodes` is a list of node names to which the request is sent. The default
+  value is the list of all known nodes (including this node).
+
+  ## Examples
+
+  Assuming the `Stack` GenServer mentioned in the docs for the `GenServer`
+  module is registered as `Stack` in the `:"foo@my-machine"` and
+  `:"bar@my-machine"` nodes:
+
+      GenServer.multi_call(Stack, :pop)
+      #=> {[{:"foo@my-machine", :hello}, {:"bar@my-machine", :world}], []}
+
+  """
+  @spec multi_call([node], name :: atom, term, timeout) ::
+          {replies :: [{node, term}], bad_nodes :: [node]}
+  def multi_call(nodes \\ [node() | Node.list()], name, request, timeout \\ :infinity) do
+    :gen_server.multi_call(nodes, name, request, timeout)
+  end
+
+  @doc """
+  Replies to a client.
+
+  This function can be used to explicitly send a reply to a client that called
+  `call/3` or `multi_call/4` when the reply cannot be specified in the return
+  value of `c:handle_call/3`.
+
+  `client` must be the `from` argument (the second argument) accepted by
+  `c:handle_call/3` callbacks. `reply` is an arbitrary term which will be given
+  back to the client as the return value of the call.
+
+  Note that `reply/2` can be called from any process, not just the GenServer
+  that originally received the call (as long as that GenServer communicated the
+  `from` argument somehow).

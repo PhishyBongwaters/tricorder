@@ -1,0 +1,17 @@
+{
+ "step01_ls_root.txt": 89,
+ "step02_ls_lib.txt": 15,
+ "step03_ls_elixir_lib.txt": 212,
+ "step04_measure_gs.txt": 2,
+ "step05_read_1_200.txt": 1740,
+ "step06_read_201_400.txt": 1912,
+ "step07_read_401_600.txt": 2128,
+ "step08_read_601_800.txt": 2224,
+ "step09_read_801_1000.txt": 1514,
+ "step10_read_1001_1100.txt": 943,
+ "step11_read_1101_1200.txt": 858,
+ "step12_read_1201_1300.txt": 871,
+ "step13_read_1301_1376.txt": 556,
+ "step14_measure_beh.txt": 1,
+ "step15_read_beh.txt": 983
+}

@@ -1,0 +1,200 @@
+  change is successful.
+
+  Returning `{:error, reason}` fails the code change with reason `reason` and
+  the state remains as the previous state.
+
+  If `c:code_change/3` raises the code change fails and the loop will continue
+  with its previous state. Therefore this callback does not usually contain side effects.
+
+  This callback is optional.
+  """
+  @callback code_change(old_vsn, state :: term, extra :: term) ::
+              {:ok, new_state :: term}
+              | {:error, reason :: term}
+            when old_vsn: term | {:down, term}
+
+  @doc """
+  This function is called by a `GenServer` process in the following situations:
+
+    * [`:sys.get_status/1,2`](`:sys.get_status/1`) is invoked to get the `GenServer` status.
+    * The `GenServer` process terminates abnormally and logs an error.
+
+  This callback is used to limit the status of the process returned by
+  [`:sys.get_status/1,2`](`:sys.get_status/1`) or sent to logger.
+
+  The callback gets a map `status` describing the current status and shall return
+  a map `new_status` with the same keys, but it may transform some values.
+
+  Two possible use cases for this callback is to remove sensitive information
+  from the state to prevent it from being printed in log files, or to compact
+  large irrelevant status items that would only clutter the logs.
+
+  ## Example
+
+      @impl GenServer
+      def format_status(status) do
+        Map.new(status, fn
+          {:state, state} -> {:state, Map.delete(state, :private_key)}
+          {:message, {:password, _}} -> {:message, {:password, "redacted"}}
+          key_value -> key_value
+        end)
+      end
+
+  """
+  @doc since: "1.17.0"
+  @callback format_status(status :: :gen_server.format_status()) ::
+              new_status :: :gen_server.format_status()
+
+  # TODO: Remove this on v2.0
+  @doc deprecated: "Use format_status/1 callback instead"
+  @callback format_status(reason, pdict_and_state :: list) :: term
+            when reason: :normal | :terminate
+
+  @optional_callbacks code_change: 3,
+                      terminate: 2,
+                      handle_info: 2,
+                      handle_cast: 2,
+                      handle_call: 3,
+                      format_status: 1,
+                      format_status: 2,
+                      handle_continue: 2
+
+  @typedoc "Return values of `start*` functions"
+  @type on_start :: {:ok, pid} | :ignore | {:error, {:already_started, pid} | term}
+
+  @typedoc "The GenServer name"
+  @type name :: nil | atom | {:global, term} | {:via, module, term}
+
+  @typedoc "Options used by the `start*` functions"
+  @type options :: [option]
+
+  @typedoc "Option values used by the `start*` functions"
+  @type option ::
+          {:debug, debug}
+          | {:name, name}
+          | {:timeout, timeout}
+          | {:spawn_opt, [Process.spawn_opt()]}
+          | {:hibernate_after, timeout}
+
+  @typedoc "Debug options supported by the `start*` functions"
+  @type debug :: [:trace | :log | :statistics | {:log_to_file, Path.t()}]
+
+  @typedoc """
+  The server reference.
+
+  This is either a plain PID or a value representing a registered name.
+  See the "Name registration" section of this document for more information.
+  """
+  @type server :: pid | name | {atom, node}
+
+  @typedoc """
+  Tuple describing the client of a call request.
+
+  `pid` is the PID of the caller and `tag` is a unique term used to identify the
+  call.
+  """
+  @type from :: {pid, tag :: term}
+
+  @doc false
+  defmacro __using__(opts) do
+    quote location: :keep, bind_quoted: [opts: opts] do
+      @behaviour GenServer
+
+      if not Module.has_attribute?(__MODULE__, :doc) do
+        @doc """
+        Returns a specification to start this module under a supervisor.
+
+        See `Supervisor`.
+        """
+      end
+
+      def child_spec(init_arg) do
+        default = %{
+          id: __MODULE__,
+          start: {__MODULE__, :start_link, [init_arg]}
+        }
+
+        Supervisor.child_spec(default, unquote(Macro.escape(opts)))
+      end
+
+      defoverridable child_spec: 1
+
+      # TODO: Remove this on v2.0
+      @before_compile GenServer
+
+      @doc false
+      def handle_call(msg, _from, state) do
+        proc =
+          case Process.info(self(), :registered_name) do
+            {_, []} -> self()
+            {_, name} -> name
+          end
+
+        # We do this to trick Dialyzer to not complain about non-local returns.
+        case :erlang.phash2(1, 1) do
+          0 ->
+            raise "attempted to call GenServer #{inspect(proc)} but no handle_call/3 clause was provided"
+
+          1 ->
+            {:stop, {:bad_call, msg}, state}
+        end
+      end
+
+      @doc false
+      def handle_info(msg, state) do
+        proc =
+          case Process.info(self(), :registered_name) do
+            {_, []} -> self()
+            {_, name} -> name
+          end
+
+        :logger.error(
+          %{
+            label: {GenServer, :no_handle_info},
+            report: %{
+              module: __MODULE__,
+              message: msg,
+              name: proc
+            }
+          },
+          %{
+            domain: [:otp, :elixir],
+            error_logger: %{tag: :error_msg},
+            report_cb: &GenServer.format_report/1
+          }
+        )
+
+        {:noreply, state}
+      end
+
+      @doc false
+      def handle_cast(msg, state) do
+        proc =
+          case Process.info(self(), :registered_name) do
+            {_, []} -> self()
+            {_, name} -> name
+          end
+
+        # We do this to trick Dialyzer to not complain about non-local returns.
+        case :erlang.phash2(1, 1) do
+          0 ->
+            raise "attempted to cast GenServer #{inspect(proc)} but no handle_cast/2 clause was provided"
+
+          1 ->
+            {:stop, {:bad_cast, msg}, state}
+        end
+      end
+
+      @doc false
+      def terminate(_reason, _state) do
+        :ok
+      end
+
+      @doc false
+      def code_change(_old, state, _extra) do
+        {:ok, state}
+      end
+
+      defoverridable code_change: 3, terminate: 2, handle_info: 2, handle_cast: 2, handle_call: 3
+    end
+  end

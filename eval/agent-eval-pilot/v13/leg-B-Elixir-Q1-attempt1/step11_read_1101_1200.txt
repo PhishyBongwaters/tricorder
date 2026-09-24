@@ -1,0 +1,100 @@
+
+      {{:via, via_module, _term} = tuple, opts} when is_atom(via_module) ->
+        :gen.start(:gen_server, link, tuple, module, init_arg, opts)
+
+      {other, _} ->
+        raise ArgumentError, """
+        expected :name option to be one of the following:
+
+          * nil
+          * atom
+          * {:global, term}
+          * {:via, module, term}
+
+        Got: #{inspect(other)}
+        """
+    end
+  end
+
+  @doc """
+  Synchronously stops the server with the given `reason`.
+
+  The `c:terminate/2` callback of the given `server` will be invoked before
+  exiting. This function returns `:ok` if the server terminates with the
+  given reason; if it terminates with another reason, the call exits.
+
+  This function keeps OTP semantics regarding error reporting.
+  If the reason is any other than `:normal`, `:shutdown` or
+  `{:shutdown, _}`, an error report is logged.
+  """
+  @spec stop(server, reason :: term, timeout) :: :ok
+  def stop(server, reason \\ :normal, timeout \\ :infinity) do
+    case whereis(server) do
+      nil ->
+        exit({:noproc, {__MODULE__, :stop, [server, reason, timeout]}})
+
+      pid when pid == self() ->
+        exit({:calling_self, {__MODULE__, :stop, [server, reason, timeout]}})
+
+      pid ->
+        try do
+          :proc_lib.stop(pid, reason, timeout)
+        catch
+          :exit, err ->
+            exit({err, {__MODULE__, :stop, [server, reason, timeout]}})
+        end
+    end
+  end
+
+  @doc """
+  Makes a synchronous call to the `server` and waits for its reply.
+
+  The client sends the given `request` to the server and waits until a reply
+  arrives or a timeout occurs. `c:handle_call/3` will be called on the server
+  to handle the request.
+
+  `server` can be a PID or any of the other values described in the
+  "Name registration" section of the documentation for this module.
+
+  ## Timeouts
+
+  `timeout` is a non-negative integer which specifies how many
+  milliseconds to wait for a reply, or the atom `:infinity` to wait
+  indefinitely. The default value is `5000`. If no reply is received within
+  the specified time, the function call fails and the caller exits. If the
+  caller catches the failure and continues running, and the server is just late
+  with the reply, it may arrive at any time later into the caller's message
+  queue. The caller must in this case be prepared for this and discard any such
+  garbage messages that are two-element tuples with a reference as the first
+  element.
+  """
+  @spec call(server, term, timeout) :: term
+  def call(server, request, timeout \\ 5000)
+      when (is_integer(timeout) and timeout >= 0) or timeout == :infinity do
+    case whereis(server) do
+      nil ->
+        exit({:noproc, {__MODULE__, :call, [server, request, timeout]}})
+
+      pid ->
+        try do
+          :gen.call(pid, :"$gen_call", request, timeout)
+        catch
+          :exit, reason ->
+            exit({reason, {__MODULE__, :call, [server, request, timeout]}})
+        else
+          {:ok, res} -> res
+        end
+    end
+  end
+
+  @doc """
+  Casts a request to the `server` without waiting for a response.
+
+  This function always returns `:ok` regardless of whether
+  the destination `server` (or node) exists. Therefore it
+  is unknown whether the destination `server` successfully
+  handled the request.
+
+  `server` can be any of the values described in the "Name registration"
+  section of the documentation for this module.
+  """
