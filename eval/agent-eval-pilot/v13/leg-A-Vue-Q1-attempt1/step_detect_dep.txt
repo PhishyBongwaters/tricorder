@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "src\\core\\observer\\dep.ts",
+      "line": 20,
+      "name": "DepTarget",
+      "kind": "def",
+      "context": "src\\core\\observer\\dep.ts\n  19:  */\n  20: export interface DepTarget extends DebuggerOptions {\n  21:   id: number",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\observer\\index.ts",
+      "line": 329,
+      "name": "dependArray",
+      "kind": "def",
+      "context": "src\\core\\observer\\index.ts\n  328:  */\n  329: function dependArray(value: Array<any>) {\n  330:   for (let e, i = 0, l = value.length; i < l; i++) {",
+      "quality": "exact"
+    },
+    {
+      "file": "test\\unit\\modules\\observer\\observer.spec.ts",
+      "line": 192,
+      "name": "addDep",
+      "kind": "def",
+      "context": "test\\unit\\modules\\observer\\observer.spec.ts\n  191:       deps: [],\n  192:       addDep(dep) {\n  193:         this.deps.push(dep)",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\observer\\watcher.ts",
+      "line": 253,
+      "name": "Watcher::depend",
+      "kind": "def",
+      "context": "src\\core\\observer\\watcher.ts\n  252:    */\n  253:   depend() {\n  254:     let i = this.deps.length",
+      "quality": "exact"
+    },
+    {
+      "file": "packages\\compiler-sfc\\src\\stylePreprocessors.ts",
+      "line": 99,
+      "name": "deps",
+      "kind": "ref",
+      "context": "packages\\compiler-sfc\\src\\stylePreprocessors.ts\n  98:     const result = ref.render()\n  99:     const dependencies = ref.deps()\n  100:     if (map) {",
+      "quality": "exact"
+    }
+  ]
+}

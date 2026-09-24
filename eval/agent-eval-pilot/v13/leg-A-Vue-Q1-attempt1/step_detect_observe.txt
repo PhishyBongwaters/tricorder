@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "src\\core\\observer\\index.ts",
+      "line": 48,
+      "name": "Observer",
+      "kind": "def",
+      "context": "src\\core\\observer\\index.ts\n  47:  */\n  48: export class Observer {\n  49:   dep: Dep",
+      "quality": "exact"
+    },
+    {
+      "file": "test\\unit\\features\\options\\inject.spec.ts",
+      "line": 572,
+      "name": "isObserver",
+      "kind": "def",
+      "context": "test\\unit\\features\\options\\inject.spec.ts\n  571:   it('should keep the reactive with provide', () => {\n  572:     function isObserver(obj) {\n  573:       if (isObject(obj)) {",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\global-api\\index.ts",
+      "line": 49,
+      "name": "observe",
+      "kind": "ref",
+      "context": "src\\core\\global-api\\index.ts\n  48:   Vue.observable = <T>(obj: T): T => {\n  49:     observe(obj)\n  50:     return obj",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\instance\\state.ts",
+      "line": 63,
+      "name": "observe",
+      "kind": "ref",
+      "context": "src\\core\\instance\\state.ts\n  62:   } else {\n  63:     const ob = observe((vm._data = {}))\n  64:     ob && ob.vmCount++",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\observer\\array.ts",
+      "line": 41,
+      "name": "observeArray",
+      "kind": "ref",
+      "context": "src\\core\\observer\\array.ts\n  40:     }\n  41:     if (inserted) ob.observeArray(inserted)\n  42:     // notify change",
+      "quality": "exact"
+    }
+  ]
+}
