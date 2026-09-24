@@ -1,0 +1,65 @@
+  with the reply, it may arrive at any time later into the caller's message
+  queue. The caller must in this case be prepared for this and discard any such
+  garbage messages that are two-element tuples with a reference as the first
+  element.
+  """
+  @spec call(server, term, timeout) :: term
+  def call(server, request, timeout \\ 5000)
+      when (is_integer(timeout) and timeout >= 0) or timeout == :infinity do
+    case whereis(server) do
+      nil ->
+        exit({:noproc, {__MODULE__, :call, [server, request, timeout]}})
+
+      pid ->
+        try do
+          :gen.call(pid, :"$gen_call", request, timeout)
+        catch
+          :exit, reason ->
+            exit({reason, {__MODULE__, :call, [server, request, timeout]}})
+        else
+          {:ok, res} -> res
+        end
+    end
+  end
+
+  @doc """
+  Casts a request to the `server` without waiting for a response.
+
+  This function always returns `:ok` regardless of whether
+  the destination `server` (or node) exists. Therefore it
+  is unknown whether the destination `server` successfully
+  handled the request.
+
+  `server` can be any of the values described in the "Name registration"
+  section of the documentation for this module.
+  """
+  @spec cast(server, term) :: :ok
+  def cast(server, request)
+
+  def cast({:global, name}, request) do
+    try do
+      :global.send(name, cast_msg(request))
+      :ok
+    catch
+      _, _ -> :ok
+    end
+  end
+
+  def cast({:via, mod, name}, request) do
+    try do
+      mod.send(name, cast_msg(request))
+      :ok
+    catch
+      _, _ -> :ok
+    end
+  end
+
+  def cast({name, node}, request) when is_atom(name) and is_atom(node),
+    do: do_send({name, node}, cast_msg(request))
+
+  def cast(dest, request) when is_atom(dest) or is_pid(dest), do: do_send(dest, cast_msg(request))
+
+  @doc """
+  Casts all servers locally registered as `name` at the specified nodes.
+
+  This function returns immediately and ignores nodes that do not exist, or where the

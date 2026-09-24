@@ -1,0 +1,40 @@
+  If the `c:init/1` callback fails with `reason`, this function returns
+  `{:error, reason}`. Otherwise, if it returns `{:stop, reason}`
+  or `:ignore`, the process is terminated and this function returns
+  `{:error, reason}` or `:ignore`, respectively.
+  """
+  @spec start_link(module, term, options) :: on_start
+  def start_link(module, init_arg, options \\ []) when is_atom(module) and is_list(options) do
+    do_start(:link, module, init_arg, options)
+  end
+
+  @doc """
+  Starts a `GenServer` process without links (outside of a supervision tree).
+
+  See `start_link/3` for more information.
+  """
+  @spec start(module, term, options) :: on_start
+  def start(module, init_arg, options \\ []) when is_atom(module) and is_list(options) do
+    do_start(:nolink, module, init_arg, options)
+  end
+
+  defp do_start(link, module, init_arg, options) do
+    case Keyword.pop(options, :name) do
+      {nil, opts} ->
+        :gen.start(:gen_server, link, module, init_arg, opts)
+
+      {atom, opts} when is_atom(atom) ->
+        :gen.start(:gen_server, link, {:local, atom}, module, init_arg, opts)
+
+      {{:global, _term} = tuple, opts} ->
+        :gen.start(:gen_server, link, tuple, module, init_arg, opts)
+
+      {{:via, via_module, _term} = tuple, opts} when is_atom(via_module) ->
+        :gen.start(:gen_server, link, tuple, module, init_arg, opts)
+
+      {other, _} ->
+        raise ArgumentError, """
+        expected :name option to be one of the following:
+
+          * nil
+          * atom

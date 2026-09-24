@@ -1,0 +1,20 @@
+  end
+
+  defp cast_msg(req) do
+    {:"$gen_cast", req}
+  end
+
+  defp do_send(dest, msg) do
+    try do
+      send(dest, msg)
+      :ok
+    catch
+      _, _ -> :ok
+    end
+  end
+
+  @doc """
+  Calls all servers locally registered as `name` at the specified `nodes`.
+
+  First, the `request` is sent to every node in `nodes`; then, the caller waits
+  for the replies. This function returns a two-element tuple `{replies,
