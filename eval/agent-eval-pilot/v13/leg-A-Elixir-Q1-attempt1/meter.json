@@ -1,0 +1,11 @@
+{
+ "step_map.txt": 2079,
+ "step_detect1.txt": 982,
+ "step_symbols1.txt": 499,
+ "step_detect2.txt": 1050,
+ "step_read_lines1_200.txt": 1740,
+ "step_read_lines201_500.txt": 2929,
+ "step_read_lines501_800.txt": 3337,
+ "step_read_lines801_1100.txt": 2457,
+ "step_read_lines1101_1376.txt": 2284
+}

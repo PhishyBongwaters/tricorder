@@ -1,0 +1,276 @@
+
+      {{:via, via_module, _term} = tuple, opts} when is_atom(via_module) ->
+        :gen.start(:gen_server, link, tuple, module, init_arg, opts)
+
+      {other, _} ->
+        raise ArgumentError, """
+        expected :name option to be one of the following:
+
+          * nil
+          * atom
+          * {:global, term}
+          * {:via, module, term}
+
+        Got: #{inspect(other)}
+        """
+    end
+  end
+
+  @doc """
+  Synchronously stops the server with the given `reason`.
+
+  The `c:terminate/2` callback of the given `server` will be invoked before
+  exiting. This function returns `:ok` if the server terminates with the
+  given reason; if it terminates with another reason, the call exits.
+
+  This function keeps OTP semantics regarding error reporting.
+  If the reason is any other than `:normal`, `:shutdown` or
+  `{:shutdown, _}`, an error report is logged.
+  """
+  @spec stop(server, reason :: term, timeout) :: :ok
+  def stop(server, reason \\ :normal, timeout \\ :infinity) do
+    case whereis(server) do
+      nil ->
+        exit({:noproc, {__MODULE__, :stop, [server, reason, timeout]}})
+
+      pid when pid == self() ->
+        exit({:calling_self, {__MODULE__, :stop, [server, reason, timeout]}})
+
+      pid ->
+        try do
+          :proc_lib.stop(pid, reason, timeout)
+        catch
+          :exit, err ->
+            exit({err, {__MODULE__, :stop, [server, reason, timeout]}})
+        end
+    end
+  end
+
+  @doc """
+  Makes a synchronous call to the `server` and waits for its reply.
+
+  The client sends the given `request` to the server and waits until a reply
+  arrives or a timeout occurs. `c:handle_call/3` will be called on the server
+  to handle the request.
+
+  `server` can be a PID or any of the other values described in the
+  "Name registration" section of the documentation for this module.
+
+  ## Timeouts
+
+  `timeout` is a non-negative integer which specifies how many
+  milliseconds to wait for a reply, or the atom `:infinity` to wait
+  indefinitely. The default value is `5000`. If no reply is received within
+  the specified time, the function call fails and the caller exits. If the
+  caller catches the failure and continues running, and the server is just late
+  with the reply, it may arrive at any time later into the caller's message
+  queue. The caller must in this case be prepared for this and discard any such
+  garbage messages that are two-element tuples with a reference as the first
+  element.
+  """
+  @spec call(server, term, timeout) :: term
+  def call(server, request, timeout \\ 5000)
+      when (is_integer(timeout) and timeout >= 0) or timeout == :infinity do
+    case whereis(server) do
+      nil ->
+        exit({:noproc, {__MODULE__, :call, [server, request, timeout]}})
+
+      pid ->
+        try do
+          :gen.call(pid, :"$gen_call", request, timeout)
+        catch
+          :exit, reason ->
+            exit({reason, {__MODULE__, :call, [server, request, timeout]}})
+        else
+          {:ok, res} -> res
+        end
+    end
+  end
+
+  @doc """
+  Casts a request to the `server` without waiting for a response.
+
+  This function always returns `:ok` regardless of whether
+  the destination `server` (or node) exists. Therefore it
+  is unknown whether the destination `server` successfully
+  handled the request.
+
+  `server` can be any of the values described in the "Name registration"
+  section of the documentation for this module.
+  """
+  @spec cast(server, term) :: :ok
+  def cast(server, request)
+
+  def cast({:global, name}, request) do
+    try do
+      :global.send(name, cast_msg(request))
+      :ok
+    catch
+      _, _ -> :ok
+    end
+  end
+
+  def cast({:via, mod, name}, request) do
+    try do
+      mod.send(name, cast_msg(request))
+      :ok
+    catch
+      _, _ -> :ok
+    end
+  end
+
+  def cast({name, node}, request) when is_atom(name) and is_atom(node),
+    do: do_send({name, node}, cast_msg(request))
+
+  def cast(dest, request) when is_atom(dest) or is_pid(dest), do: do_send(dest, cast_msg(request))
+
+  @doc """
+  Casts all servers locally registered as `name` at the specified nodes.
+
+  This function returns immediately and ignores nodes that do not exist, or where the
+  server name does not exist.
+
+  See `multi_call/4` for more information.
+  """
+  @spec abcast([node], name :: atom, term) :: :abcast
+  def abcast(nodes \\ [node() | Node.list()], name, request)
+      when is_list(nodes) and is_atom(name) do
+    msg = cast_msg(request)
+    _ = for node <- nodes, do: do_send({name, node}, msg)
+    :abcast
+  end
+
+  defp cast_msg(req) do
+    {:"$gen_cast", req}
+  end
+
+  defp do_send(dest, msg) do
+    try do
+      send(dest, msg)
+      :ok
+    catch
+      _, _ -> :ok
+    end
+  end
+
+  @doc """
+  Calls all servers locally registered as `name` at the specified `nodes`.
+
+  First, the `request` is sent to every node in `nodes`; then, the caller waits
+  for the replies. This function returns a two-element tuple `{replies,
+  bad_nodes}` where:
+
+    * `replies` - is a list of `{node, reply}` tuples where `node` is the node
+      that replied and `reply` is its reply
+    * `bad_nodes` - is a list of nodes that either did not exist or where a
+      server with the given `name` did not exist or did not reply
+
+  `nodes` is a list of node names to which the request is sent. The default
+  value is the list of all known nodes (including this node).
+
+  ## Examples
+
+  Assuming the `Stack` GenServer mentioned in the docs for the `GenServer`
+  module is registered as `Stack` in the `:"foo@my-machine"` and
+  `:"bar@my-machine"` nodes:
+
+      GenServer.multi_call(Stack, :pop)
+      #=> {[{:"foo@my-machine", :hello}, {:"bar@my-machine", :world}], []}
+
+  """
+  @spec multi_call([node], name :: atom, term, timeout) ::
+          {replies :: [{node, term}], bad_nodes :: [node]}
+  def multi_call(nodes \\ [node() | Node.list()], name, request, timeout \\ :infinity) do
+    :gen_server.multi_call(nodes, name, request, timeout)
+  end
+
+  @doc """
+  Replies to a client.
+
+  This function can be used to explicitly send a reply to a client that called
+  `call/3` or `multi_call/4` when the reply cannot be specified in the return
+  value of `c:handle_call/3`.
+
+  `client` must be the `from` argument (the second argument) accepted by
+  `c:handle_call/3` callbacks. `reply` is an arbitrary term which will be given
+  back to the client as the return value of the call.
+
+  Note that `reply/2` can be called from any process, not just the GenServer
+  that originally received the call (as long as that GenServer communicated the
+  `from` argument somehow).
+
+  This function always returns `:ok`.
+
+  ## Examples
+
+      def handle_call(:reply_in_one_second, from, state) do
+        Process.send_after(self(), {:reply, from}, 1_000)
+        {:noreply, state}
+      end
+
+      def handle_info({:reply, from}, state) do
+        GenServer.reply(from, :one_second_has_passed)
+        {:noreply, state}
+      end
+
+  """
+  @spec reply(from, term) :: :ok
+  def reply(client, reply) do
+    :gen.reply(client, reply)
+  end
+
+  @doc """
+  Returns the `pid` or `{name, node}` of a GenServer process, `nil` otherwise.
+
+  To be precise, `nil` is returned whenever a `pid` or `{name, node}` cannot
+  be returned. Note there is no guarantee the returned `pid` or `{name, node}`
+  is alive, as a process could terminate immediately after it is looked up.
+
+  ## Examples
+
+  For example, to lookup a server process, monitor it and send a cast to it:
+
+      process = GenServer.whereis(server)
+      monitor = Process.monitor(process)
+      GenServer.cast(process, :hello)
+
+  """
+  @spec whereis(server) :: pid | {atom, node} | nil
+  def whereis(server)
+
+  def whereis(pid) when is_pid(pid), do: pid
+
+  def whereis(name) when is_atom(name) do
+    Process.whereis(name)
+  end
+
+  def whereis({:global, name}) do
+    case :global.whereis_name(name) do
+      pid when is_pid(pid) -> pid
+      :undefined -> nil
+    end
+  end
+
+  def whereis({:via, mod, name}) do
+    case apply(mod, :whereis_name, [name]) do
+      pid when is_pid(pid) -> pid
+      :undefined -> nil
+    end
+  end
+
+  def whereis({name, local}) when is_atom(name) and local == node() do
+    Process.whereis(name)
+  end
+
+  def whereis({name, node} = server) when is_atom(name) and is_atom(node) do
+    server
+  end
+
+  @doc false
+  def format_report(%{
+        label: {GenServer, :no_handle_info},
+        report: %{module: mod, message: msg, name: proc}
+      }) do
+    {~c"~p ~p received unexpected message in handle_info/2: ~p~n", [mod, proc, msg]}
+  end
+end

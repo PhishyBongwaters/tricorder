@@ -1,0 +1,300 @@
+       [
+         [
+           "$initial_call": {Stack, :init, 1},            # process dictionary
+           "$ancestors": [#PID<0.80.0>, #PID<0.51.0>]
+         ],
+         :running,                                        # :running | :suspended
+         #PID<0.80.0>,                                    # parent
+         [],                                              # debugger state
+         [
+           header: 'Status for generic server <0.122.0>', # module status
+           data: [
+             {'Status', :running},
+             {'Parent', #PID<0.80.0>},
+             {'Logged events', []}
+           ],
+           data: [{'State', [1]}]
+         ]
+       ]}
+
+  ## Learn more
+
+  If you wish to find out more about GenServers, the Elixir Getting Started
+  guide provides a tutorial-like introduction. The documentation and links
+  in Erlang can also provide extra insight.
+
+    * [GenServer - Elixir's Getting Started Guide](genservers.md)
+    * [`:gen_server` module documentation](`:gen_server`)
+    * [gen_server Behaviour - OTP Design Principles](https://www.erlang.org/doc/design_principles/gen_server_concepts.html)
+    * [Clients and Servers - Learn You Some Erlang for Great Good!](https://learnyousomeerlang.com/clients-and-servers)
+
+  """
+
+  @doc """
+  Invoked when the server is started. `start_link/3` or `start/3` will
+  block until it returns.
+
+  `init_arg` is the argument term (second argument) passed to `start_link/3`.
+
+  Returning `{:ok, state}` will cause `start_link/3` to return
+  `{:ok, pid}` and the process to enter its loop.
+
+  Returning `{:ok, state, timeout}` is similar to `{:ok, state}`,
+  except that it also sets a timeout. See the "Timeouts" section
+  in the module documentation for more information.
+
+  Returning `{:ok, state, :hibernate}` is similar to `{:ok, state}`
+  except the process is hibernated before entering the loop. See
+  `c:handle_call/3` for more information on hibernation.
+
+  Returning `{:ok, state, {:continue, continue_arg}}` is similar to
+  `{:ok, state}` except that immediately after entering the loop,
+  the `c:handle_continue/2` callback will be invoked with `continue_arg`
+  as the first argument and `state` as the second one.
+
+  Returning `:ignore` will cause `start_link/3` to return `:ignore` and
+  the process will exit normally without entering the loop or calling
+  `c:terminate/2`. If used when part of a supervision tree the parent
+  supervisor will not fail to start nor immediately try to restart the
+  `GenServer`. The remainder of the supervision tree will be started
+  and so the `GenServer` should not be required by other processes.
+  It can be started later with `Supervisor.restart_child/2` as the child
+  specification is saved in the parent supervisor. The main use cases for
+  this are:
+
+    * The `GenServer` is disabled by configuration but might be enabled later.
+    * An error occurred and it will be handled by a different mechanism than the
+     `Supervisor`. Likely this approach involves calling `Supervisor.restart_child/2`
+      after a delay to attempt a restart.
+
+  Returning `{:error, reason}` will cause `start_link/3` to return
+  `{:error, reason}`.
+
+  Returning `{:stop, reason}` will the process to exit with reason `reason`,
+  without entering the loop or calling `c:terminate/2`. `start_link/3` will
+  return `{:error, reason}`, but only if the caller is trapping exits.
+  """
+  @callback init(init_arg :: term) ::
+              {:ok, state}
+              | {:ok, state, timeout | :hibernate | {:continue, continue_arg :: term}}
+              | :ignore
+              | {:stop, reason :: term}
+            when state: term
+
+  @doc """
+  Invoked to handle synchronous `call/3` messages. `call/3` will block until a
+  reply is received (unless the call times out or nodes are disconnected).
+
+  `request` is the request message sent by a `call/3`, `from` is a 2-tuple
+  containing the caller's PID and a term that uniquely identifies the call, and
+  `state` is the current state of the `GenServer`.
+
+  Returning `{:reply, reply, new_state}` sends the response `reply` to the
+  caller and continues the loop with new state `new_state`.
+
+  Returning `{:reply, reply, new_state, timeout}` is similar to
+  `{:reply, reply, new_state}` except that it also sets a timeout.
+  See the "Timeouts" section in the module documentation for more information.
+
+  Returning `{:reply, reply, new_state, :hibernate}` is similar to
+  `{:reply, reply, new_state}` except the process is hibernated and will
+  continue the loop once a message is in its message queue. However, if a message is
+  already in the message queue, the process will continue the loop immediately.
+  Hibernating a `GenServer` causes garbage collection and leaves a continuous
+  heap that minimises the memory used by the process.
+
+  Hibernating should not be used aggressively as too much time could be spent
+  garbage collecting, which would delay the processing of incoming messages.
+  Normally it should only be used when you are not expecting new messages to
+  immediately arrive and minimising the memory of the process is shown to be
+  beneficial.
+
+  Returning `{:reply, reply, new_state, {:continue, continue_arg}}` is similar to
+  `{:reply, reply, new_state}` except that `c:handle_continue/2` will be invoked
+  immediately after with `continue_arg` as the first argument and
+  `state` as the second one.
+
+  Returning `{:noreply, new_state}` does not send a response to the caller and
+  continues the loop with new state `new_state`. The response must be sent with
+  `reply/2`.
+
+  There are three main use cases for not replying using the return value:
+
+    * To reply before returning from the callback because the response is known
+      before calling a slow function.
+    * To reply after returning from the callback because the response is not yet
+      available.
+    * To reply from another process, such as a task.
+
+  When replying from another process the `GenServer` should exit if the other
+  process exits without replying as the caller will be blocking awaiting a
+  reply.
+
+  Returning `{:noreply, new_state, timeout | :hibernate | {:continue, continue_arg}}`
+  is similar to `{:noreply, new_state}` except a timeout, hibernation or continue
+  occurs as with a `:reply` tuple.
+
+  Returning `{:stop, reason, reply, new_state}` stops the loop and `c:terminate/2`
+  is called with reason `reason` and state `new_state`. Then, the `reply` is sent
+  as the response to call and the process exits with reason `reason`.
+
+  Returning `{:stop, reason, new_state}` is similar to
+  `{:stop, reason, reply, new_state}` except a reply is not sent.
+
+  This callback is optional. If one is not implemented, the server will fail
+  if a call is performed against it.
+  """
+  @callback handle_call(request :: term, from, state :: term) ::
+              {:reply, reply, new_state}
+              | {:reply, reply, new_state,
+                 timeout | :hibernate | {:continue, continue_arg :: term}}
+              | {:noreply, new_state}
+              | {:noreply, new_state, timeout | :hibernate | {:continue, continue_arg :: term}}
+              | {:stop, reason, reply, new_state}
+              | {:stop, reason, new_state}
+            when reply: term, new_state: term, reason: term
+
+  @doc """
+  Invoked to handle asynchronous `cast/2` messages.
+
+  `request` is the request message sent by a `cast/2` and `state` is the current
+  state of the `GenServer`.
+
+  Returning `{:noreply, new_state}` continues the loop with new state `new_state`.
+
+  Returning `{:noreply, new_state, timeout}` is similar to `{:noreply, new_state}`
+  except that it also sets a timeout. See the "Timeouts" section in the module
+  documentation for more information.
+
+  Returning `{:noreply, new_state, :hibernate}` is similar to
+  `{:noreply, new_state}` except the process is hibernated before continuing the
+  loop. See `c:handle_call/3` for more information.
+
+  Returning `{:noreply, new_state, {:continue, continue_arg}}` is similar to
+  `{:noreply, new_state}` except `c:handle_continue/2` will be invoked
+  immediately after with `continue_arg` as the first argument and
+  `state` as the second one.
+
+  Returning `{:stop, reason, new_state}` stops the loop and `c:terminate/2` is
+  called with the reason `reason` and state `new_state`. The process exits with
+  reason `reason`.
+
+  This callback is optional. If one is not implemented, the server will fail
+  if a cast is performed against it.
+  """
+  @callback handle_cast(request :: term, state :: term) ::
+              {:noreply, new_state}
+              | {:noreply, new_state, timeout | :hibernate | {:continue, continue_arg :: term}}
+              | {:stop, reason :: term, new_state}
+            when new_state: term
+
+  @doc """
+  Invoked to handle all other messages.
+
+  `msg` is the message and `state` is the current state of the `GenServer`. When
+  a timeout occurs the message is `:timeout`.
+
+  Return values are the same as `c:handle_cast/2`.
+
+  This callback is optional. If one is not implemented, the received message
+  will be logged.
+  """
+  @callback handle_info(msg :: :timeout | term, state :: term) ::
+              {:noreply, new_state}
+              | {:noreply, new_state, timeout | :hibernate | {:continue, continue_arg :: term}}
+              | {:stop, reason :: term, new_state}
+            when new_state: term
+
+  @doc """
+  Invoked to handle continue instructions.
+
+  It is useful for performing work after initialization or for splitting the work
+  in a callback in multiple steps, updating the process state along the way.
+
+  Return values are the same as `c:handle_cast/2`.
+
+  This callback is optional. If one is not implemented, the server will fail
+  if a continue instruction is used.
+  """
+  @callback handle_continue(continue_arg, state :: term) ::
+              {:noreply, new_state}
+              | {:noreply, new_state, timeout | :hibernate | {:continue, continue_arg}}
+              | {:stop, reason :: term, new_state}
+            when new_state: term, continue_arg: term
+
+  @doc """
+  Invoked when the server is about to exit. It should do any cleanup required.
+
+  `reason` is exit reason and `state` is the current state of the `GenServer`.
+  The return value is ignored.
+
+  `c:terminate/2` is useful for cleanup that requires access to the
+  `GenServer`'s state. However, it is **not guaranteed** that `c:terminate/2`
+  is called when a `GenServer` exits. Therefore, important cleanup should be
+  done using process links and/or monitors. A monitoring process will receive the
+  same exit `reason` that would be passed to `c:terminate/2`.
+
+  `c:terminate/2` is called if:
+
+    * the `GenServer` traps exits (using `Process.flag/2`) *and* the parent
+    process (the one which called `start_link/1`) sends an exit signal
+
+    * a callback (except `c:init/1`) does one of the following:
+
+      * returns a `:stop` tuple
+
+      * raises (via `raise/2`) or exits (via `exit/1`)
+
+      * returns an invalid value
+
+  If part of a supervision tree, a `GenServer` will receive an exit signal from
+  its parent process (its supervisor) when the tree is shutting down. The exit
+  signal is based on the shutdown strategy in the child's specification, where
+  this value can be:
+
+    * `:brutal_kill`: the `GenServer` is killed and so `c:terminate/2` is not called.
+
+    * a timeout value, where the supervisor will send the exit signal `:shutdown` and
+      the `GenServer` will have the duration of the timeout to terminate.
+      If after duration of this timeout the process is still alive, it will be killed
+      immediately.
+
+  For a more in-depth explanation, please read the "Shutdown values (:shutdown)"
+  section in the `Supervisor` module.
+
+  If the `GenServer` receives an exit signal (that is not `:normal`) from any
+  process when it is not trapping exits it will exit abruptly with the same
+  reason and so not call `c:terminate/2`. Note that a process does *NOT* trap
+  exits by default and an exit signal is sent when a linked process exits or its
+  node is disconnected.
+
+  `c:terminate/2` is only called after the `GenServer` finishes processing all
+  messages which arrived in its mailbox prior to the exit signal. If it
+  receives a `:kill` signal before it finishes processing those,
+  `c:terminate/2` will not be called. If `c:terminate/2` is called, any
+  messages received after the exit signal will still be in the mailbox.
+
+  There is no cleanup needed when the `GenServer` controls a `port` (for example,
+  `:gen_tcp.socket`) or `t:File.io_device/0`, because these will be closed on
+  receiving a `GenServer`'s exit signal and do not need to be closed manually
+  in `c:terminate/2`.
+
+  If `reason` is neither `:normal`, `:shutdown`, nor `{:shutdown, term}` an error is
+  logged.
+
+  This callback is optional.
+  """
+  @callback terminate(reason, state :: term) :: term
+            when reason: :normal | :shutdown | {:shutdown, term} | term
+
+  @doc """
+  Invoked to change the state of the `GenServer` when a different version of a
+  module is loaded (hot code swapping) and the state's term structure should be
+  changed.
+
+  `old_vsn` is the previous version of the module (defined by the `@vsn`
+  attribute) when upgrading. When downgrading the previous version is wrapped in
+  a 2-tuple with first element `:down`. `state` is the current state of the
+  `GenServer` and `extra` is any extra data required to change the state.
+
+  Returning `{:ok, new_state}` changes the state to `new_state` and the code

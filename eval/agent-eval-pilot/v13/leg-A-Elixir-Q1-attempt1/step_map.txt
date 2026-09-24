@@ -1,0 +1,268 @@
+{
+  "tags": [
+    {
+      "name": "Kernel",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 13,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "bootstrapped?",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 307,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "bootstrapped?",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 310,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "abs",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 331,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "apply",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 352,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "apply",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 379,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "binary_part",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 410,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "bit_size",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 430,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "byte_size",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 454,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "ceil",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 480,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "div",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 515,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "exit",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 581,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "floor",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 607,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "hd",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 636,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_atom",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 666,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_binary",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 687,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_bitstring",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 706,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_boolean",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 730,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_float",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 752,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_function",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 772,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_function",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 792,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_integer",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 811,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_list",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 833,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_number",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 856,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_pid",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 879,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_port",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 899,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_reference",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 919,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_tuple",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 941,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_map",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 968,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "is_map_key",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 989,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "length",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 1006,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "make_ref",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 1025,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "map_size",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 1046,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "max",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 1073,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "min",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 1100,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "node",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 1112,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    },
+    {
+      "name": "node",
+      "file": "lib\\elixir\\lib\\kernel.ex",
+      "line": 1125,
+      "kind": "def",
+      "rank": 0.052258315668278967
+    }
+  ],
+  "budget": {
+    "token_estimate": 2047,
+    "full_repo_estimate": 3060510,
+    "savings_pct": 99.9
+  }
+}

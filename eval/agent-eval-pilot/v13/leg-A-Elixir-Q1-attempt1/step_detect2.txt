@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "file": "lib\\elixir\\lib\\module\\behaviour.ex",
+      "line": 9,
+      "name": "callbacks",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\module\\behaviour.ex\n  8:   @doc false\n  9:   def callbacks(behaviour) do\n  10:     for callback <- behaviour.behaviour_info(:callbacks) do",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\protocol.ex",
+      "line": 830,
+      "name": "callback_ast_to_fa",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\protocol.ex\n  830:   defp callback_ast_to_fa({_kind, {:\"::\", meta, [{name, _, args}, _return]}, _pos}) do\n  831:     [{{name, length(List.wrap(args))}, meta}]",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\test\\elixir\\exception_test.exs",
+      "line": 707,
+      "name": "callback",
+      "kind": "def",
+      "context": "lib\\elixir\\test\\elixir\\exception_test.exs\n  706:         @behaviour BehaviourWithOptional\n  707:         def callback(), do: :ok\n  708:       end",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\test\\elixir\\module_test.exs",
+      "line": 31,
+      "name": "callback",
+      "kind": "def",
+      "context": "lib\\elixir\\test\\elixir\\module_test.exs\n  31:   defmacro callback(env) do\n  32:     value = Module.get_attribute(env.module, :has_callback)",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\test\\elixir\\typespec_test.exs",
+      "line": 44,
+      "name": "callbacks",
+      "kind": "def",
+      "context": "lib\\elixir\\test\\elixir\\typespec_test.exs\n  44:   defp callbacks(bytecode) do\n  45:     bytecode",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\ex_unit\\test\\ex_unit\\callbacks_test.exs",
+      "line": 17,
+      "name": "CallbacksTest",
+      "kind": "def",
+      "context": "lib\\ex_unit\\test\\ex_unit\\callbacks_test.exs\n  16:   test \"callbacks run custom code with context\" do\n  17:     defmodule CallbacksTest do\n  18:       use ExUnit.Case",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\iex\\lib\\iex\\introspection.ex",
+      "line": 589,
+      "name": "callback_module",
+      "kind": "def",
+      "context": "lib\\iex\\lib\\iex\\introspection.ex\n  589:   defp callback_module(mod, fun, arity) do\n  590:     mod.module_info(:attributes)",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\logger\\test\\logger\\translator_test.exs",
+      "line": 76,
+      "name": "callback_mode",
+      "kind": "def",
+      "context": "lib\\logger\\test\\logger\\translator_test.exs\n  75:     @impl true\n  76:     def callback_mode, do: :state_functions",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\mix\\lib\\mix\\tasks\\deps.tree.ex",
+      "line": 128,
+      "name": "callback",
+      "kind": "def",
+      "context": "lib\\mix\\lib\\mix\\tasks\\deps.tree.ex\n  128:   defp callback(formatter, deps, opts) do\n  129:     umbrella_only? = Keyword.get(opts, :umbrella_only, false)",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\ex_unit\\lib\\ex_unit\\callbacks.ex",
+      "line": 184,
+      "name": "__callbacks__",
+      "kind": "def",
+      "context": "lib\\ex_unit\\lib\\ex_unit\\callbacks.ex\n  183:   @doc false\n  184:   def __callbacks__(module) do\n  185:     setup = Module.get_attribute(module, :ex_unit_setup)",
+      "quality": "exact"
+    }
+  ]
+}
