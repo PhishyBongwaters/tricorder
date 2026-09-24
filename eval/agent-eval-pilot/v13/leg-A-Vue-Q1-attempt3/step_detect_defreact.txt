@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "file": "src\\core\\observer\\index.ts",
+      "line": 128,
+      "name": "defineReactive",
+      "kind": "def",
+      "context": "src\\core\\observer\\index.ts\n  127:  */\n  128: export function defineReactive(\n  129:   obj: object,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\instance\\inject.ts",
+      "line": 37,
+      "name": "defineReactive",
+      "kind": "ref",
+      "context": "src\\core\\instance\\inject.ts\n  36:       if (__DEV__) {\n  37:         defineReactive(vm, key, result[key], () => {\n  38:           warn(",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\instance\\render.ts",
+      "line": 52,
+      "name": "defineReactive",
+      "kind": "ref",
+      "context": "src\\core\\instance\\render.ts\n  51:   if (__DEV__) {\n  52:     defineReactive(\n  53:       vm,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\instance\\state.ts",
+      "line": 98,
+      "name": "defineReactive",
+      "kind": "ref",
+      "context": "src\\core\\instance\\state.ts\n  97:       }\n  98:       defineReactive(\n  99:         props,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\v3\\reactivity\\ref.ts",
+      "line": 72,
+      "name": "defineReactive",
+      "kind": "ref",
+      "context": "src\\v3\\reactivity\\ref.ts\n  71:     'dep',\n  72:     defineReactive(ref, 'value', rawValue, null, shallow, isServerRendering())\n  73:   )",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\observer\\index.ts",
+      "line": 82,
+      "name": "defineReactive",
+      "kind": "ref",
+      "context": "src\\core\\observer\\index.ts\n  81:         const key = keys[i]\n  82:         defineReactive(value, key, NO_INITIAL_VALUE, undefined, shallow, mock)\n  83:       }",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\instance\\inject.ts",
+      "line": 46,
+      "name": "defineReactive",
+      "kind": "ref",
+      "context": "src\\core\\instance\\inject.ts\n  45:       } else {\n  46:         defineReactive(vm, key, result[key])\n  47:       }",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\instance\\render.ts",
+      "line": 61,
+      "name": "defineReactive",
+      "kind": "ref",
+      "context": "src\\core\\instance\\render.ts\n  60:     )\n  61:     defineReactive(\n  62:       vm,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\instance\\state.ts",
+      "line": 116,
+      "name": "defineReactive",
+      "kind": "ref",
+      "context": "src\\core\\instance\\state.ts\n  115:     } else {\n  116:       defineReactive(props, key, value, undefined, true /* shallow */)\n  117:     }",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\observer\\index.ts",
+      "line": 263,
+      "name": "defineReactive",
+      "kind": "ref",
+      "context": "src\\core\\observer\\index.ts\n  262:   }\n  263:   defineReactive(ob.value, key, val, undefined, ob.shallow, ob.mock)\n  264:   if (__DEV__) {",
+      "quality": "exact"
+    }
+  ]
+}

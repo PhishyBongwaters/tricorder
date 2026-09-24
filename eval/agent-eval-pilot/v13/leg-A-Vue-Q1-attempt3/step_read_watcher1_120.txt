@@ -1,0 +1,120 @@
+import {
+  warn,
+  remove,
+  isObject,
+  parsePath,
+  _Set as Set,
+  handleError,
+  invokeWithErrorHandling,
+  noop,
+  isFunction
+} from '../util/index'
+
+import { traverse } from './traverse'
+import { queueWatcher } from './scheduler'
+import Dep, { pushTarget, popTarget, DepTarget } from './dep'
+import { DebuggerEvent, DebuggerOptions } from 'v3/debug'
+
+import type { SimpleSet } from '../util/index'
+import type { Component } from 'types/component'
+import { activeEffectScope, recordEffectScope } from 'v3/reactivity/effectScope'
+
+let uid = 0
+
+/**
+ * @internal
+ */
+export interface WatcherOptions extends DebuggerOptions {
+  deep?: boolean
+  user?: boolean
+  lazy?: boolean
+  sync?: boolean
+  before?: Function
+}
+
+/**
+ * A watcher parses an expression, collects dependencies,
+ * and fires callback when the expression value changes.
+ * This is used for both the $watch() api and directives.
+ * @internal
+ */
+export default class Watcher implements DepTarget {
+  vm?: Component | null
+  expression: string
+  cb: Function
+  id: number
+  deep: boolean
+  user: boolean
+  lazy: boolean
+  sync: boolean
+  dirty: boolean
+  active: boolean
+  deps: Array<Dep>
+  newDeps: Array<Dep>
+  depIds: SimpleSet
+  newDepIds: SimpleSet
+  before?: Function
+  onStop?: Function
+  noRecurse?: boolean
+  getter: Function
+  value: any
+  post: boolean
+
+  // dev only
+  onTrack?: ((event: DebuggerEvent) => void) | undefined
+  onTrigger?: ((event: DebuggerEvent) => void) | undefined
+
+  constructor(
+    vm: Component | null,
+    expOrFn: string | (() => any),
+    cb: Function,
+    options?: WatcherOptions | null,
+    isRenderWatcher?: boolean
+  ) {
+    recordEffectScope(
+      this,
+      // if the active effect scope is manually created (not a component scope),
+      // prioritize it
+      activeEffectScope && !activeEffectScope._vm
+        ? activeEffectScope
+        : vm
+        ? vm._scope
+        : undefined
+    )
+    if ((this.vm = vm) && isRenderWatcher) {
+      vm._watcher = this
+    }
+    // options
+    if (options) {
+      this.deep = !!options.deep
+      this.user = !!options.user
+      this.lazy = !!options.lazy
+      this.sync = !!options.sync
+      this.before = options.before
+      if (__DEV__) {
+        this.onTrack = options.onTrack
+        this.onTrigger = options.onTrigger
+      }
+    } else {
+      this.deep = this.user = this.lazy = this.sync = false
+    }
+    this.cb = cb
+    this.id = ++uid // uid for batching
+    this.active = true
+    this.post = false
+    this.dirty = this.lazy // for lazy watchers
+    this.deps = []
+    this.newDeps = []
+    this.depIds = new Set()
+    this.newDepIds = new Set()
+    this.expression = __DEV__ ? expOrFn.toString() : ''
+    // parse expression for getter
+    if (isFunction(expOrFn)) {
+      this.getter = expOrFn
+    } else {
+      this.getter = parsePath(expOrFn)
+      if (!this.getter) {
+        this.getter = noop
+        __DEV__ &&
+          warn(
+            `Failed watching path: "${expOrFn}" ` +

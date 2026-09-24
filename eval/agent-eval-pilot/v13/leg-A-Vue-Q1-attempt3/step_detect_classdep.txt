@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "src\\core\\observer\\dep.ts",
+      "line": 31,
+      "name": "Dep",
+      "kind": "def",
+      "context": "src\\core\\observer\\dep.ts\n  30:  */\n  31: export default class Dep {\n  32:   static target?: DepTarget | null",
+      "quality": "content"
+    },
+    {
+      "file": "src\\types\\compiler.ts",
+      "line": 3,
+      "name": "CompilerOptions",
+      "kind": "def",
+      "context": "src\\types\\compiler.ts\n  3: export type CompilerOptions = {\n  4:   warn?: Function // allow customizing warning in different environments; e.g. node",
+      "quality": "content"
+    },
+    {
+      "file": "packages\\compiler-sfc\\src\\babelUtils.ts",
+      "line": 256,
+      "name": "isReferenced",
+      "kind": "def",
+      "context": "packages\\compiler-sfc\\src\\babelUtils.ts\n  255:  */\n  256: function isReferenced(node: Node, parent: Node, grandparent?: Node): boolean {\n  257:   switch (parent.type) {",
+      "quality": "content"
+    },
+    {
+      "file": "src\\core\\observer\\index.ts",
+      "line": 48,
+      "name": "Observer",
+      "kind": "def",
+      "context": "src\\core\\observer\\index.ts\n  47:  */\n  48: export class Observer {\n  49:   dep: Dep",
+      "quality": "content"
+    },
+    {
+      "file": "packages\\server-renderer\\test\\ssr-basic-renderer.spec.ts",
+      "line": 29,
+      "name": "render",
+      "kind": "def",
+      "context": "packages\\server-renderer\\test\\ssr-basic-renderer.spec.ts\n  28:           test: {\n  29:             render() {\n  30:               return this.$createElement('div', { class: ['a'] }, 'test')",
+      "quality": "content"
+    }
+  ]
+}

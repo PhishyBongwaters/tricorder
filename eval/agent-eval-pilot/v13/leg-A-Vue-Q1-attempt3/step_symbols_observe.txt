@@ -1,0 +1,64 @@
+{
+  "symbols": [
+    {
+      "name": "Observer",
+      "type": "class",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vue\\src\\core\\observer\\index.ts",
+      "line": 48,
+      "end_line": 95,
+      "signature": "",
+      "docstring": "",
+      "language": "typescript",
+      "kind": "definition.class",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "isObserver",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vue\\test\\unit\\features\\options\\inject.spec.ts",
+      "line": 572,
+      "end_line": 577,
+      "signature": "isObserver (obj)",
+      "docstring": "",
+      "language": "typescript",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "observe",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vue\\src\\core\\observer\\index.ts",
+      "line": 104,
+      "end_line": 123,
+      "signature": "observe (\n  value: any,\n  shallow?: boolean,\n  ssrMockReactivity?: boolean\n)",
+      "docstring": "",
+      "language": "typescript",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "observeArray",
+      "type": "method",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vue\\src\\core\\observer\\index.ts",
+      "line": 90,
+      "end_line": 94,
+      "signature": "observeArray (value: any[])",
+      "docstring": "",
+      "language": "typescript",
+      "kind": "definition.method",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    }
+  ]
+}

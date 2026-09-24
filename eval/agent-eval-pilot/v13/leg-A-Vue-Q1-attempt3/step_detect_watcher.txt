@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "file": "src\\core\\observer\\watcher.ts",
+      "line": 27,
+      "name": "WatcherOptions",
+      "kind": "def",
+      "context": "src\\core\\observer\\watcher.ts\n  26:  */\n  27: export interface WatcherOptions extends DebuggerOptions {\n  28:   deep?: boolean",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\observer\\scheduler.ts",
+      "line": 167,
+      "name": "queueWatcher",
+      "kind": "def",
+      "context": "src\\core\\observer\\scheduler.ts\n  166:  */\n  167: export function queueWatcher(watcher: Watcher) {\n  168:   const id = watcher.id",
+      "quality": "exact"
+    },
+    {
+      "file": "test\\unit\\modules\\observer\\scheduler.spec.ts",
+      "line": 7,
+      "name": "queueWatcher",
+      "kind": "def",
+      "context": "test\\unit\\modules\\observer\\scheduler.spec.ts\n  7: function queueWatcher(watcher) {\n  8:   watcher.vm = {} // mock vm",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\instance\\state.ts",
+      "line": 325,
+      "name": "createWatcher",
+      "kind": "def",
+      "context": "src\\core\\instance\\state.ts\n  325: function createWatcher(\n  326:   vm: Component,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\instance\\lifecycle.ts",
+      "line": 204,
+      "name": "WatcherOptions",
+      "kind": "ref",
+      "context": "src\\core\\instance\\lifecycle.ts\n  204:   const watcherOptions: WatcherOptions = {\n  205:     before() {",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\types\\component.ts",
+      "line": 94,
+      "name": "Watcher",
+      "kind": "ref",
+      "context": "src\\types\\component.ts\n  93:   _scope: EffectScope\n  94:   _computedWatchers: { [key: string]: Watcher }\n  95:   _data: Record<string, any>",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\v3\\apiWatch.ts",
+      "line": 273,
+      "name": "Watcher",
+      "kind": "ref",
+      "context": "src\\v3\\apiWatch.ts\n  273:   const watcher = new Watcher(currentInstance, getter, noop, {\n  274:     lazy: true",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\v3\\reactivity\\computed.ts",
+      "line": 59,
+      "name": "Watcher",
+      "kind": "ref",
+      "context": "src\\v3\\reactivity\\computed.ts\n  58:     ? null\n  59:     : new Watcher(currentInstance, getter, noop, { lazy: true })",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\v3\\reactivity\\effect.ts",
+      "line": 12,
+      "name": "Watcher",
+      "kind": "ref",
+      "context": "src\\v3\\reactivity\\effect.ts\n  11: export function effect(fn: () => any, scheduler?: (cb: any) => void) {\n  12:   const watcher = new Watcher(currentInstance, fn, noop, {\n  13:     sync: true",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\v3\\reactivity\\effectScope.ts",
+      "line": 116,
+      "name": "Watcher",
+      "kind": "ref",
+      "context": "src\\v3\\reactivity\\effectScope.ts\n  115: export function recordEffectScope(\n  116:   effect: Watcher,\n  117:   scope: EffectScope | undefined = activeEffectScope",
+      "quality": "exact"
+    }
+  ]
+}

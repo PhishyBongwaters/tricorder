@@ -1,0 +1,50 @@
+export class Observer {
+  dep: Dep
+  vmCount: number // number of vms that have this object as root $data
+
+  constructor(public value: any, public shallow = false, public mock = false) {
+    // this.value = value
+    this.dep = mock ? mockDep : new Dep()
+    this.vmCount = 0
+    def(value, '__ob__', this)
+    if (isArray(value)) {
+      if (!mock) {
+        if (hasProto) {
+          /* eslint-disable no-proto */
+          ;(value as any).__proto__ = arrayMethods
+          /* eslint-enable no-proto */
+        } else {
+          for (let i = 0, l = arrayKeys.length; i < l; i++) {
+            const key = arrayKeys[i]
+            def(value, key, arrayMethods[key])
+          }
+        }
+      }
+      if (!shallow) {
+        this.observeArray(value)
+      }
+    } else {
+      /**
+       * Walk through all properties and convert them into
+       * getter/setters. This method should only be called when
+       * value type is Object.
+       */
+      const keys = Object.keys(value)
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i]
+        defineReactive(value, key, NO_INITIAL_VALUE, undefined, shallow, mock)
+      }
+    }
+  }
+
+  /**
+   * Observe a list of Array items.
+   */
+  observeArray(value: any[]) {
+    for (let i = 0, l = value.length; i < l; i++) {
+      observe(value[i], false, this.mock)
+    }
+  }
+}
+
+// helpers

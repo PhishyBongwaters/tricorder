@@ -1,0 +1,25 @@
+export function observe(
+  value: any,
+  shallow?: boolean,
+  ssrMockReactivity?: boolean
+): Observer | void {
+  if (value && hasOwn(value, '__ob__') && value.__ob__ instanceof Observer) {
+    return value.__ob__
+  }
+  if (
+    shouldObserve &&
+    (ssrMockReactivity || !isServerRendering()) &&
+    (isArray(value) || isPlainObject(value)) &&
+    Object.isExtensible(value) &&
+    !value.__v_skip /* ReactiveFlags.SKIP */ &&
+    !isRef(value) &&
+    !(value instanceof VNode)
+  ) {
+    return new Observer(value, shallow, ssrMockReactivity)
+  }
+}
+
+/**
+ * Define a reactive property on an Object.
+ */
+export function defineReactive(
