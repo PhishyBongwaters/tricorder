@@ -62,12 +62,12 @@ Key runtime methods on proxy:
 | 2 | symbols "has_many" | 23,617 | ~500+ matches | ⚠️ too many, should have used --max-results 5 |
 | 3 | symbols "HasMany" | 1,357 | ~30 matches | ✅ confirmed builder/association |
 | 4 | detect "has_many association" | 1,204 | 10 | ✅ right area |
-| 5 | read associations.rb 1420–1439 | 320 | — | ✅ entry point |
-| 6 | read has_many builder | 180 | — | ✅ Builder::HasMany |
-| 7 | read association builder | 210 | — | ✅ define_readers/writers |
-| 8 | read has_many_association.rb | 520 | — | ✅ runtime methods |
+| 5 | read associations.rb 1420–1439 | 360 | — | ✅ entry point |
+| 6 | read has_many builder | 243 | — | ✅ Builder::HasMany |
+| 7 | read association builder | 343 | — | ✅ define_readers/writers |
+| 8 | read has_many_association.rb | 1,002 | — | ✅ runtime methods |
 
-**Total: 7 calls, 28,253 tokens** (symbols "has_many" alone = 23,617 tok)
+**Total as-run: 7 calls, 30,201 tokens** (`symbols "has_many"` alone = 23,617 tok). **Post-fix replay of cmd 2: 1,430 tok** (`step_symbols1_postfix.txt`) → **leg-equivalent total 8,014**. Artifacts renamed `.rb.txt` (bare `.rb` artifacts broke `test_empty_result`, which scans the worktree — parseable extensions must never be committed as records).
 
 ## Compliance Issue
 

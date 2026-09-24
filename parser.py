@@ -344,6 +344,15 @@ class ParserMixin:
             for capture_name, parents in parent_nodes.items():
                 sym_type = kind_map.get(capture_name, "variable")
                 name_list = name_nodes.get("name." + capture_name, [])
+                # Pair innermost-first: nested scopes share name-node spans,
+                # and greedy document-order consumption lets an outer scope
+                # steal an inner scope's name, leaving the inner definition
+                # with the whole parent span as its "name" (observed: a
+                # 70,512-char name on Rails form_helper.rb, 23k tokens in one
+                # symbols record). Stable sort keeps document order among
+                # equal spans.
+                parents = sorted(
+                    parents, key=lambda p: p.end_byte - p.start_byte)
                 # Deterministic name resolution: the identifier immediately
                 # following the def/func/fn/class keyword in parent.children.
                 # Order-independent; avoids stealing nested/sibling names.
@@ -378,7 +387,13 @@ class ParserMixin:
                                 name = child.text.decode("utf-8", errors="ignore")
                                 break
                     if not name:
-                        name = parent.text.decode("utf-8", errors="ignore")
+                        # Last resort, bounded: first line of the parent span,
+                        # capped at 200 chars. Unbounded parent.text here is
+                        # how a whole module became a 70KB "name". Names must
+                        # stay identifiers; full bodies live behind detail.
+                        first = parent.text.decode(
+                            "utf-8", errors="ignore").splitlines()
+                        name = (first[0].strip() if first else "")[:200]
 
                     # Scope the name to its enclosing class/struct (C/C++/Rust
                     # use '::'); e.g. void Foo::bar() -> "Foo::bar".

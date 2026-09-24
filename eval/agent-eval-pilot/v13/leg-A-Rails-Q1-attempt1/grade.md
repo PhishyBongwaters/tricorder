@@ -10,11 +10,11 @@ Ground truth (`has_many` at `associations.rb:1426`, `Builder::HasMany`,
 | Step | Tokens | Note |
 |---|---|---|
 | MAP 2048 | 2,075 | generic Rails scaffolding |
-| symbols "has_many" | 23,617 | **500+ matches; cap violation (v1.3 §)** |
+| symbols "has_many" | 23,617 as-run → **1,430 post-fix** | monster name fixed (see Findings) |
 | symbols "HasMany" | 1,357 | confirmed builder/association |
 | detect "has_many association" | 1,204 | right area |
-| reads (4 ranges) | 1,250 | verified |
-| **Total** | **28,253** | **5× inflated by uncapped symbols** |
+| reads (4 ranges) | 1,948 | verified |
+| **Total** | **30,201 as-run / 8,014 post-fix replay** | |
 
 ## Compliance
 
@@ -34,7 +34,20 @@ Ground truth (`has_many` at `associations.rb:1426`, `Builder::HasMany`,
 
 ## Findings
 
-1. **Symbol query blowup on large codebases**: `symbols "has_many"` matched 500+ definitions across Rails (every model using it, plus builder classes, test files, etc.). v1.3 cap should apply to symbols too.
+1. **Monster-name extractor bug — fixed at source.** `symbols "has_many"`
+   returned one 70,512-char "name" (entire Ruby module + RDoc, 23,617
+   tok). Root cause: greedy document-order name pairing let an outer
+   nested scope steal the inner scope's name node; the inner definition
+   fell through to unbounded `parent.text`. Fix (`parser.py`): pair
+   innermost-first (stable span sort) + bound the last resort to first
+   line ≤200 chars. Red-first `tests/test_symbol_name_span.py`.
+   Post-fix identical query: 1,430 tok (16.5×). Initial "cap violation"
+   read was wrong — limit held (10 records); one record was poisoned.
 2. **MAP rung still noise** — at 4.5k files MAP works mechanically (2,075 tok fitted) but returns generic scaffolding; exact-first symbols bypass it.
 3. **Qwen still ladder-compliant** — stopped at first answer (READ rung), no NL, no junk.
-4. **As-run tokens 28k vs expected ~5k** — 5× inflation from uncapped symbol query.
+4. **As-run 30,201 vs post-fix replay 8,014** — the monster record was
+   78% of the leg.
+5. **Records hygiene:** `.rb` payload artifacts broke
+   `test_empty_result` (scans the worktree; Ruby modules type as
+   `import`). Artifacts renamed `.rb.txt`; parseable extensions must
+   never be committed as records.
