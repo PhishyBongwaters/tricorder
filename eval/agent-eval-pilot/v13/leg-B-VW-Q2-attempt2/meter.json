@@ -1,0 +1,8 @@
+{
+ "step01_ls_root.txt": 101,
+ "step02_ls_src.txt": 49,
+ "step03_grep_admin.txt": 566,
+ "step04_read_admin.txt": 8321,
+ "step05_read_auth.txt": 10228,
+ "step06_grep_config.txt": 266
+}

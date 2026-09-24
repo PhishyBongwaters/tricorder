@@ -1,0 +1,21 @@
+src/api/admin.rs:22:    auth::{ClientIp, Secure, decode_admin, encode_jwt, generate_admin_claims},
+src/api/core/accounts.rs:241:        err!("Password hints have been disabled by the administrator. Remove the hint and try again.");
+src/api/core/ciphers.rs:34:    // Note that many routes have an `admin` variant; this seems to be
+src/api/core/events.rs:70:        && Membership::user_has_ge_admin_access_to_cipher(&headers.user.uuid, &cipher_id, &conn).await
+src/api/core/mod.rs:293:    // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
+src/api/core/organizations.rs:9:    api::admin::FAKE_ADMIN_UUID,
+src/api/core/sends.rs:96:/// Enforces the `Disable Send` policy. A non-owner/admin user belonging to
+src/api/identity.rs:499:                    "Could not send login notification email. Please contact your administrator.",
+src/api/mod.rs:1:mod admin;
+src/api/web.rs:256:// It allows to easily develop the admin interface by always loading the files from disk instead from a slice of bytes
+src/auth.rs:56:static JWT_ADMIN_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|admin", CONFIG.domain_origin()));
+src/config.rs:294:                    println!("[WARNING] Please use the admin panel to make changes to them:");
+src/db/models/cipher.rs:318:            Cow::from(self.get_admin_collections(user_uuid.clone(), conn).await)
+src/db/models/collection.rs:385:                                    users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
+src/db/models/org_policy.rs:258:    /// and the user is not an owner or admin of that org. This is only useful for checking
+src/db/models/organization.rs:941:    // Get all users which are either owner or admin, or a manager which can manage/access all
+src/mail.rs:636:pub async fn send_admin_reset_password(address: &str, user_name: &str, org_name: &str) -> EmptyResult {
+src/main.rs:310:        ("vaultwarden::api::admin::_", rocket_underscore_level),
+src/ratelimit.rs:16:    let seconds = Duration::from_secs(CONFIG.admin_ratelimit_seconds());
+src/sso_client.rs:244:                // Might need to notify admin ? how ?
+src/util.rs:60:        // NOTE: When modifying or adding security headers be sure to also update the diagnostic checks in `src/static/scripts/admin_diagnostics.js` in `checkSecurityHeaders`
