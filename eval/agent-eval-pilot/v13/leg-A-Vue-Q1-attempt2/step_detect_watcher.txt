@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "src\\core\\observer\\watcher.ts",
+      "line": 27,
+      "name": "WatcherOptions",
+      "kind": "def",
+      "context": "src\\core\\observer\\watcher.ts\n  26:  */\n  27: export interface WatcherOptions extends DebuggerOptions {\n  28:   deep?: boolean",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\observer\\scheduler.ts",
+      "line": 167,
+      "name": "queueWatcher",
+      "kind": "def",
+      "context": "src\\core\\observer\\scheduler.ts\n  166:  */\n  167: export function queueWatcher(watcher: Watcher) {\n  168:   const id = watcher.id",
+      "quality": "exact"
+    },
+    {
+      "file": "test\\unit\\modules\\observer\\scheduler.spec.ts",
+      "line": 7,
+      "name": "queueWatcher",
+      "kind": "def",
+      "context": "test\\unit\\modules\\observer\\scheduler.spec.ts\n  7: function queueWatcher(watcher) {\n  8:   watcher.vm = {} // mock vm",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\instance\\state.ts",
+      "line": 325,
+      "name": "createWatcher",
+      "kind": "def",
+      "context": "src\\core\\instance\\state.ts\n  325: function createWatcher(\n  326:   vm: Component,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\instance\\lifecycle.ts",
+      "line": 204,
+      "name": "WatcherOptions",
+      "kind": "ref",
+      "context": "src\\core\\instance\\lifecycle.ts\n  204:   const watcherOptions: WatcherOptions = {\n  205:     before() {",
+      "quality": "exact"
+    }
+  ]
+}

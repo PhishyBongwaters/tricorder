@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "src\\core\\observer\\dep.ts",
+      "line": 71,
+      "name": "Dep::notify",
+      "kind": "def",
+      "context": "src\\core\\observer\\dep.ts\n  71:   notify(info?: DebuggerEventExtraInfo) {\n  72:     // stabilize the subscriber list first",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\observer\\array.ts",
+      "line": 44,
+      "name": "notify",
+      "kind": "ref",
+      "context": "src\\core\\observer\\array.ts\n  43:     if (__DEV__) {\n  44:       ob.dep.notify({\n  45:         type: TriggerOpTypes.ARRAY_MUTATION,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\core\\observer\\index.ts",
+      "line": 200,
+      "name": "notify",
+      "kind": "ref",
+      "context": "src\\core\\observer\\index.ts\n  199:       if (__DEV__) {\n  200:         dep.notify({\n  201:           type: TriggerOpTypes.SET,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\v3\\reactivity\\ref.ts",
+      "line": 83,
+      "name": "notify",
+      "kind": "ref",
+      "context": "src\\v3\\reactivity\\ref.ts\n  82:     ref.dep &&\n  83:       ref.dep.notify({\n  84:         type: TriggerOpTypes.SET,",
+      "quality": "exact"
+    },
+    {
+      "file": "test\\unit\\modules\\observer\\dep.spec.ts",
+      "line": 64,
+      "name": "notify",
+      "kind": "ref",
+      "context": "test\\unit\\modules\\observer\\dep.spec.ts\n  63:       dep.subs.push({ update: vi.fn() })\n  64:       dep.notify()\n  65:       expect(dep.subs[0].update).toHaveBeenCalled()",
+      "quality": "exact"
+    }
+  ]
+}

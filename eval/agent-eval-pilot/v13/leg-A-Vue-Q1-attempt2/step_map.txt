@@ -1,0 +1,289 @@
+{
+  "tags": [
+    {
+      "name": "CreateElement",
+      "file": "types\\vue.d.ts",
+      "line": 27,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "CreateElement",
+      "file": "types\\vue.d.ts",
+      "line": 27,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "NeverFallback",
+      "file": "types\\vue.d.ts",
+      "line": 47,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "Vue",
+      "file": "types\\vue.d.ts",
+      "line": 49,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "Vue",
+      "file": "types\\vue.d.ts",
+      "line": 49,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "$mount",
+      "file": "types\\vue.d.ts",
+      "line": 84,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "$forceUpdate",
+      "file": "types\\vue.d.ts",
+      "line": 85,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "$destroy",
+      "file": "types\\vue.d.ts",
+      "line": 86,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "$watch",
+      "file": "types\\vue.d.ts",
+      "line": 89,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "$watch",
+      "file": "types\\vue.d.ts",
+      "line": 94,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "$on",
+      "file": "types\\vue.d.ts",
+      "line": 99,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "$once",
+      "file": "types\\vue.d.ts",
+      "line": 100,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "$off",
+      "file": "types\\vue.d.ts",
+      "line": 101,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "CombinedVueInstance",
+      "file": "types\\vue.d.ts",
+      "line": 106,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "ExtendedVue",
+      "file": "types\\vue.d.ts",
+      "line": 128,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "VueConfiguration",
+      "file": "types\\vue.d.ts",
+      "line": 151,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "VueConfiguration",
+      "file": "types\\vue.d.ts",
+      "line": 151,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "errorHandler",
+      "file": "types\\vue.d.ts",
+      "line": 157,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "warnHandler",
+      "file": "types\\vue.d.ts",
+      "line": 158,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "VueConstructor",
+      "file": "types\\vue.d.ts",
+      "line": 164,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "VueConstructor",
+      "file": "types\\vue.d.ts",
+      "line": 164,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "extend",
+      "file": "types\\vue.d.ts",
+      "line": 249,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "extend",
+      "file": "types\\vue.d.ts",
+      "line": 282,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "extend",
+      "file": "types\\vue.d.ts",
+      "line": 315,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "extend",
+      "file": "types\\vue.d.ts",
+      "line": 322,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "extend",
+      "file": "types\\vue.d.ts",
+      "line": 329,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "nextTick",
+      "file": "types\\vue.d.ts",
+      "line": 331,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "nextTick",
+      "file": "types\\vue.d.ts",
+      "line": 332,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "set",
+      "file": "types\\vue.d.ts",
+      "line": 333,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "set",
+      "file": "types\\vue.d.ts",
+      "line": 334,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "delete",
+      "file": "types\\vue.d.ts",
+      "line": 335,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "delete",
+      "file": "types\\vue.d.ts",
+      "line": 336,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "directive",
+      "file": "types\\vue.d.ts",
+      "line": 338,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "directive",
+      "file": "types\\vue.d.ts",
+      "line": 342,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "filter",
+      "file": "types\\vue.d.ts",
+      "line": 346,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "component",
+      "file": "types\\vue.d.ts",
+      "line": 348,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "component",
+      "file": "types\\vue.d.ts",
+      "line": 349,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "component",
+      "file": "types\\vue.d.ts",
+      "line": 350,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "component",
+      "file": "types\\vue.d.ts",
+      "line": 354,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    },
+    {
+      "name": "component",
+      "file": "types\\vue.d.ts",
+      "line": 384,
+      "kind": "def",
+      "rank": 0.0886980117049502
+    }
+  ],
+  "budget": {
+    "token_estimate": 2032,
+    "full_repo_estimate": 549971,
+    "savings_pct": 99.6
+  }
+}
