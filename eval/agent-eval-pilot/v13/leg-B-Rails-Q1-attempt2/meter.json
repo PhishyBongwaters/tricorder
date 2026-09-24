@@ -1,0 +1,18 @@
+{
+ "step01_ls_rails.txt": 160,
+ "step02_ls_activerecord.txt": 40,
+ "step03_grep_hasmany.txt": 31,
+ "step04_read_assoc_1400_1549.txt": 2294,
+ "step05_grep_class_hasmany.txt": 328,
+ "step06_grep_module_builder.txt": 21,
+ "step07_read_assoc_18_117.txt": 758,
+ "step08_read_builder_hasmany.txt": 193,
+ "step09_read_builder_coll_assoc.txt": 614,
+ "step10_read_builder_assoc.txt": 1265,
+ "step11_grep_hm_assoc.txt": 65,
+ "step12_read_hm_assoc.txt": 1174,
+ "step13_grep_coll_assoc.txt": 58,
+ "step14_read_coll_assoc.txt": 3756,
+ "step15_grep_gen_assoc.txt": 22,
+ "step16_read_assoc_runtime.txt": 3172
+}

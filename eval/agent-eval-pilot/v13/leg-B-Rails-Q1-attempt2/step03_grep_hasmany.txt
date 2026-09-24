@@ -1,0 +1,1 @@
+activerecord/lib/active_record/associations.rb:1426:        def has_many(name, scope = nil, **options, &extension)

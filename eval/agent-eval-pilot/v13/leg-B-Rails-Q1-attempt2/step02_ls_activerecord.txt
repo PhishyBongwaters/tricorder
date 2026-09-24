@@ -1,0 +1,11 @@
+.gitignore
+CHANGELOG.md
+MIT-LICENSE
+README.rdoc
+RUNNING_UNIT_TESTS.rdoc
+Rakefile
+activerecord.gemspec
+bin
+examples
+lib
+test

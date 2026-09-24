@@ -1,0 +1,2 @@
+activerecord/lib/active_record/associations/has_many_association.rb:11:    class HasManyAssociation < CollectionAssociation # :nodoc:
+activerecord/test/cases/associations/has_many_associations_test.rb:50:class HasManyAssociationsTestForReorderWithJoinDependency < ActiveRecord::TestCase

@@ -1,0 +1,11 @@
+activerecord/lib/active_record/associations/builder/has_many.rb:4:  class HasMany < CollectionAssociation # :nodoc:
+activerecord/lib/active_record/associations/errors.rb:74:  class HasManyThroughAssociationNotFoundError < ActiveRecordError # :nodoc:
+activerecord/lib/active_record/associations/has_many_association.rb:11:    class HasManyAssociation < CollectionAssociation # :nodoc:
+activerecord/lib/active_record/associations/has_many_through_association.rb:6:    class HasManyThroughAssociation < HasManyAssociation # :nodoc:
+activerecord/lib/active_record/fixture_set/table_row.rb:24:      class HasManyThroughProxy < ReflectionProxy # :nodoc:
+activerecord/lib/active_record/reflection.rb:900:    class HasManyReflection < AssociationReflection # :nodoc:
+activerecord/test/cases/associations/has_many_associations_test.rb:50:class HasManyAssociationsTestForReorderWithJoinDependency < ActiveRecord::TestCase
+activerecord/test/cases/associations/has_many_through_associations_test.rb:50:class HasManyThroughAssociationsTest < ActiveRecord::TestCase
+activerecord/test/cases/associations/has_many_through_disable_joins_associations_test.rb:23:class HasManyThroughDisableJoinsAssociationsTest < ActiveRecord::TestCase
+activerecord/test/cases/fixtures_test.rb:671:class HasManyThroughFixture < ActiveRecord::TestCase
+activerecord/test/cases/scoping/relation_scoping_test.rb:522:class HasManyScopingTest < ActiveRecord::TestCase

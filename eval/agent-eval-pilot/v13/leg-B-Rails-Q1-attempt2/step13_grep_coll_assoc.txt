@@ -1,0 +1,2 @@
+activerecord/lib/active_record/associations/builder/collection_association.rb:6:  class CollectionAssociation < Association # :nodoc:
+activerecord/lib/active_record/associations/collection_association.rb:30:    class CollectionAssociation < Association # :nodoc:

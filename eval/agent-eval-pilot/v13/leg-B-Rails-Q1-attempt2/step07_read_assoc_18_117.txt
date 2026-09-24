@@ -1,0 +1,100 @@
+    module Builder # :nodoc:
+      autoload :Association,           "active_record/associations/builder/association"
+      autoload :SingularAssociation,   "active_record/associations/builder/singular_association"
+      autoload :CollectionAssociation, "active_record/associations/builder/collection_association"
+
+      autoload :BelongsTo,           "active_record/associations/builder/belongs_to"
+      autoload :HasOne,              "active_record/associations/builder/has_one"
+      autoload :HasMany,             "active_record/associations/builder/has_many"
+      autoload :HasAndBelongsToMany, "active_record/associations/builder/has_and_belongs_to_many"
+    end
+
+    eager_autoload do
+      autoload :BelongsToAssociation
+      autoload :BelongsToPolymorphicAssociation
+      autoload :HasManyAssociation
+      autoload :HasManyThroughAssociation
+      autoload :HasOneAssociation
+      autoload :HasOneThroughAssociation
+
+      autoload :Preloader
+      autoload :JoinDependency
+      autoload :AssociationScope
+      autoload :DisableJoinsAssociationScope
+      autoload :AliasTracker
+
+      autoload :Deprecation
+    end
+
+    def self.eager_load!
+      super
+      Preloader.eager_load!
+      JoinDependency.eager_load!
+    end
+
+    # Returns the association instance for the given name, instantiating it if it doesn't already exist
+    def association(name) # :nodoc:
+      association = association_instance_get(name)
+
+      if association.nil?
+        unless reflection = self.class._reflect_on_association(name)
+          raise AssociationNotFoundError.new(self, name)
+        end
+        association = reflection.association_class.new(self, reflection)
+        association_instance_set(name, association)
+      end
+
+      association
+    end
+
+    def association_cached?(name) # :nodoc:
+      @association_cache.key?(name)
+    end
+
+    def initialize_dup(*) # :nodoc:
+      @association_cache = {}
+      super
+    end
+
+    private
+      def init_internals
+        super
+        @association_cache = {}
+      end
+
+      # Returns the specified association instance if it exists, +nil+ otherwise.
+      def association_instance_get(name)
+        (@association_cache ||= {})[name]
+      end
+
+      # Set the specified association instance.
+      def association_instance_set(name, association)
+        @association_cache[name] = association
+      end
+
+      def deprecated_associations_api_guard(association, method_name)
+        Deprecation.guard(association.reflection) { "the method #{method_name} was invoked" }
+      end
+
+      def report_deprecated_association(reflection, context:)
+        Deprecation.report(reflection, context: context)
+      end
+
+      # = Active Record \Associations
+      #
+      # \Associations are a set of macro-like class methods for tying objects together through
+      # foreign keys. They express relationships like "Project has one Project Manager"
+      # or "Project belongs to a Portfolio". Each macro adds a number of methods to the
+      # class which are specialized according to the collection or association symbol and the
+      # options hash. It works much the same way as Ruby's own <tt>attr*</tt>
+      # methods.
+      #
+      #   class Project < ActiveRecord::Base
+      #     belongs_to              :portfolio
+      #     has_one                 :project_manager
+      #     has_many                :milestones
+      #     has_and_belongs_to_many :categories
+      #   end
+      #
+      # The project class now has the following methods (and more) to ease the traversal and
+      # manipulation of its relationships:

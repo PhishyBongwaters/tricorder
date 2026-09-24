@@ -1,0 +1,150 @@
+        #   nested attributes setter, when accepts_nested_attributes_for is used.
+        # [:before_add]
+        #   Defines an {association callback}[rdoc-ref:Associations::ClassMethods@Association+callbacks] that gets triggered <b>before an object is added</b> to the association collection.
+        # [:after_add]
+        #   Defines an {association callback}[rdoc-ref:Associations::ClassMethods@Association+callbacks] that gets triggered <b>after an object is added</b> to the association collection.
+        # [:before_remove]
+        #   Defines an {association callback}[rdoc-ref:Associations::ClassMethods@Association+callbacks] that gets triggered <b>before an object is removed</b> from the association collection.
+        # [:after_remove]
+        #   Defines an {association callback}[rdoc-ref:Associations::ClassMethods@Association+callbacks] that gets triggered <b>after an object is removed</b> from the association collection.
+        # [+:deprecated+]
+        #   If true, marks the association as deprecated. Usage of deprecated associations is reported.
+        #   Please, check the class documentation above for details.
+        #
+        # Option examples:
+        #   has_many :comments, -> { order("posted_on") }
+        #   has_many :comments, -> { includes(:author) }
+        #   has_many :people, -> { where(deleted: false).order("name") }, class_name: "Person"
+        #   has_many :tracks, -> { order("position") }, dependent: :destroy
+        #   has_many :comments, dependent: :nullify
+        #   has_many :tags, as: :taggable
+        #   has_many :reports, -> { readonly }
+        #   has_many :subscribers, through: :subscriptions, source: :user
+        #   has_many :subscribers, through: :subscriptions, disable_joins: true
+        #   has_many :comments, strict_loading: true
+        #   has_many :comments, query_constraints: [:blog_id, :post_id]
+        #   has_many :comments, index_errors: :nested_attributes_order
+        def has_many(name, scope = nil, **options, &extension)
+          reflection = Builder::HasMany.build(self, name, scope, options, &extension)
+          Reflection.add_reflection(self, name, reflection)
+        end
+
+        # Specifies a one-to-one association with another class. This method
+        # should only be used if the other class contains the foreign key. If
+        # the current class contains the foreign key, then you should use
+        # #belongs_to instead. See {Is it a belongs_to or has_one
+        # association?}[rdoc-ref:Associations::ClassMethods@Is+it+a+-23belongs_to+or+-23has_one+association-3F]
+        # for more detail on when to use #has_one and when to use #belongs_to.
+        #
+        # The following methods for retrieval and query of a single associated object will be added:
+        #
+        # +association+ is a placeholder for the symbol passed as the +name+ argument, so
+        # <tt>has_one :manager</tt> would add among others <tt>manager.nil?</tt>.
+        #
+        # [<tt>association</tt>]
+        #   Returns the associated object. +nil+ is returned if none is found.
+        # [<tt>association=(associate)</tt>]
+        #   Assigns the associate object, extracts the primary key, sets it as the foreign key,
+        #   and saves the associate object. To avoid database inconsistencies, permanently deletes an existing
+        #   associated object when assigning a new one, even if the new one isn't saved to database.
+        # [<tt>build_association(attributes = {})</tt>]
+        #   Returns a new object of the associated type that has been instantiated
+        #   with +attributes+ and linked to this object through a foreign key, but has not
+        #   yet been saved.
+        # [<tt>create_association(attributes = {})</tt>]
+        #   Returns a new object of the associated type that has been instantiated
+        #   with +attributes+, linked to this object through a foreign key, and that
+        #   has already been saved (if it passed the validation).
+        # [<tt>create_association!(attributes = {})</tt>]
+        #   Does the same as <tt>create_association</tt>, but raises ActiveRecord::RecordInvalid
+        #   if the record is invalid.
+        # [<tt>reload_association</tt>]
+        #   Returns the associated object, forcing a database read.
+        # [<tt>reset_association</tt>]
+        #   Unloads the associated object. The next access will query it from the database.
+        #
+        # ==== Example
+        #
+        #   class Account < ActiveRecord::Base
+        #     has_one :beneficiary
+        #   end
+        #
+        # Declaring <tt>has_one :beneficiary</tt> adds the following methods (and more):
+        #
+        #   account = Account.find(5)
+        #   beneficiary = Beneficiary.find(8)
+        #
+        #   account.beneficiary               # similar to Beneficiary.find_by(account_id: 5)
+        #   account.beneficiary = beneficiary # similar to beneficiary.update(account_id: 5)
+        #   account.build_beneficiary         # similar to Beneficiary.new(account_id: 5)
+        #   account.create_beneficiary        # similar to Beneficiary.create(account_id: 5)
+        #   account.create_beneficiary!       # similar to Beneficiary.create!(account_id: 5)
+        #   account.reload_beneficiary
+        #   account.reset_beneficiary
+        #
+        # ==== Scopes
+        #
+        # You can pass a second argument +scope+ as a callable (i.e. proc or
+        # lambda) to retrieve a specific record or customize the generated query
+        # when you access the associated object.
+        #
+        # Scope examples:
+        #   has_one :author, -> { where(comment_id: 1) }
+        #   has_one :employer, -> { joins(:company) }
+        #   has_one :latest_post, ->(blog) { where("created_at > ?", blog.enabled_at) }
+        #
+        # ==== Options
+        #
+        # The declaration can also include an +options+ hash to specialize the behavior of the association.
+        #
+        # Options are:
+        # [+:class_name+]
+        #   Specify the class name of the association. Use it only if that name can't be inferred
+        #   from the association name. So <tt>has_one :manager</tt> will by default be linked to the Manager class, but
+        #   if the real class name is Person, you'll have to specify it with this option.
+        # [+:dependent+]
+        #   Controls what happens to the associated object when
+        #   its owner is destroyed:
+        #
+        #   * <tt>nil</tt> do nothing (default).
+        #   * <tt>:destroy</tt> causes the associated object to also be destroyed
+        #   * <tt>:destroy_async</tt> causes the associated object to be destroyed in a background job. <b>WARNING:</b> Do not use
+        #     this option if the association is backed by foreign key constraints in your database. The foreign key
+        #     constraint actions will occur inside the same transaction that deletes its owner.
+        #   * <tt>:delete</tt> causes the associated object to be deleted directly from the database (so callbacks will not execute)
+        #   * <tt>:nullify</tt> causes the foreign key to be set to +NULL+. Polymorphic type column is also nullified
+        #     on polymorphic associations. Callbacks are not executed.
+        #   * <tt>:restrict_with_exception</tt> causes an ActiveRecord::DeleteRestrictionError exception to be raised if there is an associated record
+        #   * <tt>:restrict_with_error</tt> causes an error to be added to the owner if there is an associated object
+        #
+        #   Note that <tt>:dependent</tt> option is ignored when using <tt>:through</tt> option.
+        # [+:foreign_key+]
+        #   Specify the foreign key used for the association. By default this is guessed to be the name
+        #   of this class in lower-case and "_id" suffixed. So a Person class that makes a #has_one association
+        #   will use "person_id" as the default <tt>:foreign_key</tt>.
+        #
+        #   Setting the <tt>:foreign_key</tt> option prevents automatic detection of the association's
+        #   inverse, so it is generally a good idea to set the <tt>:inverse_of</tt> option as well.
+        # [+:foreign_type+]
+        #   Specify the column used to store the associated object's type, if this is a polymorphic
+        #   association. By default this is guessed to be the name of the polymorphic association
+        #   specified on "as" option with a "_type" suffix. So a class that defines a
+        #   <tt>has_one :tag, as: :taggable</tt> association will use "taggable_type" as the
+        #   default <tt>:foreign_type</tt>.
+        # [+:primary_key+]
+        #   Specify the method that returns the primary key used for the association. By default this is +id+.
+        # [+:as+]
+        #   Specifies a polymorphic interface (See #belongs_to).
+        # [+:through+]
+        #   Specifies an association through which to perform the query.
+        #
+        #   The through association must be a +has_one+, <tt>has_one :through</tt>, or non-polymorphic +belongs_to+.
+        #   That is, a non-polymorphic singular association. Options for <tt>:class_name</tt>, <tt>:primary_key</tt>,
+        #   and <tt>:foreign_key</tt> are ignored, as the association uses the source reflection. You can only
+        #   use a <tt>:through</tt> query through a #has_one or #belongs_to association on the join model.
+        #
+        #   If the association on the join model is a #belongs_to, the collection can be modified
+        #   and the records on the <tt>:through</tt> model will be automatically created and removed
+        #   as appropriate. Otherwise, the collection is read-only, so you should manipulate the
+        #   <tt>:through</tt> association directly.
+        #
