@@ -1,0 +1,7 @@
+src/api/core/accounts.rs:33:    ciphers::{CipherData, update_cipher_from_data},
+src/api/core/ciphers.rs:372:    update_cipher_from_data(&mut cipher, data, &headers, None, &conn, &nt, UpdateType::SyncCipherCreate).await?;
+src/api/core/organizations.rs:1794:use super::ciphers::update_cipher_from_data;
+src/api/mod.rs:28:        push_cipher_update, push_folder_update, push_logout, push_send_update, push_user_update, register_push_device,
+src/api/notifications.rs:23:    push::push_auth_request, push::push_auth_response, push_cipher_update, push_folder_update, push_logout,
+src/api/push.rs:160:pub async fn push_cipher_update(ut: UpdateType, cipher: &Cipher, device: &Device, conn: &DbConn) {
+src/db/models/event.rs:65:    CipherUpdated = 1101,

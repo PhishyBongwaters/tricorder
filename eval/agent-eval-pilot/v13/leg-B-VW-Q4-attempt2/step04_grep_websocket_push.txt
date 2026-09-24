@@ -1,0 +1,17 @@
+src/api/admin.rs:798:        "enable_websocket": &CONFIG.enable_websocket(),
+src/api/core/accounts.rs:975:            // Prevent triggering cipher updates via WebSockets by settings UpdateType::None
+src/api/core/ciphers.rs:1024:    // Multi share actions do not send out a push for each cipher, we need to send a general sync here
+src/api/core/emergency_access.rs:468:    emergency_access.last_notification_at = Some(now);
+src/api/core/mod.rs:14:pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
+src/api/core/organizations.rs:1913:// Also Bitwarden does not send out Notifications for these changes, it only does this for individual cipher collection updates
+src/api/core/two_factor/mod.rs:243:pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
+src/api/identity.rs:499:                    "Could not send login notification email. Please contact your administrator.",
+src/api/mod.rs:5:mod notifications;
+src/api/notifications.rs:10:use rocket_ws::{Message, WebSocket};
+src/api/push.rs:18:        models::{AuthRequestId, Cipher, Device, Folder, PushId, Send, User, UserId},
+src/config.rs:524:        /// Enable websocket notifications
+src/db/models/emergency_access.rs:29:    pub last_notification_at: Option<NaiveDateTime>,
+src/db/models/two_factor_incomplete.rs:45:        // would allow an attacker to arbitrarily delay notifications by
+src/db/schema.rs:291:        last_notification_at -> Nullable<Timestamp>,
+src/main.rs:46:use tokio::signal::unix::SignalKind;
+src/util.rs:43:        // Check if this connection is an Upgrade/WebSocket connection and return early

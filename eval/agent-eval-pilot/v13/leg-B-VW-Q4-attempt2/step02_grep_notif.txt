@@ -1,0 +1,15 @@
+src/api/core/ciphers.rs:1074:    // If there is an override, like when handling multiple items, we want to prevent a push notification for every single item
+src/api/core/emergency_access.rs:468:    emergency_access.last_notification_at = Some(now);
+src/api/core/mod.rs:14:pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
+src/api/core/organizations.rs:1913:// Also Bitwarden does not send out Notifications for these changes, it only does this for individual cipher collection updates
+src/api/core/two_factor/mod.rs:243:pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
+src/api/identity.rs:499:                    "Could not send login notification email. Please contact your administrator.",
+src/api/mod.rs:5:mod notifications;
+src/api/notifications.rs:44:static NOTIFICATIONS_DISABLED: LazyLock<bool> = LazyLock::new(|| !CONFIG.enable_websocket() && !CONFIG.push_enabled());
+src/api/push.rs:161:    // We shouldn't send a push notification on cipher update if the cipher belongs to an organization, this isn't implemented in the upstream server too.
+src/config.rs:524:        /// Enable websocket notifications
+src/db/models/emergency_access.rs:29:    pub last_notification_at: Option<NaiveDateTime>,
+src/db/models/two_factor_incomplete.rs:45:        // would allow an attacker to arbitrarily delay notifications by
+src/db/schema.rs:291:        last_notification_at -> Nullable<Timestamp>,
+src/main.rs:311:        ("vaultwarden::api::notifications::_", rocket_underscore_level),
+src/util.rs:45:        if req_uri_path.ends_with("notifications/hub") || req_uri_path.ends_with("notifications/anonymous-hub") {

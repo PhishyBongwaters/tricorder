@@ -1,0 +1,5 @@
+src/api/core/accounts.rs:970:            let Some(saved_cipher) = existing_ciphers.iter_mut().find(|c| &c.uuid == cipher_data.id.as_ref().unwrap())
+src/api/core/ciphers.rs:50:        post_ciphers,
+src/api/core/organizations.rs:1896:        CollectionCipher::save(cipher_id, col_id, &conn).await?;
+src/db/models/cipher.rs:528:            (None, Some(new_folder)) => FolderCipher::new(new_folder, self.uuid.clone()).save(conn).await,
+src/db/models/collection.rs:908:    pub async fn save(cipher_uuid: &CipherId, collection_uuid: &CollectionId, conn: &DbConn) -> EmptyResult {
