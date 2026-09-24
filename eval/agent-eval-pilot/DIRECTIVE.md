@@ -45,8 +45,11 @@ warm DB (see below) and say so in the prompt.
   the pilot cost 150–1,150 tokens; every NL-first query risked five
   figures. Guess the likeliest identifier (`buildssa`, not "build SSA
   form for function") before spending an NL query.
-- **Cap first passes:** NL queries run with `--max-results 5`. Widen to 10
-  only when the narrow pass returns nothing usable.
+- **Cap first passes:** ALL first-pass queries run with `--max-results 5`,
+  exact or NL. Widen to 10 only when the narrow pass returns nothing
+  usable. (Amended 2026-09-24: original text capped NL only; A-Vue-Q1
+  attempt 3 showed exact guesses at 10 cost ~950 tok vs ~500 at 5. Prior
+  legs quoted the original verbatim and stand as run.)
 
 ## v1.4 (read-window ceiling; closes the v1.1 loophole)
 
