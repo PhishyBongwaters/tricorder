@@ -262,9 +262,9 @@ modifier := "depth=" INT | "exclude=" GLOB | "include=" GLOB
  
 ## Smart MAP (v1.6 — `--smart-map`)
 
-For small repositories (<1000 files), `--smart-map QUERY` combines probe + exact detect + conditional MAP in one call:
+For repositories under 5000 files, `--smart-map QUERY` combines probe + exact detect + conditional MAP in one call:
 
-1. Runs `--probe-digest` to calibrate repo size (<1000 files threshold)
+1. Runs `--probe-digest` to calibrate repo size (<5000 files threshold)
 2. Runs ONE exact detect with the given QUERY (max-results=5)
 3. If exact match found: outputs detect results and **skips MAP entirely**
 3. If no exact match: falls through to full MAP

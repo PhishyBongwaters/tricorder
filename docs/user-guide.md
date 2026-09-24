@@ -97,7 +97,7 @@ answers your question:
 | 5. Tier-1 scan | `--tier 1` | ~350 tokens/tag | "Show me this subsystem's shape" |
 | 6. Full file | read the source | full cost | Last resort |
 
-**Smart MAP (rungs 0.5 + 2 + 1 in one call):** For small repos (<1000 files),
+**Smart MAP (rungs 0.5 + 2 + 1 in one call):** For repos under 5000 files,
 use `--smart-map SYMBOL` — runs probe + ONE exact detect; if exact match found,
 skips MAP and outputs detect results; else falls through to full MAP:
 

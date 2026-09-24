@@ -57,7 +57,7 @@ All honor `--format` (JSON output is machine-clean — no info lines).
 | `--max-results N` | `5` (first pass) | Result cap for `--detect` / `--symbols`. First pass capped at 5 per v1.3; widen to 10 only when narrow pass returns nothing usable. `--detect` interleaves hits per file (round-robin) within each match tier before capping, so one file can't crowd out the rest. |
 | `--max-tokens N` | — | Response budget for `--detect` / `--symbols`: trims per-hit context first (identity survives), then lowest-ranked hits. Unset = unbounded. |
 | `--diff`, `--since` | off | Delta map: added/modified/deleted files since the last scan, plus tags for changed files. Read-only. `--since` is an alias for `--diff`. |
-| `--smart-map QUERY` | — | **Smart MAP for small repos (<1000 files)**: runs probe + ONE exact detect with QUERY. If exact match found, outputs detect results and SKIPS MAP; else falls through to full MAP. Combines probe+detect+conditional MAP in one call for agent ladder compliance (v1.6). |
+| `--smart-map QUERY` | — | **Smart MAP for repos <5000 files**: runs probe + ONE exact detect with QUERY. If exact match found, outputs detect results and SKIPS MAP; else falls through to full MAP. Combines probe+detect+conditional MAP in one call for agent ladder compliance (v1.6). |
 
 ```bash
 tricorder /path/to/repo --detect authenticate --format json

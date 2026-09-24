@@ -642,8 +642,8 @@ Examples:
             print("Smart MAP: no code files found in repo", file=sys.stderr)
             sys.exit(0)
 
-        if total_files < 1000:
-            # Small repo: run ONE exact detect first
+        if total_files < 5000:
+            # Small/medium repo: run ONE exact detect first
             import json as _json
             from utils import enforce_search_budget
             # Create a minimal Tricorder for the detect call
