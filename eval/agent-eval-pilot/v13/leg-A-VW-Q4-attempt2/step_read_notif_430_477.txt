@@ -1,0 +1,48 @@
+    pub async fn send_cipher_update(
+        &self,
+        ut: UpdateType,
+        cipher: &Cipher,
+        user_ids: &[UserId],
+        device: &Device,
+        collection_uuids: Option<Vec<CollectionId>>,
+        conn: &DbConn,
+    ) {
+        // Skip any processing if both WebSockets and Push are not active
+        if *NOTIFICATIONS_DISABLED {
+            return;
+        }
+        let org_id = convert_option(cipher.organization_uuid.as_deref());
+        // Depending if there are collections provided or not, we need to have different values for the following variables.
+        // The user_uuid should be `null`, and the revision date should be set to now, else the clients won't sync the collection change.
+        let (user_id, collection_uuids, revision_date) = if let Some(collection_uuids) = collection_uuids {
+            (
+                Value::Nil,
+                Value::Array(collection_uuids.into_iter().map(|v| v.to_string().into()).collect::<Vec<Value>>()),
+                serialize_date(Utc::now().naive_utc()),
+            )
+        } else {
+            (convert_option(cipher.user_uuid.as_deref()), Value::Nil, serialize_date(cipher.updated_at))
+        };
+
+        let data = create_update(
+            vec![
+                ("Id".into(), cipher.uuid.to_string().into()),
+                ("UserId".into(), user_id),
+                ("OrganizationId".into(), org_id),
+                ("CollectionIds".into(), collection_uuids),
+                ("RevisionDate".into(), revision_date),
+            ],
+            ut,
+            Some(device.uuid.clone()), // Acting device id (unique device/app uuid)
+        );
+
+        if CONFIG.enable_websocket() {
+            for uuid in user_ids {
+                self.send_update(uuid, &data).await;
+            }
+        }
+
+        if CONFIG.push_enabled() && user_ids.len() == 1 {
+            push_cipher_update(ut, cipher, device, conn).await;
+        }
+    }

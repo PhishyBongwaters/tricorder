@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "src\\api\\notifications.rs",
+      "line": 430,
+      "name": "WebSocketUsers::send_cipher_update",
+      "kind": "def",
+      "context": "src\\api\\notifications.rs\n  430:     pub async fn send_cipher_update(\n  431:         &self,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\api\\core\\ciphers.rs",
+      "line": 567,
+      "name": "send_cipher_update",
+      "kind": "ref",
+      "context": "src\\api\\core\\ciphers.rs\n  566:         }\n  567:         nt.send_cipher_update(\n  568:             ut,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\api\\notifications.rs",
+      "line": 430,
+      "name": "WebSocketUsers::send_cipher_update",
+      "kind": "def",
+      "context": "src\\api\\notifications.rs\n  430:     pub async fn send_cipher_update(\n  431:         &self,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\api\\core\\ciphers.rs",
+      "line": 842,
+      "name": "send_cipher_update",
+      "kind": "ref",
+      "context": "src\\api\\core\\ciphers.rs\n  842:     nt.send_cipher_update(\n  843:         UpdateType::SyncCipherUpdate,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\api\\core\\ciphers.rs",
+      "line": 922,
+      "name": "send_cipher_update",
+      "kind": "ref",
+      "context": "src\\api\\core\\ciphers.rs\n  922:     nt.send_cipher_update(\n  923:         UpdateType::SyncCipherUpdate,",
+      "quality": "exact"
+    }
+  ]
+}

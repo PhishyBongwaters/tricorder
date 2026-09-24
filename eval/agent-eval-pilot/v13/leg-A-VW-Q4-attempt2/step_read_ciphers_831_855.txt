@@ -1,0 +1,25 @@
+                    } else {
+                        // Remove from collection
+                        CollectionCipher::delete(&cipher.uuid, &collection.uuid, &conn).await?;
+                    }
+                } else {
+                    err!("No rights to modify the collection")
+                }
+            }
+        }
+    }
+
+    nt.send_cipher_update(
+        UpdateType::SyncCipherUpdate,
+        &cipher,
+        &cipher.update_users_revision(&conn).await,
+        &headers.device,
+        Some(Vec::from_iter(posted_collections)),
+        &conn,
+    )
+    .await;
+
+    log_event(
+        EventType::CipherUpdatedCollections as i32,
+        &cipher.uuid,
+        org_uuid,

@@ -1,0 +1,30 @@
+            log_event(
+                event_type as i32,
+                &cipher.uuid,
+                org_id,
+                &headers.user.uuid,
+                headers.device.atype,
+                &headers.ip.ip,
+                conn,
+            )
+            .await;
+        }
+        nt.send_cipher_update(
+            ut,
+            cipher,
+            &cipher.update_users_revision(conn).await,
+            &headers.device,
+            shared_to_collections,
+            conn,
+        )
+        .await;
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportData {
+    ciphers: Vec<CipherData>,
+    folders: Vec<FolderData>,
+    folder_relationships: Vec<RelationsData>,

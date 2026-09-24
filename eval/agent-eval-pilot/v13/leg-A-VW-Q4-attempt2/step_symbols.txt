@@ -1,0 +1,34 @@
+{
+  "symbols": [
+    {
+      "name": "WebSocketUsers::send_cipher_update",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\api\\notifications.rs",
+      "line": 430,
+      "end_line": 477,
+      "signature": "WebSocketUsers::send_cipher_update (\n        &self,\n        ut: UpdateType,\n        cipher: &Cipher,\n        user_ids: &[UserId],\n        device: &Device,\n        collection_uuids: Option<Vec<CollectionId>>,\n        conn: &DbConn,\n    )  -> send_cipher_update",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "WebSocketUsers::send_cipher_update",
+      "type": "method",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\api\\notifications.rs",
+      "line": 430,
+      "end_line": 477,
+      "signature": "WebSocketUsers::send_cipher_update (\n        &self,\n        ut: UpdateType,\n        cipher: &Cipher,\n        user_ids: &[UserId],\n        device: &Device,\n        collection_uuids: Option<Vec<CollectionId>>,\n        conn: &DbConn,\n    )  -> send_cipher_update",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.method",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    }
+  ]
+}

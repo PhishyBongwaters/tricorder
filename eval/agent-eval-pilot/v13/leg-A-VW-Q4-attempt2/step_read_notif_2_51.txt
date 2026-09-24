@@ -1,0 +1,50 @@
+    net::IpAddr,
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
+
+use chrono::{NaiveDateTime, Utc};
+use rmpv::Value;
+use rocket::{Route, futures::StreamExt};
+use rocket_ws::{Message, WebSocket};
+use tokio::sync::mpsc::Sender;
+
+use crate::{
+    CONFIG, Error,
+    auth::{ClientIp, WsAccessTokenHeader},
+    db::{
+        DbConn,
+        models::{AuthRequestId, Cipher, CollectionId, Device, DeviceId, Folder, PushId, Send as DbSend, User, UserId},
+    },
+};
+
+use super::{
+    push::push_auth_request, push::push_auth_response, push_cipher_update, push_folder_update, push_logout,
+    push_send_update, push_user_update,
+};
+
+pub static WS_USERS: LazyLock<Arc<WebSocketUsers>> = LazyLock::new(|| {
+    Arc::new(WebSocketUsers {
+        map: Arc::new(dashmap::DashMap::new()),
+    })
+});
+
+pub static WS_ANONYMOUS_SUBSCRIPTIONS: LazyLock<Arc<AnonymousWebSocketSubscriptions>> = LazyLock::new(|| {
+    Arc::new(AnonymousWebSocketSubscriptions {
+        map: Arc::new(dashmap::DashMap::new()),
+        connections: Arc::new(dashmap::DashMap::new()),
+    })
+});
+
+/// The anonymous hub needs no authentication, so bound how much a single client can hold open.
+/// One connection is needed per pending login request, several at once are only expected behind NAT.
+const MAX_ANONYMOUS_CONNECTIONS_PER_IP: u32 = 25;
+
+static NOTIFICATIONS_DISABLED: LazyLock<bool> = LazyLock::new(|| !CONFIG.enable_websocket() && !CONFIG.push_enabled());
+
+pub fn routes() -> Vec<Route> {
+    if CONFIG.enable_websocket() {
+        routes![websockets_hub, anonymous_websockets_hub]
+    } else {
+        info!("WebSocket are disabled, realtime sync functionality will not work!");
+        routes![]
