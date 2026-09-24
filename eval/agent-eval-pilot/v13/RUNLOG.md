@@ -104,3 +104,14 @@ anyway. Legs measure retrieval given the index, nothing else.
   directive stays a separate test instrument (caps, warm-DB prescans,
   metering don't belong in the skill). Do NOT port mid-series — v1.4
   landed 2026-09-24 from live leg data; the target is still moving.
+
+## Grading principle (2026-09-24): compliance serves token minimization
+
+- Ladder-compliance flags exist to explain TOKEN use, not to count turns.
+  Calls are a secondary metric, kept for series continuity. A shape
+  violation with zero token cost (Elixir att.3: same 10.3k as att.2) stays
+  tagged but ranks below any token waste; the real enemies are fixed
+  overhead (MAP noise ~2k/leg) and over-wide windows (att.1's 200–300s).
+- Consequence for future rules: judge ceilings by tokens saved, not windows
+  counted. v1.4 passes (mechanical cap → −41%); v1.5 is advisory until it
+  moves a token total.
