@@ -27,7 +27,7 @@ Repo: https://github.com/pdavis68/RepoMapper
 We forked RepoMapper and went deep on language coverage, correctness, and code intelligence:
 
 - **8 critical bug fixes** — NameError, TypeError, cache path, duplicate definitions, dead variables, redundant checks, dedup edge cases, relative_to crash
-- **301 tests** — zero existed in the original
+- **497 tests** (4 skipped, 98 subtests) — zero existed in the original
 - **11-language signature extraction** with return types — Python, JS/TS, C, C++, Java, Go, Rust, Swift, C#, Ruby
 - **Cross-file call graph** — callers/callees with import resolution across files
 - **Reference captures** — C `call_expression`/type refs, Swift `call_expression`/`navigation_expression`/`user_type` refs
@@ -80,7 +80,7 @@ tricorder/
 │   └── tricorder/              # bundled usage skill (SKILL.md)
 ├── plugins/
 │   └── tricorder/              # Hermes lifecycle plugin (hooks + /tricorder slash cmd)
-├── tests/                      # 301 tests (ported from RepoMapper fork)
+├── tests/                      # 497 tests (4 skipped, 98 subtests; ported from RepoMapper fork)
 ├── README.md
 ├── SPEC.md
 ├── LICENSE                     # MIT
@@ -259,6 +259,25 @@ modifier := "depth=" INT | "exclude=" GLOB | "include=" GLOB
 | Ruby | ✓ | ✓ | ✓ | `method_parameters` param node |
 
 ---
+ 
+## Smart MAP (v1.6 — `--smart-map`)
+
+For small repositories (<1000 files), `--smart-map QUERY` combines probe + exact detect + conditional MAP in one call:
+
+1. Runs `--probe-digest` to calibrate repo size (<1000 files threshold)
+2. Runs ONE exact detect with the given QUERY (max-results=5)
+3. If exact match found: outputs detect results and **skips MAP entirely**
+3. If no exact match: falls through to full MAP
+
+```bash
+tricorder . --smart-map "is_coll_manageable_by_user" --format json --quiet
+# If exact hit: outputs detect results (5 results max), MAP skipped
+# If miss: falls through to full MAP
+```
+
+This internalizes the v1.6 agent ladder (probe → one exact detect → conditional MAP) so agents use one flag instead of 3+ calls.
+
+---
 
 ## Slash Commands (built in the plugin)
 
@@ -389,14 +408,14 @@ tricorder builds on the work of:
 
 3. **The Hermes Agent community** — for the plugin system, MCP client, and tool framework that tricorder plugs into.
 
-The code in this repository is a rebrand and repackaging of the RepoMapper fork maintained at `http://127.0.0.1:3001/projects/repomapper.git`. The fork added 8 bug fixes, 301 tests, 11-language coverage, cross-file call graph analysis, and Windows compatibility — all of which carry forward to tricorder.
+The code in this repository is a rebrand and repackaging of the RepoMapper fork maintained at `http://127.0.0.1:3001/projects/repomapper.git`. The fork added 8 bug fixes, **497 tests** (4 skipped, 98 subtests), 11-language coverage, cross-file call graph analysis, and Windows compatibility — all of which carry forward to tricorder.
 
 ---
 
 ## Status
 
 **Phase 1 (rebrand) complete** — RepoMapper fork imported and fully rebranded to tricorder
-(see git log). 301 tests green (incl. `exclude_globs`, language-matrix, graph-query); CLI and MCP server verified.
+(see git log). **497 tests green** (4 skipped, 98 subtests; incl. `exclude_globs`, language-matrix, graph-query); CLI and MCP server verified.
 **Phase 2 (Hermes integration) complete** — bundled skill (`skills/tricorder/`) added and
 installed; the MCP server is registered under Hermes' `mcp_servers:` (command points at the
 venv's `tricorder-mcp.exe`) and the `mcp` client SDK is present, so after a Hermes restart the

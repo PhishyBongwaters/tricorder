@@ -25,6 +25,7 @@ It is surfaced two ways:
 | "Where is `<symbol>` defined?" | `tricorder_detect` or `tricorder_symbols` |
 | Callers / callees of one symbol | `tricorder_detail` |
 | Graph traversal: callers/callees up to N hops, filtered | `tricorder_query` — `callers('sym') depth=2 exclude=tests/**` |
+| **Small repo (<1000 files), exact symbol guess** | `tricorder_scan` with `smart_map: "symbol_name"` — combines probe + detect + conditional MAP in one call (skips MAP if exact hit found) |
 
 Don't scan for a known symbol — go straight to `detect`/`symbols`. Scan only for structure.
 
@@ -32,7 +33,13 @@ Don't scan for a known symbol — go straight to `detect`/`symbols`. Scan only f
 
 The point of tricorder is to NOT read every file. Climb the ladder; stop at the first rung that answers the question. Pulling a full file is the **last resort, not the default**.
 
+**0.5. Probe** — `--probe-digest` (CLI) or `tricorder_scan {probe: true}` — ~50 tokens for language tally, file count, line estimate. Calibrates scale before spending tokens.
+
 1. **T0 map (auto-injected)** — the `[tricorder]` digest at turn 0 already gives you the repo skeleton: file paths + symbol names + line numbers. Often enough to know *which* file. **Don't re-scan** — the digest is current.
+
+**Smart MAP (rungs 0.5 + 2 + 1 in one call):** For small repos (<1000 files),
+`tricorder_scan {smart_map: "symbol_name"}` — runs probe + ONE exact detect; if exact match found, skips MAP and outputs detect results; else falls through to full MAP.
+
 2. **Locate** — `tricorder_detect {query}` (case-insensitive, token-cheap) or `tricorder_symbols {query, file?, type?}` for a definition + signature + line. Returns the what/where without reading the file. One-call shortcut: `tricorder_locate {query, max_tokens?}` runs detect → detail and returns the best match's body plus alternatives — use it when you already know you'll deep-dive the top hit.
 2b. **Diff** — `tricorder_diff {project_root}` answers "what changed since the last scan?" (added/modified/deleted + tags for changed files). Read-only.
 3. **Graph query** — need callers/callees up to N hops? `tricorder_query {query: "callers('sym') depth=2 exclude=tests/**"}` returns the exact subgraph in one call (nodes + edges), replacing 5+ round-trips. `tests_for('sym')` restricts to test files ("what tests cover this?").
@@ -52,6 +59,7 @@ All MCP tools require `project_root` (absolute path) — they route against that
 - `output_format`: `text` or `mermaid`; `chat_files`, `other_files`, `mentioned_files`, `mentioned_idents`
 - `exclude_unranked`, `exclude_untagged`, `force_refresh`, `dry_run`, `max_files`
 - `exclude_globs`: list of glob patterns (relative, POSIX) to drop from the auto-scan before ranking. Use for vendored/third-party subtrees, e.g. `["vendor/**"]`, `["third_party/**"]`. Ignored when `other_files` is explicitly provided.
+- `smart_map` (string, optional): **Smart MAP for small repos (<1000 files)** — runs probe + ONE exact detect with the given symbol. If exact match found, outputs detect results and SKIPS MAP; else falls through to full MAP. Replaces probe+detect+conditional MAP in one call. Example: `smart_map: "is_coll_manageable_by_user"`.
 - `pre_index` / `pre_index_max_files` (default 100) / `pre_index_include_parents` (default 0): when `other_files` is not given, narrow the scan to files containing a probe symbol (same fast path as the CLI `--pre-index` family). Use for huge repos (e.g. the Linux kernel) to avoid a full-tree walk on every call — the linux bench uses `pre_index="pick_next_task"` to scope to `kernel/sched/*`.
 
 ## tricorder_detect parameters
@@ -82,6 +90,7 @@ tricorder --chat-files main.py --other-files src/ --mermaid
 tricorder --force-refresh .                  # bust stale tag cache
 tricorder --exclude-globs vendor/** third_party/** .  # skip vendored code
 tricorder --root . --map-tokens 2048           # no paths → auto-discover --root (--max-files 0 = no cap)
+tricorder --smart-map "is_coll_manageable_by_user" --format json --quiet  # v1.6: probe + exact detect + conditional MAP in one call
 ```
 
 Tier tokens (rough rules of thumb, not measurements): T0 ≈ 14 tokens/tag (definitions), T1 ≈ 350 tokens/tag (with context).

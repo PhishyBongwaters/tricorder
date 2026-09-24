@@ -89,12 +89,21 @@ answers your question:
 
 | Rung | Tool / flag | Cost (rough rules of thumb, not measurements) | Answers |
 |---|---|---|---|
+| 0.5. Probe | `--probe-digest` | ~50 tokens | "How big is this repo? What languages?" |
 | 1. Map | `tricorder_scan` / `tricorder .` | ~14 tokens/tag | "Where is the auth code?" |
 | 2. Detect | `tricorder_detect` (`max_tokens` to budget) | ~1–2 tokens/tag | "Where is `authenticate` defined?" |
 | 3. Symbols | `tricorder_symbols` (`max_tokens` to budget) | structured | "List all classes in `db/`" |
 | 4. Detail | `tricorder_detail` | ~50–400 tokens typical (≤2048 default budget) | "What does it do? Who calls it?" |
 | 5. Tier-1 scan | `--tier 1` | ~350 tokens/tag | "Show me this subsystem's shape" |
 | 6. Full file | read the source | full cost | Last resort |
+
+**Smart MAP (rungs 0.5 + 2 + 1 in one call):** For small repos (<1000 files),
+use `--smart-map SYMBOL` — runs probe + ONE exact detect; if exact match found,
+skips MAP and outputs detect results; else falls through to full MAP:
+
+```bash
+tricorder /path/to/repo --smart-map "is_coll_manageable_by_user" --format json --quiet
+```
 
 **Detect search modes:** `tricorder_detect` takes `search_mode` —
 `"exact"` (whole word), `"substring"` (contains, default), `"regex"`.
