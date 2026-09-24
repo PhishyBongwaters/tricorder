@@ -1,0 +1,64 @@
+{
+  "symbols": [
+    {
+      "name": "GenServer",
+      "type": "import",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\elixir\\lib\\elixir\\lib\\gen_server.ex",
+      "line": 5,
+      "end_line": 1376,
+      "signature": "",
+      "docstring": "",
+      "language": "elixir",
+      "kind": "definition.module",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "GenServerTest",
+      "type": "import",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\elixir\\lib\\elixir\\test\\elixir\\gen_server_test.exs",
+      "line": 7,
+      "end_line": 219,
+      "signature": "",
+      "docstring": "",
+      "language": "elixir",
+      "kind": "definition.module",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "MyGenServer",
+      "type": "import",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\elixir\\lib\\logger\\test\\logger\\translator_test.exs",
+      "line": 8,
+      "end_line": 37,
+      "signature": "",
+      "docstring": "",
+      "language": "elixir",
+      "kind": "definition.module",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "WeirdFunctionNamesGenServer",
+      "type": "import",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\elixir\\lib\\logger\\test\\logger\\translator_test.exs",
+      "line": 1257,
+      "end_line": 1263,
+      "signature": "",
+      "docstring": "",
+      "language": "elixir",
+      "kind": "definition.module",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    }
+  ]
+}

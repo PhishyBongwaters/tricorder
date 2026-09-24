@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "lib\\elixir\\lib\\gen_server.ex",
+      "line": 5,
+      "name": "GenServer",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\gen_server.ex\n  5: defmodule GenServer do\n  6:   @moduledoc \"\"\"",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\test\\elixir\\gen_server_test.exs",
+      "line": 7,
+      "name": "GenServerTest",
+      "kind": "def",
+      "context": "lib\\elixir\\test\\elixir\\gen_server_test.exs\n  7: defmodule GenServerTest do\n  8:   use ExUnit.Case, async: true",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\logger\\test\\logger\\translator_test.exs",
+      "line": 8,
+      "name": "MyGenServer",
+      "kind": "def",
+      "context": "lib\\logger\\test\\logger\\translator_test.exs\n  8:   defmodule MyGenServer do\n  9:     use GenServer",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\agent.ex",
+      "line": 279,
+      "name": "GenServer",
+      "kind": "ref",
+      "context": "lib\\elixir\\lib\\agent.ex\n  278:   \"\"\"\n  279:   @spec start_link((-> term), GenServer.options()) :: on_start\n  280:   def start_link(fun, options \\\\ []) when is_function(fun, 0) do",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\agent\\server.ex",
+      "line": 8,
+      "name": "GenServer",
+      "kind": "ref",
+      "context": "lib\\elixir\\lib\\agent\\server.ex\n  8:   use GenServer",
+      "quality": "exact"
+    }
+  ]
+}

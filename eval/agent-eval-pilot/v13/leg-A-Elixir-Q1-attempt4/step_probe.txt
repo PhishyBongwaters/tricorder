@@ -1,0 +1,1 @@
+614 code files (568 elixir, 45 erlang, 1 bash), ~241K lines. Use the MCP tools (mcp_tricorder_detect/symbols/detail) for targeted probes, or /tricorder scan / the CLI to build a map on demand. Do not deep-scan this turn.

@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "lib\\elixir\\lib\\agent\\server.ex",
+      "line": 30,
+      "name": "handle_cast",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\agent\\server.ex\n  30:   def handle_cast({:cast, fun}, state) do\n  31:     {:noreply, run(fun, [state])}",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\dynamic_supervisor.ex",
+      "line": 792,
+      "name": "handle_cast",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\dynamic_supervisor.ex\n  791:   @impl true\n  792:   def handle_cast(_msg, state) do\n  793:     {:noreply, state}",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\gen_server.ex",
+      "line": 971,
+      "name": "handle_cast",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\gen_server.ex\n  970:       @doc false\n  971:       def handle_cast(msg, state) do\n  972:         proc =",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\kernel\\lexical_tracker.ex",
+      "line": 198,
+      "name": "handle_cast",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\kernel\\lexical_tracker.ex\n  198:   def handle_cast({:write_cache, key, value}, %{cache: cache} = state) do\n  199:     {:noreply, %{state | cache: Map.put(cache, key, value)}}",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\module\\parallel_checker.ex",
+      "line": 653,
+      "name": "handle_cast",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\module\\parallel_checker.ex\n  653:   def handle_cast({:register_cache, module, pid, ref}, %{caches: caches} = state) do\n  654:     {:noreply, %{state | caches: [{module, pid, ref} | caches]}}",
+      "quality": "exact"
+    }
+  ]
+}

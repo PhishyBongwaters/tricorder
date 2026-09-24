@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "lib\\elixir\\lib\\module\\behaviour.ex",
+      "line": 9,
+      "name": "callbacks",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\module\\behaviour.ex\n  8:   @doc false\n  9:   def callbacks(behaviour) do\n  10:     for callback <- behaviour.behaviour_info(:callbacks) do",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\protocol.ex",
+      "line": 830,
+      "name": "callback_ast_to_fa",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\protocol.ex\n  830:   defp callback_ast_to_fa({_kind, {:\"::\", meta, [{name, _, args}, _return]}, _pos}) do\n  831:     [{{name, length(List.wrap(args))}, meta}]",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\test\\elixir\\exception_test.exs",
+      "line": 707,
+      "name": "callback",
+      "kind": "def",
+      "context": "lib\\elixir\\test\\elixir\\exception_test.exs\n  706:         @behaviour BehaviourWithOptional\n  707:         def callback(), do: :ok\n  708:       end",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\test\\elixir\\module_test.exs",
+      "line": 31,
+      "name": "callback",
+      "kind": "def",
+      "context": "lib\\elixir\\test\\elixir\\module_test.exs\n  31:   defmacro callback(env) do\n  32:     value = Module.get_attribute(env.module, :has_callback)",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\test\\elixir\\typespec_test.exs",
+      "line": 44,
+      "name": "callbacks",
+      "kind": "def",
+      "context": "lib\\elixir\\test\\elixir\\typespec_test.exs\n  44:   defp callbacks(bytecode) do\n  45:     bytecode",
+      "quality": "exact"
+    }
+  ]
+}

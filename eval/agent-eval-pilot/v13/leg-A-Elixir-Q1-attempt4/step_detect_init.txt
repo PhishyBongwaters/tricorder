@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "lib\\eex\\lib\\eex\\engine.ex",
+      "line": 84,
+      "name": "init",
+      "kind": "def",
+      "context": "lib\\eex\\lib\\eex\\engine.ex\n  84:       def init(opts) do\n  85:         EEx.Engine.init(opts)",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\eex\\lib\\eex\\smart_engine.ex",
+      "line": 43,
+      "name": "init",
+      "kind": "def",
+      "context": "lib\\eex\\lib\\eex\\smart_engine.ex\n  42:   @impl true\n  43:   defdelegate init(opts), to: EEx.Engine",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\eex\\test\\eex_test.exs",
+      "line": 976,
+      "name": "init",
+      "kind": "def",
+      "context": "lib\\eex\\test\\eex_test.exs\n  976:     def init(_opts) do\n  977:       \"INIT\"",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\agent\\server.ex",
+      "line": 10,
+      "name": "init",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\agent\\server.ex\n  10:   def init(fun) do\n  11:     _ = initial_call(fun)",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\config\\provider.ex",
+      "line": 210,
+      "name": "init",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\config\\provider.ex\n  209:   @spec init([{module(), term()}], config_path(), init_opts()) :: config()\n  210:   def init(providers, config_path, opts \\\\ []) when is_list(providers) and is_list(opts) do\n  211:     validate_config_path!(config_path)",
+      "quality": "exact"
+    }
+  ]
+}

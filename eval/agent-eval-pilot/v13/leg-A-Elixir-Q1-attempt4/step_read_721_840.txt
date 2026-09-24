@@ -1,0 +1,120 @@
+              | {:noreply, new_state, timeout | :hibernate | {:continue, continue_arg}}
+              | {:stop, reason :: term, new_state}
+            when new_state: term, continue_arg: term
+
+  @doc """
+  Invoked when the server is about to exit. It should do any cleanup required.
+
+  `reason` is exit reason and `state` is the current state of the `GenServer`.
+  The return value is ignored.
+
+  `c:terminate/2` is useful for cleanup that requires access to the
+  `GenServer`'s state. However, it is **not guaranteed** that `c:terminate/2`
+  is called when a `GenServer` exits. Therefore, important cleanup should be
+  done using process links and/or monitors. A monitoring process will receive the
+  same exit `reason` that would be passed to `c:terminate/2`.
+
+  `c:terminate/2` is called if:
+
+    * the `GenServer` traps exits (using `Process.flag/2`) *and* the parent
+    process (the one which called `start_link/1`) sends an exit signal
+
+    * a callback (except `c:init/1`) does one of the following:
+
+      * returns a `:stop` tuple
+
+      * raises (via `raise/2`) or exits (via `exit/1`)
+
+      * returns an invalid value
+
+  If part of a supervision tree, a `GenServer` will receive an exit signal from
+  its parent process (its supervisor) when the tree is shutting down. The exit
+  signal is based on the shutdown strategy in the child's specification, where
+  this value can be:
+
+    * `:brutal_kill`: the `GenServer` is killed and so `c:terminate/2` is not called.
+
+    * a timeout value, where the supervisor will send the exit signal `:shutdown` and
+      the `GenServer` will have the duration of the timeout to terminate.
+      If after duration of this timeout the process is still alive, it will be killed
+      immediately.
+
+  For a more in-depth explanation, please read the "Shutdown values (:shutdown)"
+  section in the `Supervisor` module.
+
+  If the `GenServer` receives an exit signal (that is not `:normal`) from any
+  process when it is not trapping exits it will exit abruptly with the same
+  reason and so not call `c:terminate/2`. Note that a process does *NOT* trap
+  exits by default and an exit signal is sent when a linked process exits or its
+  node is disconnected.
+
+  `c:terminate/2` is only called after the `GenServer` finishes processing all
+  messages which arrived in its mailbox prior to the exit signal. If it
+  receives a `:kill` signal before it finishes processing those,
+  `c:terminate/2` will not be called. If `c:terminate/2` is called, any
+  messages received after the exit signal will still be in the mailbox.
+
+  There is no cleanup needed when the `GenServer` controls a `port` (for example,
+  `:gen_tcp.socket`) or `t:File.io_device/0`, because these will be closed on
+  receiving a `GenServer`'s exit signal and do not need to be closed manually
+  in `c:terminate/2`.
+
+  If `reason` is neither `:normal`, `:shutdown`, nor `{:shutdown, term}` an error is
+  logged.
+
+  This callback is optional.
+  """
+  @callback terminate(reason, state :: term) :: term
+            when reason: :normal | :shutdown | {:shutdown, term} | term
+
+  @doc """
+  Invoked to change the state of the `GenServer` when a different version of a
+  module is loaded (hot code swapping) and the state's term structure should be
+  changed.
+
+  `old_vsn` is the previous version of the module (defined by the `@vsn`
+  attribute) when upgrading. When downgrading the previous version is wrapped in
+  a 2-tuple with first element `:down`. `state` is the current state of the
+  `GenServer` and `extra` is any extra data required to change the state.
+
+  Returning `{:ok, new_state}` changes the state to `new_state` and the code
+  change is successful.
+
+  Returning `{:error, reason}` fails the code change with reason `reason` and
+  the state remains as the previous state.
+
+  If `c:code_change/3` raises the code change fails and the loop will continue
+  with its previous state. Therefore this callback does not usually contain side effects.
+
+  This callback is optional.
+  """
+  @callback code_change(old_vsn, state :: term, extra :: term) ::
+              {:ok, new_state :: term}
+              | {:error, reason :: term}
+            when old_vsn: term | {:down, term}
+
+  @doc """
+  This function is called by a `GenServer` process in the following situations:
+
+    * [`:sys.get_status/1,2`](`:sys.get_status/1`) is invoked to get the `GenServer` status.
+    * The `GenServer` process terminates abnormally and logs an error.
+
+  This callback is used to limit the status of the process returned by
+  [`:sys.get_status/1,2`](`:sys.get_status/1`) or sent to logger.
+
+  The callback gets a map `status` describing the current status and shall return
+  a map `new_status` with the same keys, but it may transform some values.
+
+  Two possible use cases for this callback is to remove sensitive information
+  from the state to prevent it from being printed in log files, or to compact
+  large irrelevant status items that would only clutter the logs.
+
+  ## Example
+
+      @impl GenServer
+      def format_status(status) do
+        Map.new(status, fn
+          {:state, state} -> {:state, Map.delete(state, :private_key)}
+          {:message, {:password, _}} -> {:message, {:password, "redacted"}}
+          key_value -> key_value
+        end)

@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "lib\\elixir\\lib\\agent\\server.ex",
+      "line": 15,
+      "name": "handle_call",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\agent\\server.ex\n  15:   def handle_call({:get, fun}, _from, state) do\n  16:     {:reply, run(fun, [state]), state}",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\dynamic_supervisor.ex",
+      "line": 672,
+      "name": "handle_call",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\dynamic_supervisor.ex\n  671:   @impl true\n  672:   def handle_call(:which_children, _from, state) do\n  673:     %{children: children} = state",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\gen_event.ex",
+      "line": 114,
+      "name": "handle_call",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\gen_event.ex\n  113:       @doc false\n  114:       def handle_call(msg, state) do\n  115:         proc =",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\gen_event\\stream.ex",
+      "line": 27,
+      "name": "handle_call",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\gen_event\\stream.ex\n  26:   @doc false\n  27:   def handle_call(msg, _state) do\n  28:     # We do this to trick Dialyzer to not complain about non-local returns.",
+      "quality": "exact"
+    },
+    {
+      "file": "lib\\elixir\\lib\\gen_server.ex",
+      "line": 926,
+      "name": "handle_call",
+      "kind": "def",
+      "context": "lib\\elixir\\lib\\gen_server.ex\n  925:       @doc false\n  926:       def handle_call(msg, _from, state) do\n  927:         proc =",
+      "quality": "exact"
+    }
+  ]
+}
