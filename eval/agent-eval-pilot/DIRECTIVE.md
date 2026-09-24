@@ -47,3 +47,14 @@ warm DB (see below) and say so in the prompt.
   form for function") before spending an NL query.
 - **Cap first passes:** NL queries run with `--max-results 5`. Widen to 10
   only when the narrow pass returns nothing usable.
+
+## v1.4 (read-window ceiling; closes the v1.1 loophole)
+
+- **Cap read windows:** one READ covers ONE function body, max ~120 lines.
+  Two adjacent small functions in one window (the Q1 100-line precedent)
+  is fine. Chaining sequential windows to walk a whole file is rung 6
+  (FULL FILE) by another name — stop at the first window that answers.
+- Evidence: A-Elixir-Q1 read gen_server.ex 1–1376 in five 200–300-line
+  windows (12,747 of 17,357 tokens, 73%) after rungs 2–3 had already
+  identified the file. Literal v1.1 ("a floor, not a ceiling") permitted
+  it; rung-4 intent forbade it. Leg keeps its compliance-fail tag.

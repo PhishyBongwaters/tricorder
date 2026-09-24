@@ -32,6 +32,13 @@ protocol — all verified against ground truth
 - Minor: 2nd detect `"callback"` is generic/NL-ish at `--max-results 10`;
   v1.3 caps NL first passes at 5. Agent showed good v1.2 discipline by not
   reading the cross-area hits.
+- Root cause of the rung-4 fail is a directive self-contradiction, not
+  agent disobedience: rung 4 says "function body only" but v1.1 set "±15
+  is a floor, not a ceiling" (no ceiling). The agent complied with every
+  rung as literally written. Fail tag KEPT (it cost 73% of the leg), and
+  the loophole is closed by directive v1.4 (read-window ceiling, ~120
+  lines) — see DIRECTIVE.md. Future prompts quote v1–v1.4; this leg ran
+  under v1–v1.3 as committed.
 - Qwen's first compliance fail in the series (was 4/4 perfect); over-read
   pattern previously Nemotron-only.
 
