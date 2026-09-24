@@ -1,0 +1,36 @@
+{
+  "results": [
+    {
+      "file": "src\\db\\models\\collection.rs",
+      "line": 901,
+      "name": "CollectionUser::has_access_to_collection_by_user",
+      "kind": "def",
+      "context": "src\\db\\models\\collection.rs\n  901:     pub async fn has_access_to_collection_by_user(col_id: &CollectionId, user_uuid: &UserId, conn: &DbConn) -> bool {\n  902:         Self::find_by_collection_and_user(col_id, user_uuid, conn).await.is_some()",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\api\\core\\organizations.rs",
+      "line": 444,
+      "name": "has_access_to_collection_by_user",
+      "kind": "ref",
+      "context": "src\\api\\core\\organizations.rs\n  443:         let assigned = has_full_access_to_org\n  444:             || CollectionUser::has_access_to_collection_by_user(&col.uuid, &member.user_uuid, &conn).await\n  445:             || (CONFIG.org_groups_enabled()",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\db\\models\\collection.rs",
+      "line": 901,
+      "name": "CollectionUser::has_access_to_collection_by_user",
+      "kind": "def",
+      "context": "src\\db\\models\\collection.rs\n  901:     pub async fn has_access_to_collection_by_user(col_id: &CollectionId, user_uuid: &UserId, conn: &DbConn) -> bool {\n  902:         Self::find_by_collection_and_user(col_id, user_uuid, conn).await.is_some()",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\db\\models\\collection.rs",
+      "line": 158,
+      "name": "has_access_to_collection_by_user",
+      "kind": "ref",
+      "context": "src\\db\\models\\collection.rs\n  157:             && (member.has_full_access()\n  158:                 || CollectionUser::has_access_to_collection_by_user(col_id, &member.user_uuid, conn).await\n  159:                 || (CONFIG.org_groups_enabled()",
+      "quality": "exact"
+    }
+  ]
+}

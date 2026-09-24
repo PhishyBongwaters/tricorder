@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "src\\db\\models\\collection.rs",
+      "line": 39,
+      "name": "CollectionUser",
+      "kind": "def",
+      "context": "src\\db\\models\\collection.rs\n  38: #[diesel(primary_key(user_uuid, collection_uuid))]\n  39: pub struct CollectionUser {\n  40:     pub user_uuid: UserId,",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "src\\db\\models\\cipher.rs",
+      "line": 724,
+      "name": "Cipher::is_in_editable_collection_by_user",
+      "kind": "def",
+      "context": "src\\db\\models\\cipher.rs\n  723:     // can write to and also passwords are not hidden to prevent privilege escalation)\n  724:     pub async fn is_in_editable_collection_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {\n  725:         match self.get_access_restrictions(user_uuid, None, conn).await {",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "src\\db\\models\\group.rs",
+      "line": 400,
+      "name": "CollectionGroup::find_by_user",
+      "kind": "def",
+      "context": "src\\db\\models\\group.rs\n  400:     pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {\n  401:         conn.run(move |conn| {",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "src\\api\\core\\ciphers.rs",
+      "line": 811,
+      "name": "is_in_editable_collection_by_user",
+      "kind": "ref",
+      "context": "src\\api\\core\\ciphers.rs\n  811:     if !cipher.is_in_editable_collection_by_user(&headers.user.uuid, &conn).await {\n  812:         err!(\"Collection cannot be changed\")",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "src\\db\\models\\collection.rs",
+      "line": 676,
+      "name": "CollectionUser",
+      "kind": "ref",
+      "context": "src\\db\\models\\collection.rs\n  675: /// Database methods\n  676: impl CollectionUser {\n  677:     pub async fn find_by_organization_and_user_uuid(",
+      "quality": "fuzzy"
+    }
+  ]
+}

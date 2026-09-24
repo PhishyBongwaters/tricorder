@@ -1,0 +1,64 @@
+{
+  "symbols": [
+    {
+      "name": "GroupUser::has_full_access_by_member",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\db\\models\\group.rs",
+      "line": 595,
+      "end_line": 612,
+      "signature": "GroupUser::has_full_access_by_member (\n        org_uuid: &OrganizationId,\n        member_uuid: &MembershipId,\n        conn: &DbConn,\n    )  -> has_full_access_by_member",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "Membership::has_full_access",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\db\\models\\organization.rs",
+      "line": 831,
+      "end_line": 833,
+      "signature": "Membership::has_full_access (&self)  -> has_full_access",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "GroupUser::has_full_access_by_member",
+      "type": "method",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\db\\models\\group.rs",
+      "line": 595,
+      "end_line": 612,
+      "signature": "GroupUser::has_full_access_by_member (\n        org_uuid: &OrganizationId,\n        member_uuid: &MembershipId,\n        conn: &DbConn,\n    )  -> has_full_access_by_member",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.method",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "Membership::has_full_access",
+      "type": "method",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\db\\models\\organization.rs",
+      "line": 831,
+      "end_line": 833,
+      "signature": "Membership::has_full_access (&self)  -> has_full_access",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.method",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    }
+  ]
+}

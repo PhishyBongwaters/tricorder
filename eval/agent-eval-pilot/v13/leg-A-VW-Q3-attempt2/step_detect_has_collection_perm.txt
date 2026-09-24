@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "src\\api\\core\\organizations.rs",
+      "line": 446,
+      "name": "has_access_to_collection_by_member",
+      "kind": "ref",
+      "context": "src\\api\\core\\organizations.rs\n  445:             || (CONFIG.org_groups_enabled()\n  446:                 && GroupUser::has_access_to_collection_by_member(&col.uuid, &member.uuid, &conn).await);",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "src\\db\\models\\collection.rs",
+      "line": 161,
+      "name": "has_access_to_collection_by_member",
+      "kind": "ref",
+      "context": "src\\db\\models\\collection.rs\n  160:                     && (GroupUser::has_full_access_by_member(&member.org_uuid, &member.uuid, conn).await\n  161:                         || GroupUser::has_access_to_collection_by_member(col_id, &member.uuid, conn).await)))\n  162:     }",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "src\\api\\core\\organizations.rs",
+      "line": 444,
+      "name": "has_access_to_collection_by_user",
+      "kind": "ref",
+      "context": "src\\api\\core\\organizations.rs\n  443:         let assigned = has_full_access_to_org\n  444:             || CollectionUser::has_access_to_collection_by_user(&col.uuid, &member.user_uuid, &conn).await\n  445:             || (CONFIG.org_groups_enabled()",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "src\\db\\models\\collection.rs",
+      "line": 158,
+      "name": "has_access_to_collection_by_user",
+      "kind": "ref",
+      "context": "src\\db\\models\\collection.rs\n  157:             && (member.has_full_access()\n  158:                 || CollectionUser::has_access_to_collection_by_user(col_id, &member.user_uuid, conn).await\n  159:                 || (CONFIG.org_groups_enabled()",
+      "quality": "fuzzy"
+    },
+    {
+      "file": "src\\api\\core\\organizations.rs",
+      "line": 2476,
+      "name": "has_manageable_collection_by_user",
+      "kind": "ref",
+      "context": "src\\api\\core\\organizations.rs\n  2475:         has_full_access\n  2476:             || Collection::has_manageable_collection_by_user(&org_id, &headers.membership.user_uuid, &conn).await\n  2477:     };",
+      "quality": "fuzzy"
+    }
+  ]
+}

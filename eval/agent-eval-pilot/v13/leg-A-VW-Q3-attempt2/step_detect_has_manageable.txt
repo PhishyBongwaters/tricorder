@@ -1,0 +1,28 @@
+{
+  "results": [
+    {
+      "file": "src\\db\\models\\collection.rs",
+      "line": 635,
+      "name": "Collection::has_manageable_collection_by_user",
+      "kind": "def",
+      "context": "src\\db\\models\\collection.rs\n  634:     // group. Org-scoped counterpart of is_coll_manageable_by_user.\n  635:     pub async fn has_manageable_collection_by_user(\n  636:         org_uuid: &OrganizationId,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\api\\core\\organizations.rs",
+      "line": 2476,
+      "name": "has_manageable_collection_by_user",
+      "kind": "ref",
+      "context": "src\\api\\core\\organizations.rs\n  2475:         has_full_access\n  2476:             || Collection::has_manageable_collection_by_user(&org_id, &headers.membership.user_uuid, &conn).await\n  2477:     };",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\db\\models\\collection.rs",
+      "line": 635,
+      "name": "Collection::has_manageable_collection_by_user",
+      "kind": "def",
+      "context": "src\\db\\models\\collection.rs\n  634:     // group. Org-scoped counterpart of is_coll_manageable_by_user.\n  635:     pub async fn has_manageable_collection_by_user(\n  636:         org_uuid: &OrganizationId,",
+      "quality": "exact"
+    }
+  ]
+}

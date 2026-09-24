@@ -1,0 +1,12 @@
+{
+  "results": [
+    {
+      "file": "src\\api\\core\\organizations.rs",
+      "line": 558,
+      "name": "BulkCollectionAccessData",
+      "kind": "def",
+      "context": "src\\api\\core\\organizations.rs\n  557: #[serde(rename_all = \"camelCase\")]\n  558: struct BulkCollectionAccessData {\n  559:     collection_ids: Vec<CollectionId>,",
+      "quality": "fuzzy"
+    }
+  ]
+}

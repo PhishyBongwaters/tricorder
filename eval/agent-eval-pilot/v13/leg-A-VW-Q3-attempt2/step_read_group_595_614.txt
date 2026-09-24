@@ -1,0 +1,20 @@
+    pub async fn has_full_access_by_member(
+        org_uuid: &OrganizationId,
+        member_uuid: &MembershipId,
+        conn: &DbConn,
+    ) -> bool {
+        conn.run(move |conn| {
+            groups_users::table
+                .inner_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)))
+                .filter(groups::organizations_uuid.eq(org_uuid))
+                .filter(groups::access_all.eq(true))
+                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0)
+                != 0
+        })
+        .await
+    }
+
+    pub async fn update_user_revision(&self, conn: &DbConn) {

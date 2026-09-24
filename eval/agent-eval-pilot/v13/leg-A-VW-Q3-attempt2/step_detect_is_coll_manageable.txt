@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "src\\db\\models\\collection.rs",
+      "line": 570,
+      "name": "Collection::is_coll_manageable_by_user",
+      "kind": "def",
+      "context": "src\\db\\models\\collection.rs\n  570:     pub async fn is_coll_manageable_by_user(uuid: &CollectionId, user_uuid: &UserId, conn: &DbConn) -> bool {\n  571:         let uuid = uuid.to_string();",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\auth.rs",
+      "line": 888,
+      "name": "is_coll_manageable_by_user",
+      "kind": "ref",
+      "context": "src\\auth.rs\n  888:                 if !Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await {\n  889:                     err_handler!(\"The current user isn't a manager for this collection\")",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\db\\models\\collection.rs",
+      "line": 570,
+      "name": "Collection::is_coll_manageable_by_user",
+      "kind": "def",
+      "context": "src\\db\\models\\collection.rs\n  570:     pub async fn is_coll_manageable_by_user(uuid: &CollectionId, user_uuid: &UserId, conn: &DbConn) -> bool {\n  571:         let uuid = uuid.to_string();",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\auth.rs",
+      "line": 970,
+      "name": "is_coll_manageable_by_user",
+      "kind": "ref",
+      "context": "src\\auth.rs\n  969:             }\n  970:             if !Collection::is_coll_manageable_by_user(col_id, &h.membership.user_uuid, conn).await {\n  971:                 err!(\"Collection not found\", \"The current user isn't a manager for this collection\")",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\db\\models\\collection.rs",
+      "line": 630,
+      "name": "is_coll_manageable_by_user",
+      "kind": "ref",
+      "context": "src\\db\\models\\collection.rs\n  629:     pub async fn is_manageable_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {\n  630:         Self::is_coll_manageable_by_user(&self.uuid, user_uuid, conn).await\n  631:     }",
+      "quality": "exact"
+    }
+  ]
+}

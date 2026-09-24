@@ -1,0 +1,34 @@
+{
+  "symbols": [
+    {
+      "name": "CollectionUser::find_by_collection_and_user",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\db\\models\\collection.rs",
+      "line": 837,
+      "end_line": 851,
+      "signature": "CollectionUser::find_by_collection_and_user (\n        collection_uuid: &CollectionId,\n        user_uuid: &UserId,\n        conn: &DbConn,\n    )  -> find_by_collection_and_user",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "CollectionUser::find_by_collection_and_user",
+      "type": "method",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\db\\models\\collection.rs",
+      "line": 837,
+      "end_line": 851,
+      "signature": "CollectionUser::find_by_collection_and_user (\n        collection_uuid: &CollectionId,\n        user_uuid: &UserId,\n        conn: &DbConn,\n    )  -> find_by_collection_and_user",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.method",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    }
+  ]
+}

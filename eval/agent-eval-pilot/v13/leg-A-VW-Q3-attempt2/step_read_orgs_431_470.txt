@@ -1,0 +1,40 @@
+            json!({
+                "id": member.uuid,
+                "readOnly": false,
+                "hidePasswords": false,
+                "manage": true,
+            })
+        })
+        .collect();
+
+    let mut data = Vec::new();
+    for col in Collection::find_by_organization(&org_id, &conn).await {
+        // check whether the current user has access to the given collection
+        let assigned = has_full_access_to_org
+            || CollectionUser::has_access_to_collection_by_user(&col.uuid, &member.user_uuid, &conn).await
+            || (CONFIG.org_groups_enabled()
+                && GroupUser::has_access_to_collection_by_member(&col.uuid, &member.uuid, &conn).await);
+
+        // If the user is a manager, and is not assigned to this collection, skip this and continue with the next collection
+        if !assigned {
+            continue;
+        }
+
+        // get the users assigned directly to the given collection
+        let mut users: Vec<Value> = col_users
+            .iter()
+            .filter(|collection_member| collection_member.collection_uuid == col.uuid)
+            .map(|collection_member| {
+                collection_member.to_json_details_for_member(
+                    *membership_type.get(&collection_member.membership_uuid).unwrap_or(&(MembershipType::User as i32)),
+                )
+            })
+            .collect();
+        users.extend_from_slice(&manage_all_members);
+
+        // get the group details for the given collection
+        let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
+            CollectionGroup::find_by_collection(&col.uuid, &conn)
+                .await
+                .iter()
+                .map(CollectionGroup::to_json_details_for_group)

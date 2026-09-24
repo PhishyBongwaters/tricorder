@@ -1,0 +1,15 @@
+        for col_id in collections {
+            if uuid::Uuid::parse_str(col_id.as_ref()).is_err() {
+                err!("Collection Id is malformed!");
+            }
+            if !Collection::is_coll_manageable_by_user(col_id, &h.membership.user_uuid, conn).await {
+                err!("Collection not found", "The current user isn't a manager for this collection")
+            }
+        }
+
+        Ok(ManagerHeaders {
+            host: h.host,
+            device: h.device,
+            user: h.user,
+            ip: h.ip,
+            org_id: h.membership.org_uuid,

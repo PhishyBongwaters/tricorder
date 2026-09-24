@@ -1,0 +1,34 @@
+{
+  "symbols": [
+    {
+      "name": "Cipher::get_access_restrictions",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\db\\models\\cipher.rs",
+      "line": 597,
+      "end_line": 665,
+      "signature": "Cipher::get_access_restrictions (\n        &self,\n        user_uuid: &UserId,\n        cipher_sync_data: Option<&CipherSyncData>,\n        conn: &DbConn,\n    )  -> get_access_restrictions",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "Cipher::get_access_restrictions",
+      "type": "method",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\db\\models\\cipher.rs",
+      "line": 597,
+      "end_line": 665,
+      "signature": "Cipher::get_access_restrictions (\n        &self,\n        user_uuid: &UserId,\n        cipher_sync_data: Option<&CipherSyncData>,\n        conn: &DbConn,\n    )  -> get_access_restrictions",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.method",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    }
+  ]
+}

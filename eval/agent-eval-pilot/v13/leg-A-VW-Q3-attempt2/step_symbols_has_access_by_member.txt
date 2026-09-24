@@ -1,0 +1,34 @@
+{
+  "symbols": [
+    {
+      "name": "GroupUser::has_access_to_collection_by_member",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\db\\models\\group.rs",
+      "line": 571,
+      "end_line": 593,
+      "signature": "GroupUser::has_access_to_collection_by_member (\n        collection_uuid: &CollectionId,\n        member_uuid: &MembershipId,\n        conn: &DbConn,\n    )  -> has_access_to_collection_by_member",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "GroupUser::has_access_to_collection_by_member",
+      "type": "method",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\db\\models\\group.rs",
+      "line": 571,
+      "end_line": 593,
+      "signature": "GroupUser::has_access_to_collection_by_member (\n        collection_uuid: &CollectionId,\n        member_uuid: &MembershipId,\n        conn: &DbConn,\n    )  -> has_access_to_collection_by_member",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.method",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    }
+  ]
+}

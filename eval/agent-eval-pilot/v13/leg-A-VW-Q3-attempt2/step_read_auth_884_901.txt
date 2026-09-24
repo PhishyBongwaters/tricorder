@@ -1,0 +1,18 @@
+                let Outcome::Success(conn) = DbConn::from_request(request).await else {
+                    err_handler!("Error getting DB")
+                };
+
+                if !Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await {
+                    err_handler!("The current user isn't a manager for this collection")
+                }
+            } else {
+                err_handler!("Error getting the collection id")
+            }
+
+            Outcome::Success(Self {
+                host: headers.host,
+                device: headers.device,
+                user: headers.user,
+                ip: headers.ip,
+                org_id: headers.membership.org_uuid,
+            })

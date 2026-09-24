@@ -1,0 +1,5 @@
+    pub fn has_full_access(&self) -> bool {
+        (self.access_all || self.atype >= MembershipType::Admin) && self.has_status(MembershipStatus::Confirmed)
+    }
+
+    pub async fn find_by_uuid(uuid: &MembershipId, conn: &DbConn) -> Option<Self> {
