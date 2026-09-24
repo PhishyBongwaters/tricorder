@@ -1,0 +1,59 @@
+        admin_page,
+        admin_page_login,
+        invite_user,
+        logout,
+        delete_user,
+        delete_sso_user,
+        deauth_user,
+        disable_user,
+        enable_user,
+        remove_2fa,
+        update_membership_type,
+        update_revision_users,
+        post_config,
+        delete_config,
+        backup_db,
+        test_smtp,
+        users_overview,
+        organizations_overview,
+        delete_organization,
+        diagnostics,
+        get_diagnostics_config,
+        resend_user_invite,
+        get_diagnostics_http,
+    ]
+}
+
+pub fn catchers() -> Vec<Catcher> {
+    if !CONFIG.disable_admin_token() && !CONFIG.is_admin_token_set() {
+        catchers![]
+    } else {
+        catchers![admin_login]
+    }
+}
+
+static DB_TYPE: LazyLock<&str> = LazyLock::new(|| match ACTIVE_DB_TYPE.get() {
+    #[cfg(mysql)]
+    Some(DbConnType::Mysql) => "MySQL",
+    #[cfg(postgresql)]
+    Some(DbConnType::Postgresql) => "PostgreSQL",
+    #[cfg(sqlite)]
+    Some(DbConnType::Sqlite) => "SQLite",
+    _ => "Unknown",
+});
+
+#[cfg(sqlite)]
+static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| ACTIVE_DB_TYPE.get().is_some_and(|t| *t == DbConnType::Sqlite));
+#[cfg(not(sqlite))]
+static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| false);
+
+#[get("/")]
+fn admin_disabled() -> &'static str {
+    "The admin panel is disabled, please configure the 'ADMIN_TOKEN' variable to enable it"
+}
+
+const COOKIE_NAME: &str = "VW_ADMIN";
+const ADMIN_PATH: &str = "/admin";
+const DT_FMT: &str = "%Y-%m-%d %H:%M:%S %Z";
+
+const BASE_TEMPLATE: &str = "admin/base";

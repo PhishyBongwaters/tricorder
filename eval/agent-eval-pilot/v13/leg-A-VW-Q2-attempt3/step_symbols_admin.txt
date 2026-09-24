@@ -1,0 +1,79 @@
+{
+  "symbols": [
+    {
+      "name": "AdminHeaders",
+      "type": "class",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\auth.rs",
+      "line": 816,
+      "end_line": 823,
+      "signature": "",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.class",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "AdminHeaders::Error",
+      "type": "class",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\auth.rs",
+      "line": 827,
+      "end_line": 827,
+      "signature": "",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.class",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "AdminResponse",
+      "type": "class",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\api\\admin.rs",
+      "line": 145,
+      "end_line": 152,
+      "signature": "",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.class",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "AdminTemplateData",
+      "type": "class",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\api\\admin.rs",
+      "line": 250,
+      "end_line": 256,
+      "signature": "",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.class",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "AdminToken",
+      "type": "class",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\api\\admin.rs",
+      "line": 857,
+      "end_line": 859,
+      "signature": "",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.class",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    }
+  ]
+}

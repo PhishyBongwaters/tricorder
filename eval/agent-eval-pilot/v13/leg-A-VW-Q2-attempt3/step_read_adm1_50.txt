@@ -1,0 +1,50 @@
+use std::{env, sync::LazyLock};
+
+use reqwest::Method;
+use rocket::{
+    Catcher, Route,
+    form::Form,
+    http::{Cookie, CookieJar, MediaType, SameSite, Status},
+    request::{FromRequest, Outcome, Request},
+    response::{Redirect, content::RawHtml as Html},
+    serde::json::Json,
+};
+use serde::de::DeserializeOwned;
+use serde_json::Value;
+
+use crate::{
+    CONFIG, VERSION,
+    api::{
+        ApiResult, EmptyResult, JsonResult, Notify,
+        core::{log_event, two_factor},
+        unregister_push_device,
+    },
+    auth::{ClientIp, Secure, decode_admin, encode_jwt, generate_admin_claims},
+    config::ConfigBuilder,
+    db::{
+        ACTIVE_DB_TYPE, DbConn, DbConnType, backup_sqlite, get_sql_server_version,
+        models::{
+            Attachment, Cipher, Collection, Device, Event, EventType, Group, Invitation, Membership, MembershipId,
+            MembershipType, OrgPolicy, Organization, OrganizationId, SsoUser, TwoFactor, User, UserId,
+        },
+    },
+    error::{Error, MapResult},
+    http_client::make_http_request,
+    mail,
+    sso::FAKE_SSO_IDENTIFIER,
+    util::{
+        FeatureFlagFilter, NumberOrString, container_base_image, format_naive_datetime_local, get_active_web_release,
+        get_display_size, is_running_in_container, parse_experimental_client_feature_flags,
+    },
+};
+
+pub fn routes() -> Vec<Route> {
+    if !CONFIG.disable_admin_token() && !CONFIG.is_admin_token_set() {
+        return routes![admin_disabled];
+    }
+
+    routes![
+        get_users_json,
+        get_user_json,
+        get_user_by_mail_json,
+        post_admin_login,

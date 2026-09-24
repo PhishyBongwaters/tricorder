@@ -1,0 +1,19 @@
+pub fn generate_admin_claims() -> BasicJwtClaims {
+    let time_now = Utc::now();
+    BasicJwtClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + TimeDelta::try_minutes(CONFIG.admin_session_lifetime()).unwrap()).timestamp(),
+        iss: JWT_ADMIN_ISSUER.to_string(),
+        sub: "admin_panel".to_owned(),
+    }
+}
+
+pub fn generate_send_claims(send_id: &SendId, file_id: &SendFileId) -> BasicJwtClaims {
+    let time_now = Utc::now();
+    BasicJwtClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + TimeDelta::try_minutes(2).unwrap()).timestamp(),
+        iss: JWT_SEND_ISSUER.to_string(),
+        sub: format!("{send_id}/{file_id}"),
+    }
+}

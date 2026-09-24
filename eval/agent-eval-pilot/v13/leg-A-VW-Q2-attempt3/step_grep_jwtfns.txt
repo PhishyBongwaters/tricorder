@@ -1,0 +1,2 @@
+src/auth.rs:105:pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
+src/auth.rs:528:pub fn generate_admin_claims() -> BasicJwtClaims {

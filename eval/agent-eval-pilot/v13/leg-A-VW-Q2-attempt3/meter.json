@@ -1,0 +1,21 @@
+{
+ "step_probe.txt": 64,
+ "step_detect_admin.txt": 480,
+ "step_symbols_admin.txt": 578,
+ "step_tier1.txt": 2040,
+ "step_symbols_admintoken.txt": 634,
+ "step_symbols_fromrequest.txt": 281,
+ "step_read_adm1_50.txt": 364,
+ "step_read_adm51_110.txt": 395,
+ "step_read_adm111_210.txt": 830,
+ "step_read_adm211_310.txt": 722,
+ "step_read_adm850_909.txt": 454,
+ "step_read_auth810_839.txt": 193,
+ "step_read_auth155_184.txt": 257,
+ "step_read_auth105_124.txt": 213,
+ "step_read_auth528_547.txt": 174,
+ "step_grep_decodeadmin.txt": 25,
+ "step_grep_jwtfns.txt": 40,
+ "step_grep_issuer.txt": 57,
+ "step_grep_admintoken_cfg.txt": 142
+}

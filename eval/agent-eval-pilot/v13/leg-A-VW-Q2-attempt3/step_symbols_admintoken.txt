@@ -1,0 +1,79 @@
+{
+  "symbols": [
+    {
+      "name": "AdminToken",
+      "type": "class",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\api\\admin.rs",
+      "line": 857,
+      "end_line": 859,
+      "signature": "",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.class",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "AdminToken::Error",
+      "type": "class",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\api\\admin.rs",
+      "line": 863,
+      "end_line": 863,
+      "signature": "",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.class",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "AdminToken::from_request",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\api\\admin.rs",
+      "line": 865,
+      "end_line": 897,
+      "signature": "AdminToken::from_request (request: &'r Request<'_>)  -> from_request",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "checkAdminToken",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\static\\scripts\\admin_settings.js",
+      "line": 162,
+      "end_line": 187,
+      "signature": "checkAdminToken ()",
+      "docstring": "",
+      "language": "javascript",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "AdminToken::from_request",
+      "type": "method",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\api\\admin.rs",
+      "line": 865,
+      "end_line": 897,
+      "signature": "AdminToken::from_request (request: &'r Request<'_>)  -> from_request",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.method",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    }
+  ]
+}

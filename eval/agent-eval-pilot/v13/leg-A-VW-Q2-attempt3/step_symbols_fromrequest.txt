@@ -1,0 +1,34 @@
+{
+  "symbols": [
+    {
+      "name": "AdminToken::from_request",
+      "type": "function",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\api\\admin.rs",
+      "line": 865,
+      "end_line": 897,
+      "signature": "AdminToken::from_request (request: &'r Request<'_>)  -> from_request",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.function",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    },
+    {
+      "name": "AdminToken::from_request",
+      "type": "method",
+      "file": "D:\\Projects\\Tricorder-Testing-Repos\\vaultwarden\\src\\api\\admin.rs",
+      "line": 865,
+      "end_line": 897,
+      "signature": "AdminToken::from_request (request: &'r Request<'_>)  -> from_request",
+      "docstring": "",
+      "language": "rust",
+      "kind": "definition.method",
+      "body": "",
+      "callers": null,
+      "callees": null,
+      "stop_note": ""
+    }
+  ]
+}

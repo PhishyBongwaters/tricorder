@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "file": "src\\api\\admin.rs",
+      "line": 101,
+      "name": "admin_disabled",
+      "kind": "def",
+      "context": "src\\api\\admin.rs\n  100: #[get(\"/\")]\n  101: fn admin_disabled() -> &'static str {\n  102:     \"The admin panel is disabled, please configure the 'ADMIN_TOKEN' variable to enable it\"",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\api\\mod.rs",
+      "line": 1,
+      "name": "admin",
+      "kind": "def",
+      "context": "src\\api\\mod.rs\n  1: mod admin;\n  2: pub mod core;",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\auth.rs",
+      "line": 816,
+      "name": "AdminHeaders",
+      "kind": "def",
+      "context": "src\\auth.rs\n  816: pub struct AdminHeaders {\n  817:     pub host: String,",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\mail.rs",
+      "line": 636,
+      "name": "send_admin_reset_password",
+      "kind": "def",
+      "context": "src\\mail.rs\n  636: pub async fn send_admin_reset_password(address: &str, user_name: &str, org_name: &str) -> EmptyResult {\n  637:     let (subject, body_html, body_text) = get_text(",
+      "quality": "exact"
+    },
+    {
+      "file": "src\\static\\scripts\\admin_settings.js",
+      "line": 162,
+      "name": "checkAdminToken",
+      "kind": "def",
+      "context": "src\\static\\scripts\\admin_settings.js\n  161: // Then it will not show this warning for 30 days.\n  162: function checkAdminToken() {\n  163:     const admin_token = document.getElementById(\"input_admin_token\");",
+      "quality": "exact"
+    }
+  ]
+}

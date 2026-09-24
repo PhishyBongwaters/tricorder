@@ -1,0 +1,60 @@
+            Err(e) => err!(format!("Backup was unsuccessful {e}")),
+        }
+    } else {
+        err!("Can't back up current DB (Only SQLite supports this feature)");
+    }
+}
+
+pub struct AdminToken {
+    ip: ClientIp,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for AdminToken {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let Outcome::Success(ip) = ClientIp::from_request(request).await else {
+            err_handler!("Error getting Client IP")
+        };
+
+        if !CONFIG.disable_admin_token() {
+            let cookies = request.cookies();
+
+            let access_token = if let Some(cookie) = cookies.get(COOKIE_NAME) {
+                cookie.value()
+            } else {
+                let requested_page =
+                    request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
+                // When the requested page is empty, it is `/admin`, in that case, Forward, so it will render the login page
+                // Else, return a 401 failure, which will be caught
+                if requested_page.is_empty() {
+                    return Outcome::Forward(Status::Unauthorized);
+                }
+                return Outcome::Error((Status::Unauthorized, "Unauthorized"));
+            };
+
+            if decode_admin(access_token).is_err() {
+                // Remove admin cookie
+                cookies.remove(Cookie::build(COOKIE_NAME).path(admin_path()));
+                error!("Invalid or expired admin JWT. IP: {}.", ip.ip);
+                return Outcome::Error((Status::Unauthorized, "Session expired"));
+            }
+        }
+
+        Outcome::Success(Self {
+            ip,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_web_vault_compare() {
+        // web_vault_compare(active, latest)
+        // Test normal versions
+        assert!(web_vault_compare("2025.12.0", "2025.12.1") == -1);
+        assert!(web_vault_compare("2025.12.1", "2025.12.1") == 0);

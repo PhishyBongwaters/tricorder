@@ -1,0 +1,100 @@
+const ACTING_ADMIN_USER: &str = "vaultwarden-admin-00000-000000000000";
+pub const FAKE_ADMIN_UUID: &str = "00000000-0000-0000-0000-000000000000";
+
+fn admin_path() -> String {
+    format!("{}{ADMIN_PATH}", CONFIG.domain_path())
+}
+
+#[derive(Debug)]
+struct IpHeader(Option<String>);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for IpHeader {
+    type Error = ();
+
+    async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        if req.headers().get_one(&CONFIG.ip_header()).is_some() {
+            Outcome::Success(IpHeader(Some(CONFIG.ip_header())))
+        } else if req.headers().get_one("X-Client-IP").is_some() {
+            Outcome::Success(IpHeader(Some(String::from("X-Client-IP"))))
+        } else if req.headers().get_one("X-Real-IP").is_some() {
+            Outcome::Success(IpHeader(Some(String::from("X-Real-IP"))))
+        } else if req.headers().get_one("X-Forwarded-For").is_some() {
+            Outcome::Success(IpHeader(Some(String::from("X-Forwarded-For"))))
+        } else {
+            Outcome::Success(IpHeader(None))
+        }
+    }
+}
+
+fn admin_url() -> String {
+    format!("{}{}", CONFIG.domain_origin(), admin_path())
+}
+
+#[derive(Responder)]
+enum AdminResponse {
+    #[response(status = 200)]
+    Ok(ApiResult<Html<String>>),
+    #[response(status = 401)]
+    Unauthorized(ApiResult<Html<String>>),
+    #[response(status = 429)]
+    TooManyRequests(ApiResult<Html<String>>),
+}
+
+#[catch(401)]
+fn admin_login(request: &Request<'_>) -> ApiResult<Html<String>> {
+    if request.format() == Some(&MediaType::JSON) {
+        err_code!("Authorization failed.", Status::Unauthorized.code);
+    }
+    let redirect = request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
+    render_admin_login(None, Some(&redirect))
+}
+
+fn render_admin_login(msg: Option<&str>, redirect: Option<&str>) -> ApiResult<Html<String>> {
+    // If there is an error, show it
+    let msg = msg.map(|msg| format!("Error: {msg}"));
+    let json = json!({
+        "page_content": "admin/login",
+        "error": msg,
+        "redirect": redirect,
+        "urlpath": CONFIG.domain_path()
+    });
+
+    // Return the page
+    let text = CONFIG.render_template(BASE_TEMPLATE, &json)?;
+    Ok(Html(text))
+}
+
+#[derive(FromForm)]
+struct LoginForm {
+    token: String,
+    redirect: Option<String>,
+}
+
+#[post("/", format = "application/x-www-form-urlencoded", data = "<data>")]
+fn post_admin_login(
+    data: Form<LoginForm>,
+    cookies: &CookieJar<'_>,
+    ip: ClientIp,
+    secure: Secure,
+) -> Result<Redirect, AdminResponse> {
+    let data = data.into_inner();
+    let redirect = data.redirect;
+
+    if crate::ratelimit::check_limit_admin(&ip.ip).is_err() {
+        return Err(AdminResponse::TooManyRequests(render_admin_login(
+            Some("Too many requests, try again later."),
+            redirect.as_deref(),
+        )));
+    }
+
+    // If the token is invalid, redirect to login page
+    if validate_token(&data.token) {
+        // If the token received is valid, generate JWT and save it as a cookie
+        let claims = generate_admin_claims();
+        let jwt = encode_jwt(&claims);
+
+        let cookie = Cookie::build((COOKIE_NAME, jwt))
+            .path(admin_path())
+            .max_age(time::Duration::minutes(CONFIG.admin_session_lifetime()))
+            .same_site(SameSite::Strict)

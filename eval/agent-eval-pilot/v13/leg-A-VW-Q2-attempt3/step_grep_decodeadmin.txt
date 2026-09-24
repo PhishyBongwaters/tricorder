@@ -1,0 +1,1 @@
+src/auth.rs:155:pub fn decode_admin(token: &str) -> Result<BasicJwtClaims, Error> {

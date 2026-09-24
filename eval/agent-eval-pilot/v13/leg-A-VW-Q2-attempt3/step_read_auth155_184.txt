@@ -1,0 +1,30 @@
+pub fn decode_admin(token: &str) -> Result<BasicJwtClaims, Error> {
+    decode_jwt(token, JWT_ADMIN_ISSUER.to_string())
+}
+
+pub fn decode_send(token: &str) -> Result<BasicJwtClaims, Error> {
+    decode_jwt(token, JWT_SEND_ISSUER.to_string())
+}
+
+pub fn decode_api_org(token: &str) -> Result<OrgApiKeyLoginJwtClaims, Error> {
+    decode_jwt(token, JWT_ORG_API_KEY_ISSUER.to_string())
+}
+
+pub fn decode_file_download(token: &str) -> Result<FileDownloadClaims, Error> {
+    decode_jwt(token, JWT_FILE_DOWNLOAD_ISSUER.to_string())
+}
+
+pub fn decode_register_verify(token: &str) -> Result<RegisterVerifyClaims, Error> {
+    decode_jwt(token, JWT_REGISTER_VERIFY_ISSUER.to_string())
+}
+
+pub fn decode_2fa_remember(token: &str) -> Result<TwoFactorRememberClaims, Error> {
+    decode_jwt(token, JWT_2FA_REMEMBER_ISSUER.to_string())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LoginJwtClaims {
+    // Not before
+    pub nbf: i64,
+    // Expiration time
+    pub exp: i64,

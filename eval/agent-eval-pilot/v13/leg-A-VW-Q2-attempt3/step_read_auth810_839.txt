@@ -1,0 +1,30 @@
+            }
+            _ => err_handler!("Error getting the organization id"),
+        }
+    }
+}
+
+pub struct AdminHeaders {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+    pub membership_type: MembershipType,
+    pub ip: ClientIp,
+    pub org_id: OrganizationId,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for AdminHeaders {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        if headers.is_confirmed_and_admin() {
+            Outcome::Success(Self {
+                host: headers.host,
+                device: headers.device,
+                user: headers.user,
+                membership_type: headers.membership_type,
+                ip: headers.ip,
+                org_id: headers.membership.org_uuid,
+            })

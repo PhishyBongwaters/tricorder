@@ -1,0 +1,100 @@
+            .http_only(true)
+            .secure(secure.https);
+
+        cookies.add(cookie);
+        if let Some(redirect) = redirect {
+            Ok(Redirect::to(format!("{}{redirect}", admin_path())))
+        } else {
+            Err(AdminResponse::Ok(render_admin_page()))
+        }
+    } else {
+        error!("Invalid admin token. IP: {}", ip.ip);
+        Err(AdminResponse::Unauthorized(render_admin_login(
+            Some("Invalid admin token, please try again."),
+            redirect.as_deref(),
+        )))
+    }
+}
+
+fn validate_token(token: &str) -> bool {
+    match CONFIG.admin_token().as_ref() {
+        None => false,
+        Some(t) if t.starts_with("$argon2") => {
+            use argon2::password_hash::PasswordVerifier;
+            match argon2::password_hash::PasswordHash::new(t) {
+                Ok(h) => {
+                    // NOTE: hash params from `ADMIN_TOKEN` are used instead of what is configured in the `Argon2` instance.
+                    argon2::Argon2::default().verify_password(token.trim().as_ref(), &h).is_ok()
+                }
+                Err(e) => {
+                    error!("The configured Argon2 PHC in `ADMIN_TOKEN` is invalid: {e}");
+                    false
+                }
+            }
+        }
+        Some(t) => crate::crypto::ct_eq(t.trim(), token.trim()),
+    }
+}
+
+#[derive(Serialize)]
+struct AdminTemplateData {
+    page_content: String,
+    page_data: Option<Value>,
+    logged_in: bool,
+    urlpath: String,
+    sso_enabled: bool,
+}
+
+impl AdminTemplateData {
+    fn new(page_content: &str, page_data: Value) -> Self {
+        Self {
+            page_content: String::from(page_content),
+            page_data: Some(page_data),
+            logged_in: true,
+            urlpath: CONFIG.domain_path(),
+            sso_enabled: CONFIG.sso_enabled(),
+        }
+    }
+
+    fn render(self) -> Result<String, Error> {
+        CONFIG.render_template(BASE_TEMPLATE, &self)
+    }
+}
+
+fn render_admin_page() -> ApiResult<Html<String>> {
+    let settings_json = json!({
+        "config": CONFIG.prepare_json(),
+        "can_backup": *CAN_BACKUP,
+    });
+    let text = AdminTemplateData::new("admin/settings", settings_json).render()?;
+    Ok(Html(text))
+}
+
+#[get("/")]
+fn admin_page(_token: AdminToken) -> ApiResult<Html<String>> {
+    render_admin_page()
+}
+
+#[get("/", rank = 2)]
+fn admin_page_login() -> ApiResult<Html<String>> {
+    render_admin_login(None, None)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InviteData {
+    email: String,
+}
+
+async fn get_user_or_404(user_id: &UserId, conn: &DbConn) -> ApiResult<User> {
+    if let Some(user) = User::find_by_uuid(user_id, conn).await {
+        Ok(user)
+    } else {
+        err_code!("User doesn't exist", Status::NotFound.code);
+    }
+}
+
+#[post("/invite", format = "application/json", data = "<data>")]
+async fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> JsonResult {
+    async fn generate_invite(user: &User, conn: &DbConn) -> EmptyResult {
+        if CONFIG.mail_enabled() {

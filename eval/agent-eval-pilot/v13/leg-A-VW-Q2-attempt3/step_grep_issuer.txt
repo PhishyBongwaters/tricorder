@@ -1,0 +1,3 @@
+56:static JWT_ADMIN_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|admin", CONFIG.domain_origin()));
+156:    decode_jwt(token, JWT_ADMIN_ISSUER.to_string())
+533:        iss: JWT_ADMIN_ISSUER.to_string(),
