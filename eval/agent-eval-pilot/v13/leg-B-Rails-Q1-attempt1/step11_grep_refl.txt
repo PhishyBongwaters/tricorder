@@ -1,0 +1,22 @@
+activerecord/lib/active_record/associations/association_scope.rb:108:        class ReflectionProxy < SimpleDelegator # :nodoc:
+activerecord/lib/active_record/associations/errors.rb:177:  class ThroughCantAssociateThroughHasOneOrManyReflection < ActiveRecordError # :nodoc:
+activerecord/lib/active_record/associations/errors.rb:203:  class AmbiguousSourceReflectionForThroughAssociation < ActiveRecordError # :nodoc:
+activerecord/lib/active_record/associations/errors.rb:218:  class HasManyThroughCantAssociateThroughHasOneOrManyReflection < ThroughCantAssociateThroughHasOneOrManyReflection # :nodoc:
+activerecord/lib/active_record/associations/errors.rb:221:  class HasOneThroughCantAssociateThroughHasOneOrManyReflection < ThroughCantAssociateThroughHasOneOrManyReflection # :nodoc:
+activerecord/lib/active_record/connection_adapters/schema_cache.rb:7:    class SchemaReflection
+activerecord/lib/active_record/connection_adapters/schema_cache.rb:143:    class BoundSchemaReflection
+activerecord/lib/active_record/fixture_set/table_row.rb:6:      class ReflectionProxy # :nodoc:
+activerecord/lib/active_record/fixture_set/table_row.rb:24:      class HasManyThroughProxy < ReflectionProxy # :nodoc:
+activerecord/lib/active_record/reflection.rb:58:    # MacroReflection class has info for AggregateReflection and AssociationReflection
+activerecord/lib/active_record/reflection.rb:163:    class AbstractReflection # :nodoc:
+activerecord/lib/active_record/reflection.rb:370:    # Base class for AggregateReflection and AssociationReflection. Objects of
+activerecord/lib/active_record/reflection.rb:372:    class MacroReflection < AbstractReflection
+activerecord/lib/active_record/reflection.rb:487:    class AggregateReflection < MacroReflection # :nodoc:
+activerecord/lib/active_record/reflection.rb:496:    class AssociationReflection < MacroReflection # :nodoc:
+activerecord/lib/active_record/reflection.rb:900:    class HasManyReflection < AssociationReflection # :nodoc:
+activerecord/lib/active_record/reflection.rb:914:    class HasOneReflection < AssociationReflection # :nodoc:
+activerecord/lib/active_record/reflection.rb:928:    class BelongsToReflection < AssociationReflection # :nodoc:
+activerecord/lib/active_record/reflection.rb:981:    class HasAndBelongsToManyReflection < AssociationReflection # :nodoc:
+activerecord/lib/active_record/reflection.rb:991:    class ThroughReflection < AbstractReflection # :nodoc:
+activerecord/lib/active_record/reflection.rb:1262:    class PolymorphicReflection < AbstractReflection # :nodoc:
+activerecord/lib/active_record/reflection.rb:1292:    class RuntimeReflection < AbstractReflection # :nodoc:

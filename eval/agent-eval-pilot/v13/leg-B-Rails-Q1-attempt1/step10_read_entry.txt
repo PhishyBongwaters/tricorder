@@ -1,0 +1,50 @@
+        #   has_many :reports, -> { readonly }
+        #   has_many :subscribers, through: :subscriptions, source: :user
+        #   has_many :subscribers, through: :subscriptions, disable_joins: true
+        #   has_many :comments, strict_loading: true
+        #   has_many :comments, query_constraints: [:blog_id, :post_id]
+        #   has_many :comments, index_errors: :nested_attributes_order
+        def has_many(name, scope = nil, **options, &extension)
+          reflection = Builder::HasMany.build(self, name, scope, options, &extension)
+          Reflection.add_reflection(self, name, reflection)
+        end
+
+        # Specifies a one-to-one association with another class. This method
+        # should only be used if the other class contains the foreign key. If
+        # the current class contains the foreign key, then you should use
+        # #belongs_to instead. See {Is it a belongs_to or has_one
+        # association?}[rdoc-ref:Associations::ClassMethods@Is+it+a+-23belongs_to+or+-23has_one+association-3F]
+        # for more detail on when to use #has_one and when to use #belongs_to.
+        #
+        # The following methods for retrieval and query of a single associated object will be added:
+        #
+        # +association+ is a placeholder for the symbol passed as the +name+ argument, so
+        # <tt>has_one :manager</tt> would add among others <tt>manager.nil?</tt>.
+        #
+        # [<tt>association</tt>]
+        #   Returns the associated object. +nil+ is returned if none is found.
+        # [<tt>association=(associate)</tt>]
+        #   Assigns the associate object, extracts the primary key, sets it as the foreign key,
+        #   and saves the associate object. To avoid database inconsistencies, permanently deletes an existing
+        #   associated object when assigning a new one, even if the new one isn't saved to database.
+        # [<tt>build_association(attributes = {})</tt>]
+        #   Returns a new object of the associated type that has been instantiated
+        #   with +attributes+ and linked to this object through a foreign key, but has not
+        #   yet been saved.
+        # [<tt>create_association(attributes = {})</tt>]
+        #   Returns a new object of the associated type that has been instantiated
+        #   with +attributes+, linked to this object through a foreign key, and that
+        #   has already been saved (if it passed the validation).
+        # [<tt>create_association!(attributes = {})</tt>]
+        #   Does the same as <tt>create_association</tt>, but raises ActiveRecord::RecordInvalid
+        #   if the record is invalid.
+        # [<tt>reload_association</tt>]
+        #   Returns the associated object, forcing a database read.
+        # [<tt>reset_association</tt>]
+        #   Unloads the associated object. The next access will query it from the database.
+        #
+        # ==== Example
+        #
+        #   class Account < ActiveRecord::Base
+        #     has_one :beneficiary
+        #   end

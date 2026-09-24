@@ -1,0 +1,150 @@
+    class AssociationReflection < MacroReflection # :nodoc:
+      def compute_class(name)
+        if polymorphic?
+          raise ArgumentError, "Polymorphic associations do not support computing the class."
+        end
+
+        begin
+          klass = active_record.send(:compute_type, name)
+        rescue NameError => error
+          if error.name.match?(/(?:\A|::)#{name}\z/)
+            message = "Missing model class #{name} for the #{active_record}##{self.name} association."
+            message += " You can specify a different model class with the :class_name option." unless options[:class_name]
+            raise NameError.new(message, name)
+          else
+            raise
+          end
+        end
+
+        unless klass < ActiveRecord::Base
+          raise ArgumentError, "The #{name} model class for the #{active_record}##{self.name} association is not an ActiveRecord::Base subclass."
+        end
+
+        klass
+      end
+
+      attr_reader :type, :foreign_type, :extensions
+      attr_accessor :parent_reflection # Reflection
+
+      FROZEN_EMPTY_ARRAY = [].freeze
+      private_constant :FROZEN_EMPTY_ARRAY
+
+      def initialize(name, scope, options, active_record)
+        super
+
+        @validated = false
+        @type = -(options[:foreign_type]&.to_s || "#{options[:as]}_type") if options[:as]
+        @foreign_type = -(options[:foreign_type]&.to_s || "#{name}_type") if options[:polymorphic]
+        @join_table = nil
+        @foreign_key = nil
+        @association_foreign_key = nil
+        @association_primary_key = nil
+        @extensions = options[:extend] ? Array(options[:extend]) : FROZEN_EMPTY_ARRAY
+        @extensions = @extensions.dup.freeze unless @extensions.frozen?
+
+        if options[:query_constraints]
+          raise ConfigurationError, <<~MSG.squish
+            Setting `query_constraints:` option on `#{active_record}.#{macro} :#{name}` is not allowed.
+            To get the same behavior, use the `foreign_key` option instead.
+          MSG
+        end
+
+        # If the foreign key is an array, set query constraints options and don't use the foreign key
+        if options[:foreign_key].is_a?(Array)
+          options[:query_constraints] = options.delete(:foreign_key)
+        end
+
+        @deprecated = !!options[:deprecated]
+
+        ensure_option_not_given_as_class!(:class_name)
+      end
+
+      def association_scope_cache(klass, owner, &block)
+        key = self
+        if polymorphic?
+          key = [key, owner.read_attribute(@foreign_type)]
+        end
+        klass.with_connection do |connection|
+          klass.cached_find_by_statement(connection, key, &block)
+        end
+      end
+
+      def join_table
+        @join_table ||= -(options[:join_table]&.to_s || derive_join_table)
+      end
+
+      def foreign_key(infer_from_inverse_of: true)
+        @foreign_key ||= if options[:foreign_key]
+          ActiveRecord::Key.for(options[:foreign_key]).name
+        elsif options[:query_constraints]
+          options[:query_constraints].map { |fk| -fk.to_s.freeze }.freeze
+        else
+          derived_fk = derive_foreign_key(infer_from_inverse_of: infer_from_inverse_of)
+
+          if !derived_fk.is_a?(Array) && active_record.has_query_constraints?
+            derived_fk = derive_fk_query_constraints(derived_fk)
+          end
+
+          ActiveRecord::Key.for(derived_fk).name
+        end
+      end
+
+      def association_foreign_key
+        @association_foreign_key ||= ActiveRecord::Key.for(options[:association_foreign_key] || class_name.foreign_key).name
+      end
+
+      def association_primary_key(klass = nil)
+        primary_key(klass || self.klass)
+      end
+
+      def active_record_primary_key
+        @active_record_primary_key ||=
+          if options[:primary_key]
+            ActiveRecord::Key.for(options[:primary_key]).name
+          else
+            derive_primary_key(active_record) { |model| model.query_constraints_list }
+          end
+      end
+
+      def join_primary_key(klass = nil)
+        foreign_key
+      end
+
+      def join_primary_type
+        type
+      end
+
+      def join_foreign_key
+        active_record_primary_key
+      end
+
+      def check_validity!
+        return if @validated
+
+        check_validity_of_inverse!
+
+        if !polymorphic? && (klass.composite_primary_key? || active_record.composite_primary_key?)
+          if (has_one? || collection?) && Array(active_record_primary_key).length != Array(foreign_key).length
+            raise CompositePrimaryKeyMismatchError.new(self)
+          elsif belongs_to? && Array(association_primary_key).length != Array(foreign_key).length
+            raise CompositePrimaryKeyMismatchError.new(self)
+          end
+        end
+
+        @validated = true
+      end
+
+      def check_eager_loadable!
+        return unless scope
+
+        unless scope.arity == 0
+          raise ArgumentError, <<-MSG.squish
+            The association scope '#{name}' is instance dependent (the scope
+            block takes an argument). Eager loading instance dependent scopes
+            is not supported.
+          MSG
+        end
+      end
+
+      def join_id_for(owner) # :nodoc:
+        Array(join_foreign_key).map { |key| owner.read_attribute(key) }

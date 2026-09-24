@@ -1,0 +1,7 @@
+association.rb
+belongs_to.rb
+collection_association.rb
+has_and_belongs_to_many.rb
+has_many.rb
+has_one.rb
+singular_association.rb

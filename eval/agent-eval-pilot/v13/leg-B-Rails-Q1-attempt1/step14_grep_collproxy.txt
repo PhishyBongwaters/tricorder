@@ -1,0 +1,1 @@
+activerecord/lib/active_record/associations/collection_proxy.rb:31:    class CollectionProxy < Relation

@@ -1,0 +1,2 @@
+activerecord/lib/active_record/associations/collection_association.rb:34:      def reader
+activerecord/lib/active_record/associations/singular_association.rb:7:      def reader
