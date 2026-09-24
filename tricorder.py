@@ -318,6 +318,17 @@ Examples:
     )
 
     parser.add_argument(
+        "--mention",
+        action="append",
+        default=[],
+        metavar="IDENT-or-PATH",
+        help="Bias MAP ranking toward a symbol or file (repeatable). "
+             "Bare words match tag names (10x boost); values containing a "
+             "path separator match files (5x boost). Query-conditioned MAP: "
+             "pass detect-derived terms to focus the map."
+    )
+
+    parser.add_argument(
         "--tier",
         choices=["0", "1"],
         default="0",
@@ -458,6 +469,15 @@ Examples:
              "hint) for --root and exit. No map build, no token budget -- cheap "
              "even on huge repos. Emits the same text the Hermes/DSH plugins "
              "inject at turn 0."
+    )
+
+    parser.add_argument(
+        "--smart-map",
+        metavar="QUERY",
+        help="Smart MAP for small repos (<1000 files): run probe, then ONE exact "
+             "detect with QUERY. If detect finds an exact match, skip MAP and "
+             "output detect results; else run full MAP. Combines probe+detect+MAP "
+             "in one call for agent ladder compliance (v1.6)."
     )
 
     parser.add_argument(
@@ -610,6 +630,70 @@ Examples:
             sys.exit(0)
         print(digest)
         sys.exit(0)
+
+    # --smart-map: probe + ONE exact detect + conditional MAP (v1.6 ladder).
+    # For small repos (<1000 files): run probe, then ONE exact detect with QUERY.
+    # If detect finds an exact match, skip MAP and output detect results;
+    # else run full MAP. Combines probe+detect+MAP in one call.
+    if args.smart_map:
+        probe = probe_project(args.root, args.exclude_globs)
+        total_files = probe.get("total_files", 0)
+        if total_files == 0:
+            print("Smart MAP: no code files found in repo", file=sys.stderr)
+            sys.exit(0)
+
+        if total_files < 1000:
+            # Small repo: run ONE exact detect first
+            import json as _json
+            from utils import enforce_search_budget
+            # Create a minimal Tricorder for the detect call
+            # Resolve DB path for smart-map
+            root_path = Path(args.root).resolve()
+            scan_db_path = _effective_db_path(args, root_path, for_write=False)
+            smart_map = Tricorder(
+                map_tokens=0,
+                root=args.root,
+                token_counter_func=count_tokens,
+                file_reader_func=read_text,
+                output_handler_funcs={'info': lambda *a: None, 'warning': lambda *a: None, 'error': lambda *a: None},
+                verbose=False,
+                max_context_window=0,
+                exclude_unranked=False,
+                context_lines=0,
+                exclude_untagged=False,
+                full_map=False,
+                use_db=not args.no_db,
+                db_path=scan_db_path,
+            )
+            results, _rescue = smart_map.search_identifiers(
+                args.smart_map, max_results=5)
+            if args.max_tokens:
+                from utils import enforce_search_budget
+                results, truncated, omitted = enforce_search_budget(
+                    results, args.max_tokens)
+            else:
+                truncated, omitted = False, 0
+            smart_map.close()
+
+            # Check for exact matches
+            exact_matches = [r for r in results if r.get("quality") == "exact"]
+            if exact_matches:
+                # Exact match found -> skip MAP, output detect results
+                if args.format == "json":
+                    import json as _json
+                    payload = {"results": exact_matches}
+                    if truncated:
+                        payload.update({"truncated": True,
+                                        "total": len(exact_matches) + omitted,
+                                        "omitted": omitted})
+                    print(_json.dumps(payload, indent=2))
+                else:
+                    for s in exact_matches:
+                        q = f" ({s.get('quality')})" if s.get("quality") == "fuzzy" else ""
+                        print(f"{s['type']:10} {s['name']}  {s['file']}:{s['line']}{q}")
+                sys.exit(0)
+            # No exact match -> continue to full MAP below
+        # For large repos (>=1000 files), skip smart logic and run normal MAP
 
     # Set up token counter with specified model
     def token_counter(text: str) -> int:
@@ -887,7 +971,14 @@ Examples:
             return
 
         try:
-            ranked_tags, file_report = repo_map.get_ranked_tags(chat_files, other_files)
+            mentioned_fnames = {m.replace(os.sep, '/') for m in args.mention
+                                if '/' in m or '\\' in m}
+            mentioned_idents = {m for m in args.mention
+                                if '/' not in m and '\\' not in m}
+            ranked_tags, file_report = repo_map.get_ranked_tags(
+                chat_files, other_files,
+                mentioned_fnames=mentioned_fnames,
+                mentioned_idents=mentioned_idents)
 
             if not ranked_tags:
                 if not other_files:
