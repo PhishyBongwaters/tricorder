@@ -69,3 +69,18 @@ warm DB (see below) and say so in the prompt.
   chained ≤120-line pairs with no locating grep between windows. Per-call
   caps held; chaining persisted at ≤200-line scale. Recorded as minor
   exceedance, not fail.
+
+## v1.6 (probe-first; MAP-last on small repos)
+
+- **Rung 0.5 — probe:** `--probe-digest` first (measured 64 tok on vue:
+  language tally + file/line counts, no paths). Mandatory, unskippable,
+  calibrates scale.
+- **MAP-last under 1000 files:** when the probe shows <1000 code files,
+  run ONE exact detect before MAP. If it names the answer file, SKIP MAP
+  and proceed down the ladder; else run MAP as written. (Threshold from
+  leg data: vue 466 / VW 506 / elixir 660 run small; rails 4470 / go
+  12850 run map-first. VW won map-first — whether it wins map-last is an
+  open re-run.)
+- Evidence: both Vue A-legs paid 2,061 tok MAP-blind before knowing
+  anything; capped exact detects then found everything at ~500 tok. The
+  fixed MAP price dominates small-repo legs; v1.6 stops paying it blind.
