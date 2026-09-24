@@ -94,3 +94,13 @@ anyway. Legs measure retrieval given the index, nothing else.
 4. **MAP rung dead on Go** (4/4 timeouts even with ranks live); works mechanically on VW but returns noise
 5. **JSON MAP budget ignored** (218k tok) → fixed by `fit_json_tags`, red-first tests added
 6. **Baseline broad greps mirror tricorder junk class** — tricorder now has 3 stacked defenses (exact-first, ×5 cap, strict-majority)
+
+## Deferred: distill stable directive rules into the skill (2026-09-24)
+
+- Once the directive stops evolving ("perfected"), port the STABLE
+  principles — exact-first, capped first passes, junk-hit retry,
+  function-body reads — into the user-facing skill as retrieval guidance,
+  with eval legs cited as evidence. Distill, do not quote: the versioned
+  directive stays a separate test instrument (caps, warm-DB prescans,
+  metering don't belong in the skill). Do NOT port mid-series — v1.4
+  landed 2026-09-24 from live leg data; the target is still moving.
