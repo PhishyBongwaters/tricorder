@@ -341,6 +341,7 @@ _BINARY_MEDIA_EXTS = {
 # Archive/compressed formats — not source code, never wants to be in a code map.
 _ARCHIVE_EXTS = {
     '.tar', '.gz', '.zip', '.bz2', '.xz', '.7z', '.rar', '.tgz', '.tbz2',
+    '.db', '.sqlite', '.sqlite3', '.db3',  # SQLite database files
 }
 # Data/asset text formats — not source code, never wants to be in a code map.
 _DATA_EXTS = {
