@@ -1,0 +1,9 @@
+src/api/admin.rs:512:    user.totp_recover = None;
+src/api/core/two_factor/authenticator.rs:37:    // It should help prevent TOTP disclosure if someone keeps their vault unlocked.
+src/api/core/two_factor/mod.rs:116:        "code": user.totp_recover,
+src/api/identity.rs:828:            authenticator::validate_totp_code_str(&user.uuid, twofactor_code, &selected_data?, ip, conn).await?;
+src/config.rs:720:        /// Disable authenticator time drifted codes to be valid |> Enabling this only allows the current TOTP code to be valid
+src/db/models/cipher.rs:339:            // We have UseTotp set to true by default within the Organization model.
+src/db/models/organization.rs:211:            "useTotp": true,
+src/db/models/user.rs:52:    #[diesel(column_name = "totp_secret")] // Note, this is only added to the UserDb structs, not to User
+src/db/schema.rs:207:        totp_secret -> Nullable<Text>,

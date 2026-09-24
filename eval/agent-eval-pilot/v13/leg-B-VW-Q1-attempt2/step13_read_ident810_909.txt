@@ -1,0 +1,100 @@
+            json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
+            "Invalid two factor provider"
+        )
+    }
+
+    let Some(ref twofactor_code) = data.two_factor_token else {
+        err_json!(
+            json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
+            "2FA token not provided"
+        )
+    };
+
+    let selected_twofactor = twofactors.into_iter().find(|tf| tf.atype == selected_id && tf.enabled);
+
+    let selected_data = selected_data(selected_twofactor);
+
+    match TwoFactorType::from_i32(selected_id) {
+        Some(TwoFactorType::Authenticator) => {
+            authenticator::validate_totp_code_str(&user.uuid, twofactor_code, &selected_data?, ip, conn).await?;
+        }
+        Some(TwoFactorType::Webauthn) => webauthn::validate_webauthn_login(&user.uuid, twofactor_code, conn).await?,
+        Some(TwoFactorType::YubiKey) => yubikey::validate_yubikey_login(twofactor_code, &selected_data?).await?,
+        Some(TwoFactorType::Duo) => {
+            if CONFIG.duo_use_iframe() {
+                // Legacy iframe prompt flow
+                duo::validate_duo_login(&user.email, twofactor_code, conn).await?;
+            } else {
+                // OIDC based flow
+                duo_oidc::validate_duo_login(
+                    &user.email,
+                    twofactor_code,
+                    data.client_id.as_ref().unwrap(),
+                    data.device_identifier.as_ref().unwrap(),
+                    conn,
+                )
+                .await?;
+            }
+        }
+        Some(TwoFactorType::Email) => {
+            email::validate_email_code_str(&user.uuid, twofactor_code, &selected_data?, &ip.ip, conn).await?;
+        }
+        Some(TwoFactorType::Remember) => {
+            match device.twofactor_remember {
+                // When a 2FA Remember token is used, check and validate this JWT token, if it is valid, just continue
+                // If it is invalid we need to trigger the 2FA Login prompt
+                Some(ref token)
+                    if !CONFIG.disable_2fa_remember()
+                        && (crypto::ct_eq(token, twofactor_code)
+                            && auth::decode_2fa_remember(twofactor_code)
+                                .is_ok_and(|t| t.sub == device.uuid && t.user_uuid == user.uuid)) => {}
+                _ => {
+                    // Always delete the current twofactor remember token here if it exists
+                    if device.twofactor_remember.is_some() {
+                        device.delete_twofactor_remember();
+                        // We need to save here, since we send a err_json!() which prevents saving `device` at a later stage
+                        device.save(true, conn).await?;
+                    }
+                    err_json!(
+                        json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
+                        "2FA Remember token not provided or expired"
+                    )
+                }
+            }
+        }
+        Some(TwoFactorType::RecoveryCode) => {
+            // Check if recovery code is correct
+            if !user.check_valid_recovery_code(twofactor_code) {
+                err!("Recovery code is incorrect. Try again.")
+            }
+
+            // Remove all twofactors from the user
+            TwoFactor::delete_all_by_user(&user.uuid, conn).await?;
+            enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, conn).await?;
+
+            log_user_event(EventType::UserRecovered2fa as i32, &user.uuid, device.atype, &ip.ip, conn).await;
+
+            // Remove the recovery code, not needed without twofactors
+            user.totp_recover = None;
+            user.save(conn).await?;
+        }
+        _ => err!(
+            "Invalid two factor provider",
+            ErrorEvent {
+                event: EventType::UserFailedLogIn2fa
+            }
+        ),
+    }
+
+    TwoFactorIncomplete::mark_complete(&user.uuid, &device.uuid, conn).await?;
+
+    let remember = data.two_factor_remember.unwrap_or(0);
+    let two_factor = if !CONFIG.disable_2fa_remember() && remember == 1 {
+        Some(device.refresh_twofactor_remember())
+    } else {
+        None
+    };
+    Ok(two_factor)
+}
+
+fn selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
