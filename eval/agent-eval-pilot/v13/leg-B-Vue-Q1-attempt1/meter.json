@@ -1,0 +1,17 @@
+{
+ "step01_ls_root.txt": 91,
+ "step02_ls_packages.txt": 11,
+ "step03_ls_tmplcomp.txt": 10,
+ "step04_ls_src.txt": 17,
+ "step05_ls_core.txt": 19,
+ "step06_ls_v3.txt": 41,
+ "step07_ls_observer.txt": 19,
+ "step08_ls_v3react.txt": 22,
+ "step09_ls_v3_again.txt": 41,
+ "step10_read_index.txt": 2155,
+ "step11_read_dep.txt": 662,
+ "step12_read_watcher.txt": 1624,
+ "step13_read_sched.txt": 1429,
+ "step14_read_ref.txt": 1946,
+ "step15_read_reactive.txt": 955
+}

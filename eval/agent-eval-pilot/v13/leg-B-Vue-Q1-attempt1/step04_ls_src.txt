@@ -1,0 +1,7 @@
+compiler
+core
+global.d.ts
+platforms
+shared
+types
+v3
