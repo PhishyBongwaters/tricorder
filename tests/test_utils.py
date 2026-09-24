@@ -59,6 +59,20 @@ class TestDiscoverSrcFilesExcludeGlobs(unittest.TestCase):
         self.assertNotIn('vendor/glm/vec.hpp', names)
         self.assertNotIn('vendor/glm/mat.hpp', names)
 
+    def test_minified_bundled_filenames_excluded_by_default(self):
+        tmp = self._fixture()
+        extra = ['src/app.min.js', 'src/style.min.css', 'src/jquery.slim.js',
+                 'src/app.bundle.js', 'src/app.js', 'src/jquery.js']
+        for rel in extra:
+            (Path(tmp) / rel).write_text('/* x */\n', encoding='utf-8')
+        files = discover_src_files(tmp, use_gitignore=False)
+        names = {os.path.relpath(f, tmp).replace(os.sep, '/') for f in files}
+        for rel in ['src/app.min.js', 'src/style.min.css', 'src/jquery.slim.js',
+                    'src/app.bundle.js']:
+            self.assertNotIn(rel, names)
+        self.assertIn('src/app.js', names)
+        self.assertIn('src/jquery.js', names)
+
 
 if __name__ == '__main__':
     unittest.main()

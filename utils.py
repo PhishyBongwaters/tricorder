@@ -349,6 +349,13 @@ _DATA_EXTS = {
     '.csv', '.tsv',
     '.md', '.txt', '.rst',  # Documentation, not source code
 }
+# Minified/bundled third-party artifacts — vendored code under a filename
+# disguise (jquery-4.0.0.slim.js etc.). Skipped at discovery so they never
+# enter tags/refs/ranks or MAP/T1 payloads. ctags path already excludes
+# *.min.js/*.min.css; the DB scan path needs the same (plus slim/bundle).
+_MINIFIED_SUFFIXES = {
+    '.min.js', '.min.css', '.slim.js', '.bundle.js',
+}
 # Skip files larger than this (bytes) — likely generated/binary/not source.
 # Overridable via env TRICORDER_MAX_SOURCE_FILE_SIZE (bytes). Read at call time
 # (see _env_int/_env_float) so tests and runtime tuning don't require re-import.
@@ -445,7 +452,7 @@ def _discover_src_files_threaded(directory, skip_dirs, exclude_globs, report,
             except OSError:
                 continue
             low = e.name.lower()
-            if any(low.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS | _ARCHIVE_EXTS | _DATA_EXTS):
+            if any(low.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS | _ARCHIVE_EXTS | _DATA_EXTS | _MINIFIED_SUFFIXES):
                 continue
             try:
                 sz = e.stat(follow_symlinks=False).st_size
@@ -617,7 +624,7 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
                 continue
             # Case-insensitive ext check: .Jpg slides past .jpg otherwise.
             low = f.lower()
-            if any(low.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS | _ARCHIVE_EXTS | _DATA_EXTS):
+            if any(low.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS | _ARCHIVE_EXTS | _DATA_EXTS | _MINIFIED_SUFFIXES):
                 continue
             full = os.path.join(r, f)
             # Skip large files (likely generated/binary/not source)
