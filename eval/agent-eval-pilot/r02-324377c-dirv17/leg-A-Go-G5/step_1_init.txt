@@ -1,2 +1,0 @@
-DB path: D:\Projects\tricorder\.tricorder\db\go.db
-Init completed successfully. DB already existed and is warm.

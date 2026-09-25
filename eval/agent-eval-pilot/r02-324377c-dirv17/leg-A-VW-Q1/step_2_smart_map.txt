@@ -1,2 +1,0 @@
-Rung 1: --smart-map "TOTP two-factor code verification"
-Result: Generic error.rs symbols returned (rank 0.117), no TOTP-specific hits. Query too broad. Need more specific terms.

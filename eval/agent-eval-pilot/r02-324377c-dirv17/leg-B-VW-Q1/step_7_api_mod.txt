@@ -1,7 +1,0 @@
-File: D:\Projects\Tricorder-Testing-Repos\vaultwarden\src\api\mod.rs (lines 45-77)
-
-Key symbols:
-- PasswordOrOtpData (line 51-55) - struct with master_password_hash and otp fields
-- PasswordOrOtpData::validate (line 61-76) - pub async fn
-  When otp is provided (line 70-72), delegates to validate_protected_action_otp()
-  which validates email-based OTP tokens (not TOTP codes).

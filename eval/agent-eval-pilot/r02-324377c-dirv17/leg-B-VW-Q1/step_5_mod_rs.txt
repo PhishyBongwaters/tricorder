@@ -1,7 +1,0 @@
-File: D:\Projects\Tricorder-Testing-Repos\vaultwarden\src\api\core\two_factor\mod.rs (302 lines)
-
-Key symbols:
-- pub mod authenticator; (line 27) - exports the TOTP module
-- routes() (line 71-88) - aggregates routes from all 2FA providers including authenticator::routes()
-- is_twofactor_provider_usable (line 39-69) - checks if Authenticator type is usable (always true, line 48)
-- TwoFactorType::Authenticator (line 48) - enum variant for TOTP provider type
