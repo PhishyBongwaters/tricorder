@@ -17,7 +17,7 @@
 
 | Repo | DB status at round start |
 |---|---|
-| vaultwarden | backfilled 2026-09-25 (29k refs, 93 ranks — thin vs 506 files; watch coverage at leg 1), settled 3s steady |
+| vaultwarden | backfilled 2026-09-25 (29k refs; 104 files tagged = full code core: 62 rs + 25 ts, 3,133 defs; ~400 untagged are SQL migrations/empties, correctly flagged), settled 3s steady |
 | go | backfilled 2026-09-25 (10,736 ranks), settled: 289s → 6s steady |
 | rails | backfilled 2026-09-25 (3,490 ranks), settled: 85s → 2s steady |
 | elixir | backfilled 2026-09-25 (1M refs, 613 ranks), settled 19s steady |
@@ -29,7 +29,7 @@
 | # | Leg | Question | Status |
 |---|---|---|---|
 | 1 | A-VW-Q1 | TOTP verification | PASS, 5 calls, 634 tok (minor: 219-line full read) |
-| 2 | B-VW-Q1 | TOTP verification (grep only) | TODO |
+| 2 | B-VW-Q1 | TOTP verification (grep only) | PASS, 15 calls, 2,615+ tok (floor — 7 payloads unsaved; A/B ≤0.24×) |
 | 3 | A-Go-G5 | SSA build entry | TODO |
 | 4 | B-Go-G5 | SSA build entry (grep only) | TODO |
 | 5 | A-Rails-Q1 | has_many | TODO |

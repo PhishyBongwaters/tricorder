@@ -1,0 +1,11 @@
+Directory listing of D:\Projects\Tricorder-Testing-Repos\vaultwarden:
+.github
+.repomap.tags.cache.v1
+.tricorder
+docker
+macros
+migrations
+playwright
+resources
+src
+tools
