@@ -119,3 +119,30 @@ anyway. Legs measure retrieval given the index, nothing else.
 - Consequence for future rules: judge ceilings by tokens saved, not windows
   counted. v1.4 passes (mechanical cap → −41%); v1.5 is advisory until it
   moves a token total.
+
+## MAP-serve perf fix (2026-09-25): Go MAP rung alive
+
+- Cause of the 4/4 Go MAP timeouts: every DB-backed MAP serve ran
+  `populate_refs()` (12M-row cross join) + full SQL PageRank
+  UNCONDITIONALLY — even warm-clean — and re-read every selected file
+  twice per binary-search probe. The `file_ranks` precompute (75a2be8)
+  never reached any DB on disk (no DB has the tables), so nothing was
+  ever served from it; "ranks live" matches no surviving DB file.
+- Fix (main `637216a` + follow-up): per-render file-text memo (one read
+  per file per MAP, thread-local, byte-identical output); serve gate —
+  warm-clean + fresh ranks skips repopulation; stale ranks backfill once
+  with a warning; read-only views never write (they crashed before:
+  `attempt to write a readonly database`). Red-first tests:
+  `tests/test_render_reread.py`, `TestWarmServeSkipsRepopulate`.
+- Data op (same day, additive only): backfilled `file_ranks` on
+  canonical Go (12.1M refs → 10,736 ranks, 231s) and Rails (4.2M refs →
+  3,490 ranks, 50s). Both verified `ranks_fresh`.
+- Measured (`--map-tokens 2048`, warm canonical DBs): Go 289s first
+  serve (one-time drift rescan: discovery rules changed since the
+  2026-09-15 scan) → **6s steady**; Rails 85s → **2s steady**. First
+  MAP after drift still exceeds the 120s agent timeout — leg setup
+  (`--init`, rung 0, sunk cost) settles the DB before the agent starts,
+  per existing protocol.
+- No eval redo: no passing leg ever consumed a rendered MAP (Go MAPs
+  all timed out/skipped; Rails att-2 skipped via --smart-map), and both
+  fixes keep MAP bytes identical — recorded token counts stand.

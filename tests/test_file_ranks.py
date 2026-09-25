@@ -12,6 +12,7 @@ tests pin the preload contract:
 - populate_refs() refreshes ranks (single production hook: full and
   incremental scans both end there), so ranks can never silently stale.
 """
+import os
 import sys
 import unittest
 sys.path.insert(0, '.')
@@ -86,6 +87,121 @@ class TestFileRanks(unittest.TestCase):
         self.assertEqual(set(live), set(stored))
         for f in live:
             self.assertAlmostEqual(live[f], stored[f], places=6)
+
+
+class TestWarmServeSkipsRepopulate(unittest.TestCase):
+    """2026-09-25 finding (Go MAP timeout analysis): populate_refs()
+    (12M-row cross join + full PageRank refresh) ran UNCONDITIONALLY on
+    every DB-backed MAP serve — even warm-clean — so no MAP on Go could
+    ever beat the 120s timeout, and read-only serves crashed outright
+    (sqlite3.OperationalError: attempt to write a readonly database).
+    Warm-clean serves with fresh ranks must skip repopulation; stale
+    ranks backfill once with a warning; read-only views never write.
+    """
+
+    def _project(self):
+        import shutil
+        import tempfile
+        from pathlib import Path
+        tmp = Path(tempfile.mkdtemp(prefix="ranks_heal_"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "a.py").write_text("def foo():\n    return 1\n", encoding="utf-8")
+        (tmp / "b.py").write_text("from a import foo\ndef bar():\n    return foo()\n",
+                                  encoding="utf-8")
+        db_path = str(tmp / "idx.db")
+        return tmp, db_path
+
+    def _tc(self, tmp, db_path, warnings, read_only=False):
+        from core import Tricorder
+        return Tricorder(root=str(tmp), use_db=True, db_path=db_path,
+                         db_read_only=read_only, verbose=False,
+                         output_handler_funcs={
+                             'info': lambda m: None,
+                             'warning': warnings.append,
+                             'error': lambda m: None})
+
+    def _files(self, tmp):
+        return [os.path.join(str(tmp), f) for f in ("a.py", "b.py")]
+
+    def _counting(self, store):
+        calls = []
+        orig = store.populate_refs
+
+        def counted():
+            calls.append(1)
+            return orig()
+
+        store.populate_refs = counted
+        return calls
+
+    def _stale(self, db_path):
+        from database import DBStore
+        db = DBStore(db_path)
+        db.conn.execute("DELETE FROM file_ranks")
+        db.conn.execute("DELETE FROM ranks_stamp")
+        db.conn.commit()
+        self.assertFalse(db.ranks_fresh())
+        db.close()
+
+    def test_warm_clean_serve_skips_populate(self):
+        tmp, db_path = self._project()
+        files = self._files(tmp)
+        tc = self._tc(tmp, db_path, [])
+        first, _ = tc.get_ranked_tags_map_uncached([], files, 2048)
+        self.assertTrue(first)
+        tc.close()
+        # Warm, clean, ranks fresh: repopulation must not run per serve.
+        tc2 = self._tc(tmp, db_path, [])
+        calls = self._counting(tc2._db_store)
+        second, _ = tc2.get_ranked_tags_map_uncached([], files, 2048)
+        third, _ = tc2.get_ranked_tags_map_uncached([], files, 2048)
+        self.assertTrue(second)
+        self.assertEqual(second, third)
+        self.assertEqual(calls, [],
+                         "warm-clean serve repopulated refs+ranks")
+        tc2.close()
+
+    def test_stale_ranks_backfill_once_with_warning(self):
+        tmp, db_path = self._project()
+        files = self._files(tmp)
+        tc = self._tc(tmp, db_path, [])
+        tc.get_ranked_tags_map_uncached([], files, 2048)
+        tc.close()
+        self._stale(db_path)
+        warnings = []
+        tc2 = self._tc(tmp, db_path, warnings)
+        calls = self._counting(tc2._db_store)
+        tree, _ = tc2.get_ranked_tags_map_uncached([], files, 2048)
+        self.assertTrue(tree)
+        self.assertTrue(tc2._db_store.ranks_fresh(),
+                        "serve did not backfill missing file_ranks")
+        self.assertEqual(len(calls), 1, "stale ranks must rebuild exactly once")
+        self.assertTrue(any("ranks" in w for w in warnings),
+                        f"no rebuild warning emitted: {warnings}")
+        # Second serve is quiet and skips: ranks now live.
+        warnings.clear()
+        calls.clear()
+        tree2, _ = tc2.get_ranked_tags_map_uncached([], files, 2048)
+        self.assertEqual(tree, tree2)
+        self.assertEqual(calls, [])
+        self.assertFalse(any("ranks" in w for w in warnings),
+                         f"unexpected rebuild warning: {warnings}")
+        tc2.close()
+
+    def test_read_only_stale_serve_iterates_without_writes(self):
+        tmp, db_path = self._project()
+        files = self._files(tmp)
+        tc = self._tc(tmp, db_path, [])
+        tc.get_ranked_tags_map_uncached([], files, 2048)
+        tc.close()
+        self._stale(db_path)
+        warnings = []
+        tc2 = self._tc(tmp, db_path, warnings, read_only=True)
+        tree, _ = tc2.get_ranked_tags_map_uncached([], files, 2048)
+        self.assertTrue(tree)
+        self.assertFalse(tc2._db_store.ranks_fresh(),
+                         "read-only view must not write file_ranks")
+        tc2.close()
 
 
 if __name__ == "__main__":

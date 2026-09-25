@@ -191,6 +191,13 @@ class RankingMixin:
         all_fnames = list(set(chat_fnames + other_fnames))
 
         db = self._db_store
+        # True when this call parsed/inserted/deleted tag rows (fresh
+        # scan or dirty incremental). Warm-clean hits reset it below —
+        # with no tag changes, repopulating refs+ranks per serve is pure
+        # waste (the Go 120s MAP timeout: 12M-row cross join + full
+        # power iteration on every call). Defaults True (fail-safe =
+        # old always-repopulate behavior on unrecognized paths).
+        did_parse = True
         
         # Files that resolve outside the repo root (symlinks pointing
         # elsewhere, or explicit paths) must never enter the DB: their
@@ -234,6 +241,9 @@ class RankingMixin:
                         if current_sig == stored_sig:
                             for fname in all_fnames:
                                 included.append(fname)
+                            # Warm-clean hit (no tag rows touched): no
+                            # repopulation needed below if ranks are fresh.
+                            did_parse = False
                             # Backfill file_state so future edits are incremental
                             for fname in all_fnames:
                                 rel = self.get_rel_fname(fname)
@@ -315,6 +325,9 @@ class RankingMixin:
                             dirty_rels.discard(self.get_rel_fname(fname))
 
                     if not dirty_rels:
+                        # Warm-clean hit (no tag rows touched): no
+                        # repopulation needed below if ranks are fresh.
+                        did_parse = False
                         # Every needed rel is covered by file_state here
                         # (anything missing, added, or changed would be
                         # dirty). Keep ALL non-excluded files in `included`:
@@ -527,8 +540,21 @@ class RankingMixin:
                         EXTRACTOR_VERSION)
 
         # Cross defs x refs into the refs edge table (on disk, not RAM).
-        db.populate_refs()
-        db.commit()
+        # Gated: a warm-clean serve changes no tags, so rebuilding the
+        # edge table + refreshing PageRank per MAP is pure waste (the Go
+        # 120s timeout: 12M-row cross join + full power iteration every
+        # call). Rebuild when the scan parsed anything, or when stored
+        # ranks are stale/missing (pre-precompute DBs — one-time
+        # backfill, warned so the first slow MAP isn't mistaken for a
+        # hang). Read-only views never write: they serve by iterating
+        # at rank time instead.
+        if not db.read_only and (did_parse or not db.ranks_fresh()):
+            if not did_parse:
+                self.output_handlers['warning'](
+                    "Stored file ranks stale or missing; rebuilding once "
+                    "(one-time cost — later MAPs serve from the table).")
+            db.populate_refs()
+            db.commit()
         # Checkpoint the WAL: frozen readers (CLI --diff, --db-coverage,
         # tricorder_diff, turn-0 injectors) open the DB with immutable=1 and
         # can only see checkpointed rows. Without this, a completed scan was
@@ -541,20 +567,23 @@ class RankingMixin:
         # empty, parsed-zero-tags...); newly-tagged files clear stale flags.
         # Note: "tagless" = zero tags of any kind, while FileReport untagged
         # below means no DEF tag. Different questions, both answered.
-        try:
-            _tagged = {r[0] for r in
-                       db.conn.execute("SELECT DISTINCT rel_file FROM tags")}
-            _reasons = {}
-            for _f in included:
-                _rel = self.get_rel_fname(_f)
-                if _rel not in _tagged:
-                    try:
-                        _reasons[_rel] = self.untagged_reason(_f)
-                    except Exception:
-                        continue
-            db.sync_file_flags(_tagged, _reasons)
-        except Exception:
-            pass
+        # Skipped on warm-clean serves (no tag changes: flags already
+        # correct) — the DISTINCT scan + per-file reads are per-MAP waste.
+        if did_parse and not db.read_only:
+            try:
+                _tagged = {r[0] for r in
+                           db.conn.execute("SELECT DISTINCT rel_file FROM tags")}
+                _reasons = {}
+                for _f in included:
+                    _rel = self.get_rel_fname(_f)
+                    if _rel not in _tagged:
+                        try:
+                            _reasons[_rel] = self.untagged_reason(_f)
+                        except Exception:
+                            continue
+                db.sync_file_flags(_tagged, _reasons)
+            except Exception:
+                pass
 
         total_definitions = db.count_tags("def")
         total_references = db.count_tags("ref")
