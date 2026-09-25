@@ -24,7 +24,7 @@
 |---|---|---|---|---|
 | 1 | A-Go-G5 | SSA build entry | `ses_f269d99b9ffeqTou5sce4vDrOS` | PASS, 3 calls, 12,515 (in+out) |
 | 2 | B-Go-G5 | SSA build entry (grep only) | `ses_f269ba64affeV2v4Zt8TS2TEXP` | PASS, 5 calls, 20,781 (in+out); A/B 0.60× |
-| 3 | A-VW-Q1 | TOTP verification | TODO | TODO |
+| 3 | A-VW-Q1 | TOTP verification | `ses_f2692da5affemV4XzikqhxeKcb` | PASS, 7 calls, 14,743 (in+out) |
 | 4 | B-VW-Q1 | TOTP verification (grep only) | TODO | TODO |
 | 5 | A-Rails-Q1 | has_many | TODO | TODO |
 | 6 | B-Rails-Q1 | has_many (grep only) | TODO | TODO |
