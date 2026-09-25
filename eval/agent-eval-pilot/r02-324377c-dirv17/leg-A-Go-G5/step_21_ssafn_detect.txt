@@ -1,0 +1,6 @@
+ssafn struct defined at src/cmd/compile/internal/ssagen/ssa.go:7993
+type ssafn struct {
+    curfn      *ir.Func
+    // ... exports compiler services for the SSA backend
+}
+It implements the ssa.Frontend interface used by ssa.Config.NewFunc() to build SSA form.

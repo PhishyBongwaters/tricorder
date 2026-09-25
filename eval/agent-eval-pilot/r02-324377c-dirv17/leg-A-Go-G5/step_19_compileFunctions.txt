@@ -1,0 +1,13 @@
+File: src/cmd/compile/internal/gc/compile.go, lines 136-201
+Function: compileFunctions(profile *pgoir.Profile)
+
+This is the main entry point for compiling all functions in a package.
+It:
+1. Sorts compilequeue by function size (longest first for parallelism)
+2. Spawns worker goroutines (one per -l flag value)
+3. Each worker pops functions from compilequeue and calls:
+   ssagen.Compile(ssacompile.Compiler{}, fn, workerId, profile)  // line 174
+4. After compilation, frees IR data (fn.Body = nil, fn.Dcl = nil, etc.)
+5. Calls ssacompile.PostCompile() when done
+
+The entry point for building SSA for a single function is ssagen.Compile.

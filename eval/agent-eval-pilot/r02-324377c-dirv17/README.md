@@ -30,7 +30,7 @@
 |---|---|---|---|
 | 1 | A-VW-Q1 | TOTP verification | PASS, 5 calls, 634 tok (minor: 219-line full read) |
 | 2 | B-VW-Q1 | TOTP verification (grep only) | PASS, 15 calls, 2,615+ tok (floor — 7 payloads unsaved; A/B ≤0.24×) |
-| 3 | A-Go-G5 | SSA build entry | TODO |
+| 3 | A-Go-G5 | SSA build entry | PASS cite / FAIL compliance — 25 calls (>20 cap), 699+ tok floor |
 | 4 | B-Go-G5 | SSA build entry (grep only) | TODO |
 | 5 | A-Rails-Q1 | has_many | TODO |
 | 6 | B-Rails-Q1 | has_many (grep only) | TODO |
