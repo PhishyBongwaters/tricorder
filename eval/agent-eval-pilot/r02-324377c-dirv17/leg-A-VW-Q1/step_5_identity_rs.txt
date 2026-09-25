@@ -1,0 +1,12 @@
+Rung 5: Read src/api/identity.rs (lines 810-859)
+Result: Shows the identity.rs caller that routes TOTP verification during login.
+
+At line 826-829:
+match TwoFactorType::from_i32(selected_id) {
+    Some(TwoFactorType::Authenticator) => {
+        authenticator::validate_totp_code_str(&user.uuid, twofactor_code, &selected_data?, ip, conn).await?;
+    }
+    ...
+}
+
+This is the login identity endpoint that dispatches to the authenticator module when the user selects TOTP as their 2FA provider.

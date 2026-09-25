@@ -1,0 +1,2 @@
+Rung 0.5: --probe-digest
+Result: 423 code files (314 sql, 62 rust, 25 typescript), ~66K lines.

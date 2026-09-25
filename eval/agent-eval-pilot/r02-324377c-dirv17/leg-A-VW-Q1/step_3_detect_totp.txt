@@ -1,0 +1,7 @@
+Rung 2: --detect "totp" --format json --max-results 5
+Results:
+1. playwright/tests/setups/2fa.ts:30 - disableTOTP (def) - test helper
+2. src/api/core/two_factor/authenticator.rs:101 - validate_totp_code_str (def) - EXACT HIT - core TOTP validation
+3. playwright/tests/login.spec.ts:50 - disableTOTP (ref) - test
+4. playwright/tests/sso_login.spec.ts:50 - disableTOTP (ref) - test
+5. src/api/identity.rs:828 - validate_totp_code_str (ref) - caller in identity flow

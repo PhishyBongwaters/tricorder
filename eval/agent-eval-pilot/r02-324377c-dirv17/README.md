@@ -28,7 +28,7 @@
 
 | # | Leg | Question | Status |
 |---|---|---|---|
-| 1 | A-VW-Q1 | TOTP verification | TODO |
+| 1 | A-VW-Q1 | TOTP verification | PASS, 5 calls, 634 tok (minor: 219-line full read) |
 | 2 | B-VW-Q1 | TOTP verification (grep only) | TODO |
 | 3 | A-Go-G5 | SSA build entry | TODO |
 | 4 | B-Go-G5 | SSA build entry (grep only) | TODO |
