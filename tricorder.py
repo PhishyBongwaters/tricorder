@@ -474,7 +474,7 @@ Examples:
     parser.add_argument(
         "--smart-map",
         metavar="QUERY",
-        help="Smart MAP for small repos (<1000 files): run probe, then ONE exact "
+        help="Smart MAP for repos under 5000 files: run probe, then ONE exact "
              "detect with QUERY. If detect finds an exact match, skip MAP and "
              "output detect results; else run full MAP. Combines probe+detect+MAP "
              "in one call for agent ladder compliance (v1.6)."
@@ -632,7 +632,7 @@ Examples:
         sys.exit(0)
 
     # --smart-map: probe + ONE exact detect + conditional MAP (v1.6 ladder).
-    # For small repos (<1000 files): run probe, then ONE exact detect with QUERY.
+    # For repos under 5000 files: run probe, then ONE exact detect with QUERY.
     # If detect finds an exact match, skip MAP and output detect results;
     # else run full MAP. Combines probe+detect+MAP in one call.
     if args.smart_map:
@@ -642,7 +642,8 @@ Examples:
             print("Smart MAP: no code files found in repo", file=sys.stderr)
             sys.exit(0)
 
-        if total_files < 5000:
+        from utils import SMART_MAP_MAX_FILES
+        if total_files < SMART_MAP_MAX_FILES:
             # Small/medium repo: run ONE exact detect first
             import json as _json
             from utils import enforce_search_budget
@@ -693,7 +694,7 @@ Examples:
                         print(f"{s['type']:10} {s['name']}  {s['file']}:{s['line']}{q}")
                 sys.exit(0)
             # No exact match -> continue to full MAP below
-        # For large repos (>=1000 files), skip smart logic and run normal MAP
+        # For large repos (>=5000 files), skip smart logic and run normal MAP
 
     # Set up token counter with specified model
     def token_counter(text: str) -> int:

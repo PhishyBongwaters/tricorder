@@ -37,6 +37,43 @@ class TestMCPPathHandling(unittest.TestCase):
         self.assertEqual(len(set(resolved)), 1, "Backslash relative path should resolve consistently")
 
 
+class TestMCPSmartMap(unittest.TestCase):
+    """MCP tricorder_scan(smart_map=...) mirrors CLI --smart-map (v1.6).
+
+    SKILL.md documents smart_map as an MCP param; without it agents get a
+    rejected call. Probe + ONE exact detect; exact hit skips MAP, miss
+    falls through to the normal map.
+    """
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp(prefix="smartmap_")
+        self.addCleanup(__import__("shutil").rmtree, self.tmp,
+                        ignore_errors=True)
+        Path(self.tmp, "a.py").write_text(
+            "def my_unique_symbol():\n    return 1\n", encoding="utf-8")
+
+    def test_smart_map_exact_hit_skips_map(self):
+        from tricorder_server import tricorder_scan
+        import asyncio
+        resp = asyncio.run(tricorder_scan(
+            project_root=self.tmp, smart_map="my_unique_symbol"))
+        self.assertNotIn("error", resp)
+        self.assertIn("results", resp)
+        self.assertNotIn("map", resp)
+        self.assertTrue(resp.get("smart_map", {}).get("skipped_map"))
+        self.assertTrue(any(
+            r.get("name") == "my_unique_symbol"
+            for r in resp["results"]))
+
+    def test_smart_map_miss_falls_through_to_map(self):
+        from tricorder_server import tricorder_scan
+        import asyncio
+        resp = asyncio.run(tricorder_scan(
+            project_root=self.tmp, smart_map="no_such_symbol_xyz"))
+        self.assertNotIn("error", resp)
+        self.assertIn("map", resp)
+
+
 class TestMCPTokenLimit(unittest.TestCase):
     def setUp(self):
         self.project_root = str(Path(__file__).parent.parent)

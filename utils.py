@@ -891,6 +891,11 @@ MAP_BUDGET_FLOOR = 2048
 # at Go scale (~16k files -> ~8k); retune via TRICORDER_MAP_BUDGET_RATIO.
 MAP_BUDGET_RATIO = 0.5
 
+# Smart MAP file threshold (v1.6): probe + ONE exact detect + conditional
+# MAP applies to repos under this many files; larger repos go straight to
+# MAP. Single source of truth for CLI --smart-map and MCP smart_map.
+SMART_MAP_MAX_FILES = 5000
+
 
 def default_map_budget(n_files: int) -> int:
     """Map token budget for a repo of n_files when no explicit budget given.

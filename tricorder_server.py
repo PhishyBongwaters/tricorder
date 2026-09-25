@@ -784,6 +784,7 @@ async def tricorder_scan(
     pre_index_max_files: int = 100,
     pre_index_include_parents: int = 0,
     full: bool = False,
+    smart_map: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Generate a repository map for the specified files, providing a list of function prototypes and variables for files as well as relevant related
     files. Provide filenames relative to the project_root. In addition to the files provided, relevant related files will also be included with a
@@ -807,6 +808,7 @@ async def tricorder_scan(
     :param dry_run: If True, estimate token budget without generating the map. Returns tag count, tokens per tag, tags at budget, full repo estimate, and a scan_advisory break-even note (advise, never refuse).
     :param exclude_globs: Optional list of glob patterns (POSIX, relative to project_root) to exclude from auto-scan, e.g. ["vendor/**", "third_party/**"]. Filters vendored/third-party subtrees before ranking so first-party code dominates the map. Ignored when other_files is explicitly provided.
     :param full: If True, emit the full repository map regardless of token_limit, disabling truncation. Use for full-repo indexing to disk. Defaults to False.
+    :param smart_map: Optional exact symbol guess (v1.6). For repos under SMART_MAP_MAX_FILES files: runs ONE exact detect; on an exact hit returns detect results and SKIPS the map, else falls through to the normal map. Mirrors CLI --smart-map. Defaults to None (off).
     :returns: A dictionary containing:
         - If dry_run: 'tags', 'tokens_per_tag', 'tags_at_budget', 'full_repo_estimate', and 'scan_advisory' (break-even advice on whether indexing is worth it).
         - If output_file is set: 'map_file' (path), 'token_estimate' (int), 'tier' (int), 'format' (str), 'report' (dict), and optionally 'tier_hint' (advisory).
@@ -901,6 +903,26 @@ async def tricorder_scan(
     # Add a print statement for debugging so you can see what the tool is working with.
     log.debug(f"Chat files: {chat_files_list}")
     log.debug(f"Effective other_files count: {len(effective_other_files)}")
+
+    # Smart MAP (v1.6, mirrors CLI --smart-map): probe + ONE exact detect
+    # + conditional MAP. For repos under SMART_MAP_MAX_FILES, run one exact
+    # detect; on an exact hit return detect results and skip the map,
+    # else fall through to the normal map below. Large repos skip the
+    # smart logic entirely.
+    if smart_map:
+        from utils import SMART_MAP_MAX_FILES
+        if len(chat_files_list) + len(effective_other_files) < SMART_MAP_MAX_FILES:
+            repo_map = _get_tricorder(project_root)
+            results, _rescue = repo_map.search_identifiers(
+                smart_map, max_results=5)
+            exact = [r for r in results if r.get("quality") == "exact"]
+            if exact:
+                resp = {"results": exact,
+                        "smart_map": {"query": smart_map,
+                                      "skipped_map": True,
+                                      "total": len(exact)}}
+                return _mark_untrusted(resp)
+        # No exact hit (or large repo): fall through to full MAP below.
 
     # Auto budget: unset token_limit scales with discovered repo size
     # (floor 2048). Explicit values pass through untouched.

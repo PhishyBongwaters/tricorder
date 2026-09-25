@@ -65,6 +65,7 @@ relevant related files.
 | `max_context_window` | int | — | Adjusts the token limit when no chat files are given. |
 | `dry_run` | bool | `false` | Return budget estimates only (`tags`, `tokens_per_tag`, `tags_at_budget`, `full_repo_estimate`). |
 | `full` | bool | `false` | Emit the full map regardless of `token_limit`. |
+| `smart_map` | string | — | Exact symbol guess (v1.6): repos under 5000 files run ONE exact detect; on an exact hit returns detect results and SKIPS the map, else falls through to the normal map. Mirrors CLI `--smart-map`. |
 | `pre_index` | string | — | Symbol to pre-index (narrow file set before scanning). |
 | `pre_index_max_files` | int | `100` | Cap files from the probe. |
 | `pre_index_include_parents` | int | `0` | Include N parent dirs of matched files. |
@@ -73,6 +74,8 @@ relevant related files.
 **Returns:** `map` (string), `report` (dict), plus `token_estimate`,
 `full_repo_estimate`, `savings_pct`, and a `tier_hint` advisory. With
 `output_file`: `map_file`, `token_estimate`, `tier`, `format`, `report`.
+With `smart_map` on an exact hit: `results` (detect records) plus a
+`smart_map` object (`query`, `skipped_map: true`, `total`) — no `map` key.
 
 ---
 
