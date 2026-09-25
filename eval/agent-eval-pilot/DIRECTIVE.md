@@ -99,6 +99,24 @@ warm DB (see below) and say so in the prompt.
   passes, 120-line read ceiling, one-window-per-file + locating grep,
   `--format json` for machine steps, citation discipline, per-leg
   `--db-path`, warm-DB setup stated in the prompt.
+
+## v1.8 (scale-branched rung 1; big repos start at rung 2)
+
+- **5000+ code files on the probe → SKIP rung-1 MAP, start at rung 2
+  (detect).** MAP is demoted to fallback rung 5.5 (after T1, before
+  FULL FILE): available if rungs 2–5 fail, never the opener.
+- **Under 5000 → smart-map as written** (v1.7 unchanged).
+- Evidence (2026-09-25, measured): Go MAP at 2048 tok renders ~4 files
+  (0.1% coverage, honest warning intact) — true but near-valueless as
+  an opener; covering even 1% of a 12k-file repo needs ~65k tok, more
+  than most legs burn total. Budget scaling cannot fix this class;
+  only rung order can. No clean map-first/detect-first A/B exists yet
+  (prior comparisons confounded by model/directive) — the 5000 line
+  follows `SMART_MAP_MAX_FILES`, single source of truth with the code.
+- The probe is manual (`--probe-digest`, rung 0.5) until an OpenCode
+  plugin injects the digest at turn 0; no plugin exists yet.
+- v1.7 legs stand as run. Any leg run under v1.8 starts a new round
+  (build rule: directive moved).
 - Evidence: both Vue A-legs paid 2,061 tok MAP-blind before knowing
   anything; capped exact detects then found everything at ~500 tok. The
   fixed MAP price dominates small-repo legs; v1.6 stops paying it blind.
