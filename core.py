@@ -12,7 +12,7 @@ from pathlib import Path
 # Pin project dir ahead of sys.path (mirror tricorder.py) so utils/scm resolve to THIS repo.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Optional, Tuple, Callable, Any
-from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, query_variants, tokenize_identifier, levenshtein, stat_fingerprint, canonical_token, NL_QUERY_STOPWORDS, _INFLECTION_EXCEPTIONS
+from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, query_variants, tokenize_identifier, levenshtein, stat_fingerprint, canonical_token, NL_QUERY_STOPWORDS, rescue_query_tokens, _INFLECTION_EXCEPTIONS
 from cache import TagsCacheMixin, CACHE_VERSION
 from parser import ParserMixin
 from graph import GraphMixin
@@ -493,8 +493,10 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 # serial->serialize that separators/case can't bridge).
                 # ponytail: linear scan, early-exit distance; fine at rescue
                 # scale (fires only on empty). No index until measured slow.
-                qcore = "".join(tokenize_identifier(query)) or query.lower()
-                qtok = set(tokenize_identifier(query))
+                # Language keywords ("func", ...) are syntax, not signal:
+                # score the stripped core/tokens so a keyword-loaded query
+                # cannot majority-match or typo-match on the keyword.
+                qcore, qtok = rescue_query_tokens(query)
                 scored = []
                 for tag in all_tags:
                     if not ((tag.kind == "def" and include_definitions) or
@@ -516,7 +518,7 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
             if matching_tags:
                 rescue_used = True
             if rescue_used:
-                qcore = "".join(tokenize_identifier(query)) or query.lower()
+                qcore, _ = rescue_query_tokens(query)
                 matching_tags.sort(key=lambda t: (
                     min(levenshtein(qcore, t.name.lower()),
                         levenshtein(qcore, "".join(tokenize_identifier(t.name)))),
@@ -913,8 +915,10 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                     break
             if not results:
                 # Edit-distance + token-overlap pass (mirror search_identifiers).
-                qcore = "".join(tokenize_identifier(query)) or query.lower()
-                qtok = set(tokenize_identifier(query))
+                # Language keywords ("func", ...) are syntax, not signal:
+                # score the stripped core/tokens so a keyword-loaded query
+                # cannot majority-match or typo-match on the keyword.
+                qcore, qtok = rescue_query_tokens(query)
                 scored = []
                 for sym in all_symbols:
                     if type and sym.type != type:
@@ -933,7 +937,7 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
             if results:
                 rescue = True
             if rescue:
-                qcore = "".join(tokenize_identifier(query)) or query.lower()
+                qcore, _ = rescue_query_tokens(query)
 
                 def _sdist(r_):
                     return min(levenshtein(qcore, r_["name"].lower()),

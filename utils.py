@@ -1201,6 +1201,34 @@ def tokenize_identifier(name: str):
             for w in _camel_split(part) if w]
 
 
+# Language keywords as query noise in the retrieve-0 rescue pass
+# (search_identifiers / search_symbols edit-distance + token-overlap).
+# 2026-09-25 loop autopsy: "func MainSSA" rescued to FuncID_runtime_main
+# ({"func","main"} is a genuine 2/3 majority) and "func Main" to funcMap
+# (d<=2 on the keyword-loaded core "funcmain"). "func" is syntax, not
+# signal. Applied to the QUERY side of rescue scoring only — tier-1
+# exact/substring matching is untouched (rescue fires only on empty),
+# so literal "func..." names still hit directly. Minimal on purpose:
+# declaration keywords; extend only with loop-evidenced additions.
+CODE_QUERY_STOPWORDS = frozenset(
+    "func fn def class var const type struct interface".split()
+)
+
+
+def rescue_query_tokens(query: str):
+    """(qcore, qtok) for the rescue pass with code keywords stripped.
+
+    Falls back to the raw lowercased query / full token set when
+    stripping empties the query (e.g. query is only keywords), so
+    behavior degrades to today's instead of cliffing to nothing.
+    """
+    toks = [t for t in tokenize_identifier(query)
+            if t not in CODE_QUERY_STOPWORDS]
+    if not toks:
+        toks = tokenize_identifier(query)
+    return "".join(toks) or query.lower(), set(toks)
+
+
 # Filler words in natural-language detect queries ("which function", "the",
 # "into"). Applied to the QUERY side only: short code tokens like "is"/"in"
 # keep their meaning inside identifier spans and are never stripped there.
