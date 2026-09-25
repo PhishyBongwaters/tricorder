@@ -16,3 +16,6 @@ model, same cap — isolates rung-1 order and nothing else.
   audit from the session log.
 - Operator records subagent session IDs here at launch; numbers after
   both arms complete. No verdict from the operator — findings to user.
+- EXCLUDED: `ses_f26e92b71ffe1FfKZzCRde7K1d` (first arm-M launch,
+  aborted; prompt lacked mandatory `--root`, agent burned 11 calls on
+  wrong-repo defaults before abort — contaminated, never counted).

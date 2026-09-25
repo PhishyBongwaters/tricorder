@@ -9,7 +9,11 @@
   DB: pass `--db-path D:\Projects\tricorder\.tricorder\db\go.db` on every
   tricorder call. NEVER `--wipe`, NEVER `--diff`.
 - Tricorder CLI: `D:\Projects\tricorder\tricorder.py` via
-  `.venv/Scripts/python.exe`. Shell is PowerShell. Stay in target repo.
+  `.venv/Scripts/python.exe`. Shell is PowerShell.
+- ALWAYS pass BOTH `--root D:\Projects\Tricorder-Testing-Repos\go`
+  AND `--db-path D:\Projects\tricorder\.tricorder\db\go.db` on EVERY
+  tricorder call (no exceptions — the CLI defaults to the working
+  directory, which is the WRONG repo). Stay in the target repo.
   `--format json` for machine steps.
 
 ## Ladder (map-first arm — follow exactly)
