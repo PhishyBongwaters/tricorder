@@ -22,7 +22,7 @@
 
 | # | Leg | Question | Session | Status |
 |---|---|---|---|---|
-| 1 | A-Go-G5 | SSA build entry | TODO | TODO |
+| 1 | A-Go-G5 | SSA build entry | `ses_f269d99b9ffeqTou5sce4vDrOS` | PASS, 3 calls, 12,515 (in+out) |
 | 2 | B-Go-G5 | SSA build entry (grep only) | TODO | TODO |
 | 3 | A-VW-Q1 | TOTP verification | TODO | TODO |
 | 4 | B-VW-Q1 | TOTP verification (grep only) | TODO | TODO |
