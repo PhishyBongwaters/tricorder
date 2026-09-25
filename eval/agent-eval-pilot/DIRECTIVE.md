@@ -84,6 +84,21 @@ warm DB (see below) and say so in the prompt.
   leg data: vue 466 / VW 506 / elixir 660 run small; rails 4470 / go
   12850 run map-first. VW won map-first — whether it wins map-last is an
   open re-run.)
+
+## v1.7 (smart-map rung; reconciles v1.6 with the tool)
+
+- **Rung 1 is `--smart-map "QUERY"`** (v1.6's probe + ONE exact detect +
+  conditional MAP, now one flag on CLI and MCP alike). Under
+  `SMART_MAP_MAX_FILES=5000` files: exact hit → MAP skipped, proceed
+  down the ladder; else MAP as written. Over threshold → straight to
+  MAP. `--map-tokens` honored on the CLI leg.
+- v1.6's "<1000 files" text is superseded: the threshold was raised to
+  5000 to cover Rails (4470 files). Legs run under v1.6 quoted it
+  verbatim and stand as run; v1.7 legs quote this version.
+- Unchanged: ladder order, 15/20-call caps, `--max-results 5` first
+  passes, 120-line read ceiling, one-window-per-file + locating grep,
+  `--format json` for machine steps, citation discipline, per-leg
+  `--db-path`, warm-DB setup stated in the prompt.
 - Evidence: both Vue A-legs paid 2,061 tok MAP-blind before knowing
   anything; capped exact detects then found everything at ~500 tok. The
   fixed MAP price dominates small-repo legs; v1.6 stops paying it blind.
