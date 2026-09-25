@@ -956,7 +956,31 @@ class RankingMixin:
         mentioned_idents: Optional[Set[str]] = None,
         output_writer=None,
     ) -> Tuple[Optional[str], FileReport]:
-        """Generate the ranked tags map without caching."""
+        """Generate the ranked tags map without caching.
+
+        Activates the per-render file-text memo for the whole build
+        (fit loop + untagged tail share one read per file); cleared on
+        exit so no entries survive into later calls.
+        """
+        self._render_memo.cache = {}
+        try:
+            return self._get_ranked_tags_map_inner(
+                chat_fnames, other_fnames, max_map_tokens,
+                mentioned_fnames, mentioned_idents, output_writer,
+            )
+        finally:
+            self._render_memo.cache = None
+
+    def _get_ranked_tags_map_inner(
+        self,
+        chat_fnames: List[str],
+        other_fnames: List[str],
+        max_map_tokens: int,
+        mentioned_fnames: Optional[Set[str]] = None,
+        mentioned_idents: Optional[Set[str]] = None,
+        output_writer=None,
+    ) -> Tuple[Optional[str], FileReport]:
+        """Generate the ranked tags map without caching (inner)."""
         ranked_tags, file_report = self.get_ranked_tags(
             chat_fnames, other_fnames, mentioned_fnames, mentioned_idents
         )
@@ -1062,7 +1086,7 @@ class RankingMixin:
             other_lines = []
             for uf in file_report.untagged_files:
                 abs_path = str(self.root / uf)
-                code = self.read_text_func_internal(abs_path)
+                code = self._read_text_memoized(abs_path)
                 if code:
                     lc = len(code.splitlines())
                     other_lines.append(f"{uf} ({lc} lines)")

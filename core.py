@@ -161,6 +161,13 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         self.tree_context_cache = {}
         self.map_cache = {}
         self._cross_file_index_cache: Optional[Tuple[Dict, Dict]] = None
+
+        # Per-render file-text memo (see _read_text_memoized). Thread-local:
+        # MCP threads share one Tricorder per root, so each concurrent
+        # call gets its own memo. Active only for the duration of one
+        # get_ranked_tags_map_uncached build, then cleared — never a
+        # cross-call cache, so edits between calls always re-read.
+        self._render_memo = threading.local()
         
         # Thread safety locks for cache access
         self._tags_cache_lock = threading.RLock()
@@ -181,6 +188,24 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         if store is not None:
             store.close()
     
+    def _read_text_memoized(self, path: str) -> Optional[str]:
+        """File text, memoized while a map render is active.
+
+        get_ranked_tags_map_uncached activates the memo for the whole fit
+        loop so its ~log2(N) to_tree probes share one read per file
+        instead of re-reading every selected file twice per probe
+        (line-count precompute + body render). Outside a render the memo
+        is absent and this is a plain delegated read — detail/detect
+        paths are unaffected. Thread-local, so concurrent calls sharing
+        this instance never share entries.
+        """
+        memo = getattr(self._render_memo, 'cache', None)
+        if memo is None:
+            return self.read_text_func_internal(path)
+        if path not in memo:
+            memo[path] = self.read_text_func_internal(path)
+        return memo[path]
+
     def token_count(self, text: str) -> int:
         """Count tokens in text with sampling optimization for long texts."""
         if not text:

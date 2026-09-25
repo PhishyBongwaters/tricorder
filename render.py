@@ -59,7 +59,7 @@ def render_tree(
     When writer is provided, writes the rendered text to it and returns None.
     When writer is None (default), returns the rendered string (backward compat).
     """
-    code = self.read_text_func_internal(abs_fname)
+    code = self._read_text_memoized(abs_fname)
     if not code:
         if writer is None:
             return ""
@@ -120,7 +120,7 @@ def _render_body(
     is written separately. When writer is None, returns body lines
     joined by newlines (without the filename header line).
     """
-    code = self.read_text_func_internal(abs_fname)
+    code = self._read_text_memoized(abs_fname)
     if not code:
         if writer is None:
             return ""
@@ -193,7 +193,7 @@ def to_tree(
     file_abs_paths = {rel: str(self.root / rel) for rel, _ in sorted_files}
     file_line_counts = {}
     for rel, abs_path in file_abs_paths.items():
-        code = self.read_text_func_internal(abs_path)
+        code = self._read_text_memoized(abs_path)
         if code:
             file_line_counts[rel] = len(code.splitlines())
 
