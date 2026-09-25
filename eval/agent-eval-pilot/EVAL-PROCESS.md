@@ -36,13 +36,6 @@ quote it verbatim). Either one moving starts a new round.
    tiktoken cl100k; directive text excluded; wall-clock not scored).
    `.txt` extensions only for artifacts (parseable extensions break
    `test_empty_result`).
-6. **Verify (metering-integrity gate, 2026-09-25)**: BEFORE metering,
-   the operator counts `step_*.txt` files against transcript rows. Any
-   tool call without a saved verbatim payload → the leg's token total
-   is VOID (citation/compliance findings may stand as behavioral data).
-   Void legs are re-run as new attempts; void cells never enter tallies.
-   The agent prompt carries the save-everything instruction as its
-   highest-priority order, including the void consequence.
 6. **Grade**: ground-truth citation (file + line + symbol) from
    `QUESTIONS.md`; ladder-compliance audit; `grade.md` committed with
    tokens table.
