@@ -128,7 +128,7 @@ anyway. Legs measure retrieval given the index, nothing else.
   twice per binary-search probe. The `file_ranks` precompute (75a2be8)
   never reached any DB on disk (no DB has the tables), so nothing was
   ever served from it; "ranks live" matches no surviving DB file.
-- Fix (main `637216a` + follow-up): per-render file-text memo (one read
+- Fix (main `637216a` + `f3fc5be`): per-render file-text memo (one read
   per file per MAP, thread-local, byte-identical output); serve gate —
   warm-clean + fresh ranks skips repopulation; stale ranks backfill once
   with a warning; read-only views never write (they crashed before:
