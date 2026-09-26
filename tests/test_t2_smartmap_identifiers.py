@@ -93,6 +93,54 @@ class TestT2ProbeLoop(unittest.TestCase):
         self.assertEqual(hits, [])
 
 
+class TestT2CLITextOutput(unittest.TestCase):
+    """The non-JSON text branch of the smart-map skip must not crash.
+
+    Skip hits come from search_identifiers (detect family: "kind"), but the
+    text printer read s["type"] (a search_symbols field), so ANY
+    identifier exact-hit raised KeyError: 'type' and exited 1. Only
+    reachable once T2 makes rung 1 exact-hit on an identifier — which is
+    exactly what the v1.9 ladder tells agents to pass. JSON mode was
+    unaffected (it dumps the dicts as-is).
+    """
+
+    def setUp(self):
+        import shutil
+        import subprocess
+        import tempfile
+        self.tmp = Path(tempfile.mkdtemp(prefix="t2smartmap_cli_"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        Path(self.tmp, "a.py").write_text(
+            "def has_many():\n    return 1\n", encoding="utf-8")
+        repo = Path(__file__).resolve().parent.parent
+        self._run = lambda *a: subprocess.run(
+            [sys.executable, str(repo / "tricorder.py"),
+             "--root", str(self.tmp), *a],
+            capture_output=True, text=True, timeout=120)
+
+    def test_smart_map_exact_hit_text_does_not_crash(self):
+        p = self._run("--smart-map", "has_many")
+        self.assertEqual(p.returncode, 0,
+                         p.stderr[-800:])
+        self.assertNotIn("KeyError", p.stderr)
+        self.assertIn("has_many", p.stdout)
+        # kind is the detect-family field; type is not present on hits
+        self.assertIn("[def]", p.stdout)
+
+    def test_smart_map_text_matches_detect_text_shape(self):
+        # Same result family as --detect: rung 1 and rung 2 should render
+        # identically so an agent comparing them sees no schema surprise.
+        smart = self._run("--smart-map", "has_many")
+        detect = self._run("--detect", "has_many", "--max-results", "5")
+        self.assertEqual(smart.returncode, 0, smart.stderr[-800:])
+        self.assertEqual(detect.returncode, 0, detect.stderr[-800:])
+        self.assertIn("has_many", smart.stdout)
+        self.assertIn("[def]", smart.stdout)
+        self.assertIn("[def]", detect.stdout)
+        # MAP was skipped (exact hit), so no map framing in the output
+        self.assertNotIn("Repository map", smart.stdout)
+
+
 class TestT2MCPIntegration(unittest.TestCase):
     def setUp(self):
         import tempfile

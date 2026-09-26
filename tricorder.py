@@ -698,9 +698,14 @@ Examples:
                                         "omitted": omitted})
                     print(_json.dumps(payload, indent=2))
                 else:
+                    # Skip hits are detect-family results (search_identifiers):
+                    # the kind field, not search_symbols' "type". Render the
+                    # same shape as --detect so rung 1 and rung 2 agree.
                     for s in exact_matches:
-                        q = f" ({s.get('quality')})" if s.get("quality") == "fuzzy" else ""
-                        print(f"{s['type']:10} {s['name']}  {s['file']}:{s['line']}{q}")
+                        q = f" ({s['quality']})" if s.get("quality") in ("fuzzy", "content") else ""
+                        print(f"{s['file']}:{s['line']}  {s['name']}  [{s.get('kind', '')}]{q}")
+                        for cl in s.get("context", "").splitlines():
+                            print(f"    {cl}")
                 sys.exit(0)
             # No exact match -> continue to full MAP below
         # For large repos (>=5000 files), skip smart logic and run normal MAP
