@@ -28,6 +28,14 @@
 | # | Leg | Question | Session | Status |
 |---|---|---|---|---|
 | 1 | A-Rails-Q1 | `has_many` | `ses_f22250609ffeM1mr4xrpMX0MFx` | PASS 10 calls, 29,909 (grade.md) |
+| 2 | A-Rails-Q1-run2 | `has_many` | — | pending |
+| 3 | A-Rails-Q1-run3 | `has_many` | — | pending |
+| 4 | B-Rails-Q1-run1 (r04) | `has_many` (grep only) | `ses_f2234e894ffed1p7J3W8YJOYmu` | PASS 15 calls, 25,466 (r04 grade) |
+| 5 | B-Rails-Q1-run2 | `has_many` (grep only) | — | pending |
+| 6 | B-Rails-Q1-run3 | `has_many` (grep only) | — | pending |
+
+Repeat rationale (operator-ordered): single-run cache noise ±10k —
+n=3/arm for means. B-run1 adopted from r04 (grep-only, code-invariant).
 | 2 | B-Rails-Q1 | `has_many` (grep only) | — | pending |
 
 Scope rationale: re-run the Rails pair on the T4 build. The A-arm is
