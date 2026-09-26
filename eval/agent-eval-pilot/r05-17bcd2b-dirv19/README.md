@@ -29,7 +29,7 @@
 |---|---|---|---|---|
 | 1 | A-Rails-Q1 | `has_many` | `ses_f22250609ffeM1mr4xrpMX0MFx` | PASS 10 calls, 29,909 (grade.md) |
 | 2 | A-Rails-Q1-run2 | `has_many` | `ses_f221a4ca5ffeLAv4NLCTmDyS3P` | PASS 10 calls, 18,439, peak 17,450 (grade.md) |
-| 3 | A-Rails-Q1-run3 | `has_many` | — | pending |
+| 3 | A-Rails-Q1-run3 | `has_many` | `ses_f221702c7ffehs2cR0XBo2Kval` | PASS 10 calls, 20,701, peak 18,265 (grade.md) |
 | 4 | B-Rails-Q1-run1 (r04) | `has_many` (grep only) | `ses_f2234e894ffed1p7J3W8YJOYmu` | PASS 15 calls, 25,466 (r04 grade) |
 | 5 | B-Rails-Q1-run2 | `has_many` (grep only) | — | pending |
 | 6 | B-Rails-Q1-run3 | `has_many` (grep only) | — | pending |
