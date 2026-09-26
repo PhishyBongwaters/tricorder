@@ -40,7 +40,7 @@
 
 | # | Leg | Question | Session | Status |
 |---|---|---|---|---|
-| 1 | A-Rails-Q1 | `has_many` | — | pending |
+| 1 | A-Rails-Q1 | `has_many` | `ses_f2248a5b5ffeIk8NphN2jcrSqC` | PASS 10 calls, 18,428 (grade.md) |
 | 2 | B-Rails-Q1 | `has_many` (grep only) | — | pending |
 | 3 | A-VW-Q1 | TOTP verification | — | pending |
 | 4 | B-VW-Q1 | TOTP verification (grep only) | — | pending |
