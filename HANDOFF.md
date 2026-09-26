@@ -28,8 +28,7 @@
   ignores `--db-path` (always writes canonical) — check for stray
   `.tricorder/db/<name>.db` after scratch scans and delete.
 
-## Where the project stands (main @ `47e57a8` + verify_backfill rescale
-+ T1-mechanism-2 — see commits below)
+## Where the project stands (main @ `a31fe08`; T1-mechanism-2 latest)
 
 Product (all landed, suite-green, byte-identical outputs where claimed):
 - `--smart-map` / MCP `smart_map` (v1.6–v1.7, threshold
