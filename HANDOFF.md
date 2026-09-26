@@ -1,4 +1,4 @@
-# TRICORDER — FRESH SESSION HANDOFF (2026-09-26)
+# TRICORDER — FRESH SESSION HANDOFF (2026-09-26, evening)
 
 ## Environment (verified, do not re-derive)
 
@@ -6,11 +6,14 @@
   remote (`git@github.com:PhishyBongwaters/tricorder.git` — source of
   truth, `git push github main` per step). `origin` = gitea via
   hermes-agent (unreachable from here) — never fetch/push it.
-- Suite green: **508 passed, 4 skipped, 98 subtests**
+- Suite green: **527 passed, 4 skipped, 98 subtests**
   (`python -m pytest tests/ -q -p no:cacheprovider`, repo `.venv`).
+  Was 508 at session start; +19 = T1 (2) + T2 (11: 6 candidates +
+  3 probe-loop + 2 MCP) + T3 (6) new tests.
 - Shell is PowerShell: NO `head/tail/grep/sed/&&` — use
   `Select-Object -First N`, `Select-String`, `;` separators.
-  `>` redirect writes UTF-16 (matters for token metering).
+  `>` redirect writes UTF-16 (matters for token metering; use
+  `--output` flag or explicit utf8 writes for byte-compares).
 - Untracked scratch NOT mine — never touch, never commit:
   `docs/*.proposed.md`, `docs/SPEC_readme_rewrite.md`,
   `docs/process*.md`, `docs/retrieval.md`, `docs/issue-*.md`, `spikes/`.
@@ -18,8 +21,14 @@
   (`Qwen3.6-35B-A3B-UD-Q4_K_M.gguf`, 16GB VRAM target). Operator model
   (me/muse-spark) is the disciplined vehicle. Default subagent model =
   operator model; pass `model="llamacpp/Qwen"` explicitly for Qwen.
+- Live-check scratch pattern (used T1–T3, keeps canonical DBs clean):
+  copy canonical DB to `C:\Users\macdo\AppData\Local\Temp\opencode\`,
+  pass `--db-path <copy>` + `--root <real repo>`; `git stash push
+  <files>` for pre-fix baselines, `git stash pop` after. `--init`
+  ignores `--db-path` (always writes canonical) — check for stray
+  `.tricorder/db/<name>.db` after scratch scans and delete.
 
-## Where the project stands (main @ `bbd894a` after this handoff's commit)
+## Where the project stands (main @ `47e57a8` + verify_backfill rescale)
 
 Product (all landed, suite-green, byte-identical outputs where claimed):
 - `--smart-map` / MCP `smart_map` (v1.6–v1.7, threshold
@@ -37,10 +46,66 @@ Product (all landed, suite-green, byte-identical outputs where claimed):
   (`utils.probe_project`/`format_probe_digest`, test
   `test_probe_digest.py`). NOTE: legs that ran before `fb2ef95` saw the
   old MCP/slash tail in probe output.
+- **T1 BUILT (`bba4a58`)**: fixture/testdata + fingerprinted-asset
+  exclusion from discovery (`_FIXTURE_SKIP_DIRS`,
+  `_HASH_ASSET_RE`, `_is_fixture_or_hash_asset` in `utils.py`; serial +
+  threaded + probe paths; ctags fixture-dir excludes). Test
+  `tests/test_t1_fixture_exclusion.py`. Live: old MAP head `$`/`q`
+  from Rails fixture bomb → new shows only real defs; VW/Go MAP bytes
+  identical pre/post. Deliberate recall edge: files UNDER exact-named
+  `fixtures/` dirs are dropped (documented miss); `*_fixtures`-named
+  dirs (`autoloading_fixtures/`, `controller_fixtures/`) and the
+  fixtures FRAMEWORK source (`fixtures.rb`, `fixtures_test.rb`) are
+  KEPT (name-contains, not path-segment).
+- **T2 BUILT (`144aa54`)**: smart-map identifier-first
+  (`smart_map_candidates` + `smart_map_exact_hit` in `utils.py`,
+  shared by CLI `--smart-map` and MCP `smart_map`; probes use
+  `search_mode="exact"`, skip bar unchanged at quality==exact, cap 3).
+  Test `tests/test_t2_smartmap_identifiers.py` (unit + MCP skip +
+  fallthrough). Live Rails-Q: pre 6,298-char noise MAP → post
+  2,143-char detect skip headed by `def has_many`
+  (associations.rb:1426); VW-Q1 MAP byte-identical pre/post.
+  DISCLOSED DEVIATION: bare-token filter excludes NL_QUERY_STOPWORDS
+  too (SPEC named CODE only) — otherwise `the`/`and`/`what` become
+  skip probes and a tag literally named `the` would wrongly deny MAP.
+- **T3 BUILT (`47e57a8`)**: symbols definition-site priority
+  (`symbol_boundary_rank` in `utils.py`: 0 full-name, 1 `::`-segment,
+  2 superstring; `is_test_file` demotion as tiebreak; both prepended
+  to the main-path sort in `core.search_symbols`, rescue sorts
+  untouched). Test `tests/test_t3_symbols_priority.py`. Live Rails
+  `symbols HasMany`: old top-5 all test classes → new headed by
+  `builder/has_many.rb`, test classes at #14–15/39 (reachable).
+  Spot-checks: VW identical membership (reorder only); Go displaced
+  only test-path hits. CLI `--symbols` + MCP `tricorder_symbols`
+  share the path (verified by grep).
 - Eval analysis tools (tracked): `eval/agent-eval-pilot/tools/`
   (`ocdb/ocmsg/ocmap/occtx/octools/ocover/ocpeak/oploop/ocleg/ocassess/ocdiverge`
   = session-DB forensics; `audit_legs.py`; `backfill_ranks.py`;
   `*-inv.py`, `go_*.py`, `vw_comp.py`, `dbg_*.py` = trails). README indexes all.
+
+Canonical DBs (rebuilt 2026-09-26 evening, operator-ordered):
+- **Rails REBUILT**: `--init --wipe` + `chunk_resume.py` (one chunk,
+  3932/3932) + `backfill_ranks.py` (45s, fresh=True). Backup of pre-T1
+  DB at `C:\Users\macdo\AppData\Local\Temp\opencode\rails-pre-t1-backup.db`
+  (809MB — temp, will age out; re-backup before any further wipe).
+  Before → after: file_state 4470 → 3932; tags 727,607 → 722,111;
+  refs 4,245,851 → 3,863,755; file_ranks 3490 → 3456; fixture tags
+  10,080 → 4,584 (remainder = fixtures FRAMEWORK source, kept by
+  design — see T1 note); gzip bomb 0 tags/0 files; hash-assets 0.
+  `meta` 1 row, extractor v3. `verify_backfill.py` rails want
+  rescaled 3490 → 3456 (committed with this handoff).
+- Go/VW/Vue/Elixir/Swift DBs UNTOUCHED (T1–T3 proved byte-identical
+  MAPs there; no rebuild needed). Go `verify_backfill` shows
+  ranks=10766 vs want 10736 — pre-existing repo drift, not ours.
+- **OPEN FINDING (measured, not fixed)**: post-rebuild Rails MAP head
+  is STILL minified noise — `guides/assets/javascripts/clipboard.js`
+  single-char defs (`a`,`b`,`c`…) at file-rank 0.027, top of MAP.
+  T1 acceptance was fixture-paths-only so T1 stands, but this is the
+  SPEC's deferred mechanism-2 trigger ("content sniffing … only if
+  measured MAP-head pollution persists"). Fix needs operator call:
+  (a) content-sniff exclusion (SPEC mechanism 2), or (b) name-based
+  `guides/assets` (or `assets/`) rule, or (c) leave for legs to route
+  around via T2 skip. New legs will hit this on any rung-1 MAP.
 
 Eval state:
 - Regime docs: `eval/agent-eval-pilot/DIRECTIVE.md` (v1.8 current:
@@ -54,15 +119,13 @@ Eval state:
 - r03 (`r03-46d32c1-dirv18/`, operator-model vehicle, v1.8): 5/12 legs
   scored — Go-G5 0.60×, VW-Q1 0.50×, Rails-Q1 A (25,289, no B yet).
   **HOLD: no legs past leg 5 without operator approval** (in r03 README).
+  Operator 2026-09-26: new legs start on the post-rebuild commit
+  once handoff + rebuild sorted (this handoff). Rails-Q1 leg-5 ran
+  pre-T1/T2/T3 on the OLD rails.db — its MAP-side costs are stale
+  relative to the new DB + skip behavior; flag before comparing.
 - Ad-hoc (NOT rounds): `map-vs-detect/` (parked — Qwen looped 212
   tools; 2 aborted sessions recorded excluded), `qwen-b-g5/` (PASS,
   48,072 truth, 0 repeats — Qwen CAN run clean on baseline).
-- UNBUILT SPECS (this handoff's commit): `docs/SPEC-minified-fixture-exclusion.md`
-  (T1, severe: minified fixtures PageRank-bomb MAP heads),
-  `docs/SPEC-smartmap-identifier-first.md` (T2: skip never fires on NL
-  questions — try backticked/identifier tokens first),
-  `docs/SPEC-symbols-definition-priority.md` (T3: test classes crowd
-  definition sites out of top-5).
 - v1.9 ideas (NOT approved, do not build): rung-1 takes identifier
   input; rung-4 mechanism naming; doc-walk rule; context-ceiling per
   leg; harness loop breaker (not buildable here — harness-side).
@@ -96,6 +159,8 @@ Eval state:
   Token savings is the only scored metric; counts are context, never
   verdicts. Cap = leash (termination), not score.
 - No destructive commands without explicit approval. No background loops.
+  Canonical-DB wipes are destructive: backup to approved temp first,
+  operator order required (granted 2026-09-26 for Rails).
 - Coverage = `COUNT(*) FROM file_state`, never tags-distinct.
   `meta` holds exactly 1 row. `--max-files` is a PREFIX cap (rising
   caps only). Never hardcode repo paths in app code. Never
@@ -118,7 +183,11 @@ Eval state:
 
 ## Likely next steps (operator decides, in no implied order)
 
-1. Legs 6–12 of r03 (on hold) — or close r03 as a 5-leg partial.
-2. Build SPECS T1–T3 (any order; each red-first + suite + commit).
+1. New legs on post-rebuild commit (operator-ordered; r03 legs 6–12
+   still on hold separately — clarify whether new legs = r04 or
+   r03-continued before launching anything).
+2. clipboard.js MAP-head pollution: mechanism-2 content sniff, narrow
+   name rule, or leave-and-route-around (operator call; red-first +
+   suite + commit if build).
 3. v1.9 directive items if operator wants them (new round required).
 4. Swift canonical DB is settled (13s MAP steady); Elixir/Vue canonical.
