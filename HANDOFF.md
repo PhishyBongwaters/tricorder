@@ -108,10 +108,11 @@ Eval state:
 
 - Proactive Discord/Telegram updates at milestones (leg graded,
   round state changes, suite red/green on product work, blocked/waiting)
-  so the operator doesn't have to sit at the keyboard. Prior form:
-  `hermes send --to discord ...` — MECHANISM UNVERIFIED from this
-  machine (hermes-agent host unreachable here); confirm the exact send
-  command with the operator before first use, then use it freely.
+  so the operator doesn't have to sit at the keyboard. Verified
+  2026-09-26: `hermes send --to discord:phishybongwaters "msg"` and
+  `hermes send --to telegram:phishybongwaters "msg"` (targets listed
+  via `hermes send --list`; bot-token platforms need no running
+  gateway). Use freely.
 - Session continuity: keep HANDOFF.md current (state, commits, open
   threads) — a fresh session starts by reading it, no re-derivation.
 
