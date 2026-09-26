@@ -34,7 +34,14 @@ answer at the leash. Guards untriggered. v1.9 ladder followed.
 | r05 A-Q1 | 10 | 29,909 | leash-hit; roster recovered via grep-directed read |
 
 r05-vs-r04 is product-only (same directive/DB/vehicle, build
-6f5658e → 17bcd2b) BUT agent variance dominates: the +11k input is
-better explained by the --help dump and fatter symbols payloads
-(`HasMany` capitalized) than by T4 (no rescue fired on this trail —
-call 5 hit the main path). Do not quote a T4 effect here.
+6f5658e → 17bcd2b) BUT agent variance dominates — decomposed from
+per-message token payloads 2026-09-26: **83% of the +11,456 input
+delta is ONE uncached call** (r05 seq43 symbols: fresh input 10,791,
+cache.read 0; r04 seq43: 1,274 with 9,713 cached). Timing exonerates
+TTL expiry (5s gap; r04 cached fine across 10s). Root cause of that
+single miss is not determinable from harness rows — provider-side
+cache admission noise. Remainder ≈ fatter outputs (roster-recovery
+grep+read ≈ 3.4k tok, legitimate; --help blunder ≈ 2k, waste).
+T4's own effect here: zero — no rescue fired on this trail.
+Do not quote a T4 effect here; broader lesson: single-leg input
+deltas carry cache-luck variance that dwarfs product effects.
