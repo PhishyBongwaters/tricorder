@@ -1,0 +1,175 @@
+# Agent-eval directive (CLI-first)
+
+Versioned prompt for tricorder legs. B-legs get the baseline prompt instead
+(same question, same cap, grep/read/glob only, stay in target repo).
+
+## v1 (as run: VW Q1–Q4, Go G1/G3/G5 — 10/10 legs ladder-compliant)
+
+Escalation ladder, cheapest first, stop at the first rung that answers.
+Hard cap 15 calls (20 on 10k+ file repos):
+
+0. `--init` once (idempotent). Never `--wipe`, never `--diff`.
+1. MAP: `--map-tokens 2048`. Visible answer → stop.
+2. DETECT: `--detect "<query>" --format json --max-results 10`.
+   1–2 wordings max.
+3. SYMBOLS: `--symbols "<query>" --format json` for shapes.
+4. READ exact lines: hit function body only, never whole files.
+5. T1: `--tier 1 --context-lines 3`.
+6. FULL FILE: last resort only.
+
+Rules: `--format json` for machine steps; stay in target repo; final
+answer cites file + line + symbol, every fact from a tool hit, no guesses.
+On huge repos use a per-leg `--db-path` (parallel legs must not share a DB)
+and allow minutes for a cold scan — or better, run legs on a prescanned
+warm DB (see below) and say so in the prompt.
+
+## v1.1 (clarifications, no behavior change)
+
+- Read window: the hit function body (Q1's 100-line read covering two
+  functions was fine; ±15 is a floor, not a ceiling).
+- Cold scans: prescan once per repo up front (sunk, uncharged, timed and
+  recorded); legs run warm. Cold wall time is tracked, never scored.
+
+## v1.2 (new rule from Go pilot cost data)
+
+- **Junk-hit retry:** after any detect whose hits are wrong-language or
+  wrong-area, retry an exact symbol guess immediately; never read junk
+  hits. Evidence: A-G5's failed NL query ("build SSA form for function")
+  returned junk JS hits costing 58,624 tokens — 50× the leg's clean cost
+  (1,093) and the costliest step in the pilot. Same crowding class as
+  Swift Q4, at the query-formulation layer.
+
+## v1.3 (query formulation: exact-first, capped first passes)
+
+- **Exact symbol guess first, NL only as fallback.** Every exact query in
+  the pilot cost 150–1,150 tokens; every NL-first query risked five
+  figures. Guess the likeliest identifier (`buildssa`, not "build SSA
+  form for function") before spending an NL query.
+- **Cap first passes:** ALL first-pass queries run with `--max-results 5`,
+  exact or NL. Widen to 10 only when the narrow pass returns nothing
+  usable. (Amended 2026-09-24: original text capped NL only; A-Vue-Q1
+  attempt 3 showed exact guesses at 10 cost ~950 tok vs ~500 at 5. Prior
+  legs quoted the original verbatim and stand as run.)
+
+## v1.4 (read-window ceiling; closes the v1.1 loophole)
+
+- **Cap read windows:** one READ covers ONE function body, max ~120 lines.
+  Two adjacent small functions in one window (the Q1 100-line precedent)
+  is fine. Chaining sequential windows to walk a whole file is rung 6
+  (FULL FILE) by another name — stop at the first window that answers.
+- Evidence: A-Elixir-Q1 read gen_server.ex 1–1376 in five 200–300-line
+  windows (12,747 of 17,357 tokens, 73%) after rungs 2–3 had already
+  identified the file. Literal v1.1 ("a floor, not a ceiling") permitted
+  it; rung-4 intent forbade it. Leg keeps its compliance-fail tag.
+
+## v1.5 (one window per file; grep justifies the second)
+
+- **One read window per file.** A second window on the same file needs a
+  locating grep first (in-file search or symbols hit naming the target
+  symbol + line) — the grep IS the substitute. Elixir attempt 2 proved it:
+  4 greps, 290 tok, zero blind second windows.
+- Evidence: A-Vue-Q1 covered state.ts 1–200 and scheduler.ts 1–199 in
+  chained ≤120-line pairs with no locating grep between windows. Per-call
+  caps held; chaining persisted at ≤200-line scale. Recorded as minor
+  exceedance, not fail.
+
+## v1.6 (probe-first; MAP-last on small repos)
+
+- **Rung 0.5 — probe:** `--probe-digest` first (measured 64 tok on vue:
+  language tally + file/line counts, no paths). Mandatory, unskippable,
+  calibrates scale.
+- **MAP-last under 1000 files:** when the probe shows <1000 code files,
+  run ONE exact detect before MAP. If it names the answer file, SKIP MAP
+  and proceed down the ladder; else run MAP as written. (Threshold from
+  leg data: vue 466 / VW 506 / elixir 660 run small; rails 4470 / go
+  12850 run map-first. VW won map-first — whether it wins map-last is an
+  open re-run.)
+
+## v1.7 (smart-map rung; reconciles v1.6 with the tool)
+
+- **Rung 1 is `--smart-map "QUERY"`** (v1.6's probe + ONE exact detect +
+  conditional MAP, now one flag on CLI and MCP alike). Under
+  `SMART_MAP_MAX_FILES=5000` files: exact hit → MAP skipped, proceed
+  down the ladder; else MAP as written. Over threshold → straight to
+  MAP. `--map-tokens` honored on the CLI leg.
+- v1.6's "<1000 files" text is superseded: the threshold was raised to
+  5000 to cover Rails (4470 files). Legs run under v1.6 quoted it
+  verbatim and stand as run; v1.7 legs quote this version.
+- Unchanged: ladder order, 15/20-call caps, `--max-results 5` first
+  passes, 120-line read ceiling, one-window-per-file + locating grep,
+  `--format json` for machine steps, citation discipline, per-leg
+  `--db-path`, warm-DB setup stated in the prompt.
+
+## v1.8 (scale-branched rung 1; big repos start at rung 2)
+
+- **5000+ code files on the probe → SKIP rung-1 MAP, start at rung 2
+  (detect).** MAP is demoted to fallback rung 5.5 (after T1, before
+  FULL FILE): available if rungs 2–5 fail, never the opener.
+- **Under 5000 → smart-map as written** (v1.7 unchanged).
+- Evidence (2026-09-25, measured): Go MAP at 2048 tok renders ~4 files
+  (0.1% coverage, honest warning intact) — true but near-valueless as
+  an opener; covering even 1% of a 12k-file repo needs ~65k tok, more
+  than most legs burn total. Budget scaling cannot fix this class;
+  only rung order can. No clean map-first/detect-first A/B exists yet
+  (prior comparisons confounded by model/directive) — the 5000 line
+  follows `SMART_MAP_MAX_FILES`, single source of truth with the code.
+- The probe is manual (`--probe-digest`, rung 0.5) until an OpenCode
+  plugin injects the digest at turn 0; no plugin exists yet.
+- v1.7 legs stand as run. Any leg run under v1.8 starts a new round
+  (build rule: directive moved).
+- Evidence: both Vue A-legs paid 2,061 tok MAP-blind before knowing
+  anything; capped exact detects then found everything at ~500 tok. The
+  fixed MAP price dominates small-repo legs; v1.6 stops paying it blind.
+
+## v1.9 (identifier-input rung 1; rung 4 named by mechanism; doc-walk ban; leg leash)
+
+Four changes, each from measured r03 A-arm session rows. They ship as ONE
+version: r04 tests the bundle, so per-item effect is NOT attributable and
+must not be claimed.
+
+- **Rung 1 takes an identifier, never the question.** `--smart-map
+  "<QUERY>"` becomes `--smart-map "<IDENTIFIER>"`. Derive the likeliest
+  identifier first, on the same exact-first discipline as rung 2
+  (backticked spans, then `Class::method` / `snake_case` / `camelCase`
+  shapes, length ≥ 3). The NL question is not a rung-1 input; if your
+  identifier misses, the smart-map rule is unchanged (the flag probes its
+  own candidates, then falls through to MAP as written).
+  Evidence: both r03 A-arms handed rung 1 the raw question (A-VW-Q1:
+  "Where is TOTP two-factor code verification implemented?"; A-Rails-Q1:
+  the full `has_many` question), so the skip probe inherited prose where
+  a symbol belonged. Live-checked on the canonical DBs 2026-09-26:
+  `--smart-map "validate_totp_code"` (VW) and `--smart-map "has_many"`
+  (Rails) both skip MAP on exact hits.
+- **Rung 4 is named for its mechanism: BODY READ at the cited line.**
+  Rung 4 is not "read around the area" — it is "open the window that
+  CONTAINS the line a tool already reported". Never walk TOWARD a line:
+  no creeping windows, no re-reading ground an earlier window already
+  covered. If the cited line turns out to be a doc comment, the next
+  window contains the def it documents, not more prose.
+  Evidence: v13 A-Elixir-Q1's rung-4 fail was a directive
+  self-contradiction (rung 4 "function body only" vs v1.1 "±15 is a
+  floor, not a ceiling"), not disobedience; v1.4/v1.5 closed the
+  window-size loopholes, this names the mechanism so intent is unmissable.
+- **Doc-walk ban.** Reads are for code, not prose. A window that returns
+  only comments is a FAILED rung-4 call: go back to the tool, never
+  forward through the file. Prose is not the answer to "how is X
+  implemented".
+  Evidence: r03 A-Rails-Q1 spent 5 of its 14 calls on overlapping
+  BACKWARD windows of `associations.rb` (offsets 1370/1278/1213/1172/
+  1140, ~7.5k fresh input) walking the ~300-line `has_many` doc block —
+  after rung 2 had already returned the answer file+line
+  (`associations.rb:1426`, whose context line also carried
+  `Builder::HasMany.build`).
+- **Per-leg leash: answer checkpoint at 10 calls.** At 10 of your 15
+  calls, STOP searching and answer with what you have; the 15-call cap
+  (20 on 10k+ repos) stays the hard stop. The checkpoint exists to
+  terminate, never as a target: token savings is the only scored metric,
+  and a leg that answers well at 6 calls beats one that answers well at
+  15. Expressed in calls because agents cannot meter their own tokens —
+  calls are the observable unit.
+  Evidence: A-Rails-Q1 held the answer file at call 6; calls 7–11 bought
+  prose, not facts.
+- v1.8 legs stand as run. Any leg run under v1.9 starts a new round
+  (build rule: directive moved). The harness-side loop breaker stays
+  unbuilt — not buildable in this repo; prompts still carry the
+  never-repeat-a-call-twice guard.
