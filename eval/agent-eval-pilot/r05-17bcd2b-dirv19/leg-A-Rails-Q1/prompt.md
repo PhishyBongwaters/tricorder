@@ -13,9 +13,12 @@
   `--root D:\Projects\Tricorder-Testing-Repos\rails` AND
   `--db-path D:\Projects\tricorder\.tricorder\db\rails.db` — no
   exceptions. NEVER `--wipe`, NEVER `--diff`.
-- Tricorder CLI: `D:\Projects\tricorder\tricorder.py` via
-  `.venv/Scripts/python.exe`. Shell is PowerShell. Stay in target repo.
-  `--format json` for machine steps.
+- Tricorder CLI (absolute paths — the venv lives in the tricorder dir
+  no matter your shell directory):
+  `D:\Projects\tricorder\.venv\Scripts\python.exe
+  D:\Projects\tricorder\tricorder.py`.
+  Shell is PowerShell. Work from wherever you like; always pass
+  `--root` + `--db-path` absolute. `--format json` for machine steps.
 - NEVER issue the identical tool call twice in a row. If 3 consecutive
   tool results do not advance you toward an answer file/symbol, STOP
   searching and answer with what you have.
