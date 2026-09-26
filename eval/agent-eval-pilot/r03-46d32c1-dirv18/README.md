@@ -26,8 +26,8 @@
 | 2 | B-Go-G5 | SSA build entry (grep only) | `ses_f269ba64affeV2v4Zt8TS2TEXP` | PASS, 5 calls, 20,781 (in+out); A/B 0.60× |
 | 3 | A-VW-Q1 | TOTP verification | `ses_f2692da5affemV4XzikqhxeKcb` | PASS, 7 calls, 14,743 (in+out) |
 | 4 | B-VW-Q1 | TOTP verification (grep only) | `ses_f26912729ffeiPLMwJVeDGoh7b` | PASS, 3 calls, 29,200 (in+out); A/B 0.50× |
-| 5 | A-Rails-Q1 | has_many | TODO | TODO |
-| 6 | B-Rails-Q1 | has_many (grep only) | TODO | TODO |
+| 5 | A-Rails-Q1 | has_many | `ses_f22d9d7daffeFUHq9jC2DV3FrJ` | PASS, 14 calls, 25,289 (in+out) |
+| 6 | B-Rails-Q1 | has_many (grep only) | TODO — HOLD: no legs past leg 5 without operator approval | TODO |
 | 7 | A-Elixir-Q1 | GenServer | TODO | TODO |
 | 8 | B-Elixir-Q1 | GenServer (grep only) | TODO | TODO |
 | 9 | A-Vue-Q1 | reactivity | TODO | TODO |
