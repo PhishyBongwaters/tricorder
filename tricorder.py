@@ -666,8 +666,17 @@ Examples:
                 use_db=not args.no_db,
                 db_path=scan_db_path,
             )
-            results, _rescue = smart_map.search_identifiers(
-                args.smart_map, max_results=5)
+            # Identifier-first (T2, SPEC-smartmap-identifier-first): the
+            # raw NL question can never exact-hit, so probe identifier
+            # candidates (backticked spans, then bare tokens, cap 3) as
+            # exact detects; first exact hit skips MAP as before. Skip
+            # bar unchanged (quality=="exact"); no hit keeps today's
+            # MAP fallthrough byte-for-byte.
+            from utils import smart_map_exact_hit
+            results, _tried = smart_map_exact_hit(
+                lambda _c, _m: smart_map.search_identifiers(
+                    _c, max_results=_m, search_mode="exact"),
+                args.smart_map)
             if args.max_tokens:
                 from utils import enforce_search_budget
                 results, truncated, omitted = enforce_search_budget(

@@ -1,6 +1,8 @@
 # SPEC T2 — smart-map identifier-first (skip that fires on NL questions)
 
-Status: SPEC ONLY (unbuilt). Ordered 2026-09-25 from r03 leg-5 log evidence.
+Status: BUILT 2026-09-26 (commit on main; identifier candidates +
+exact probes, shared helper in utils.py). Ordered 2026-09-25 from
+r03 leg-5 log evidence.
 
 ## Problem
 

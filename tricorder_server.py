@@ -904,17 +904,21 @@ async def tricorder_scan(
     log.debug(f"Chat files: {chat_files_list}")
     log.debug(f"Effective other_files count: {len(effective_other_files)}")
 
-    # Smart MAP (v1.6, mirrors CLI --smart-map): probe + ONE exact detect
-    # + conditional MAP. For repos under SMART_MAP_MAX_FILES, run one exact
-    # detect; on an exact hit return detect results and skip the map,
-    # else fall through to the normal map below. Large repos skip the
-    # smart logic entirely.
+    # Smart MAP (v1.6 + T2 identifier-first, mirrors CLI --smart-map):
+    # probe + exact-detect candidates + conditional MAP. For repos under
+    # SMART_MAP_MAX_FILES, probe identifier candidates from the query
+    # (backticked spans, then bare tokens, cap 3); on an exact hit return
+    # detect results and skip the map, else fall through to the normal
+    # map below. Large repos skip the smart logic entirely.
     if smart_map:
         from utils import SMART_MAP_MAX_FILES
         if len(chat_files_list) + len(effective_other_files) < SMART_MAP_MAX_FILES:
+            from utils import smart_map_exact_hit
             repo_map = _get_tricorder(project_root)
-            results, _rescue = repo_map.search_identifiers(
-                smart_map, max_results=5)
+            results, _tried = smart_map_exact_hit(
+                lambda _c, _m: repo_map.search_identifiers(
+                    _c, max_results=_m, search_mode="exact"),
+                smart_map)
             exact = [r for r in results if r.get("quality") == "exact"]
             if exact:
                 resp = {"results": exact,

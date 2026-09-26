@@ -940,6 +940,118 @@ MAP_BUDGET_RATIO = 0.5
 # MAP. Single source of truth for CLI --smart-map and MCP smart_map.
 SMART_MAP_MAX_FILES = 5000
 
+# Smart-map identifier-first (T2, SPEC-smartmap-identifier-first): rung 1
+# receives the raw NL question, which can never exact-hit, so the v1.6
+# single-probe skip never fired. Derive identifier candidates IN ORDER
+# (backticked spans, then bare identifier tokens) and probe each as an
+# exact detect; the first exact hit skips MAP exactly as today. The skip
+# BAR never moves (quality=="exact" only) — only what gets tried widens.
+# At most this many candidates are probed so the skip path stays an order
+# of magnitude cheaper than the MAP it avoids.
+SMART_MAP_MAX_CANDIDATES = 3
+
+_BACKTICK_SPAN_RE = re.compile(r'`([^`\n]+)`')
+_IDENT_TOKEN_RE = re.compile(
+    r'[_A-Za-z][_0-9A-Za-z]*'
+    r'(?:::[_A-Za-z][_0-9A-Za-z]*)*'
+    r'(?:\.[_A-Za-z][_0-9A-Za-z]*)*'
+)
+
+
+def _clean_backticked(span: str) -> str:
+    """Strip author-markup residue so `has_many()` probes as has_many."""
+    s = span.strip().strip('()[]{}.,;:!?\'" \t')
+    if s.lower().endswith('()'):
+        s = s[:-2].rstrip()
+    return s
+
+
+def _is_candidate_shape(s: str) -> bool:
+    if not s:
+        return False
+    return bool(re.fullmatch(
+        r'[_A-Za-z][_0-9A-Za-z]*(?:::[_A-Za-z][_0-9A-Za-z]*)*'
+        r'(?:\.[_A-Za-z][_0-9A-Za-z]*)*', s))
+
+
+def smart_map_candidates(query: str,
+                         max_candidates: int = SMART_MAP_MAX_CANDIDATES
+                         ) -> list:
+    """Identifier candidates for the smart-map skip probes, in try order.
+
+    1. Backticked spans (author-marked, highest signal; kept even when
+       short — an exact hit on an author-named symbol is a true hit).
+    2. Bare Class::method / Class.method / snake_case / camelCase tokens
+       in textual order (length >= 3, CODE + NL stopwords excluded —
+       the SPEC names the CODE set; the NL set is required by the same
+       SPEC's conservative constraint so filler like "the"/"what" can
+       never become a skip probe). Scoped/dotted tokens also yield their
+       tail component (the full form is tried first; tag names carry
+       `::` qualification but not `.`).
+
+    Deterministic, stdlib-only. Bounded by max_candidates (<= 0 = none).
+    """
+    if not query or max_candidates <= 0:
+        return []
+    cands: list = []
+    seen = set()
+
+    def _emit(s: str):
+        key = s.lower()
+        if not s or key in seen:
+            return
+        if len(cands) >= max_candidates:
+            return
+        seen.add(key)
+        cands.append(s)
+
+    # 1. Backticked spans — author-marked; no stopword/length filter (an
+    # exact hit after author marking is definitionally signal).
+    for m in _BACKTICK_SPAN_RE.finditer(query):
+        if len(cands) >= max_candidates:
+            break
+        s = _clean_backticked(m.group(1))
+        if _is_candidate_shape(s):
+            _emit(s)
+    # 2. Bare identifier tokens in textual order.
+    for m in _IDENT_TOKEN_RE.finditer(query):
+        if len(cands) >= max_candidates:
+            break
+        tok = m.group(0)
+        if (len(tok) < 3 or tok.lower() in CODE_QUERY_STOPWORDS
+                or tok.lower() in NL_QUERY_STOPWORDS):
+            continue
+        _emit(tok)
+        # Tail component for scoped/dotted forms (counts toward the cap).
+        if '::' in tok or '.' in tok:
+            tail = re.split(r'::|\.', tok)[-1]
+            if (len(cands) < max_candidates and len(tail) >= 3
+                    and tail.lower() not in CODE_QUERY_STOPWORDS
+                    and tail.lower() not in NL_QUERY_STOPWORDS
+                    and _is_candidate_shape(tail)):
+                _emit(tail)
+    return cands
+
+
+def smart_map_exact_hit(search_fn, query: str, max_results: int = 5,
+                        max_candidates: int = SMART_MAP_MAX_CANDIDATES):
+    """Run the T2 skip probes. search_fn(cand, max_results) -> (results,
+    rescue_flag) — pass a lambda over Tricorder.search_identifiers with
+    search_mode="exact".
+
+    Returns (exact_hits, candidates_tried): the first candidate whose
+    probe yields quality=="exact" hits wins (skip MAP as today);
+    ([], tried) otherwise (today's MAP fallthrough, byte-for-byte).
+    """
+    tried: list = []
+    for cand in smart_map_candidates(query, max_candidates):
+        tried.append(cand)
+        results, _rescue = search_fn(cand, max_results)
+        exact = [r for r in results or [] if r.get("quality") == "exact"]
+        if exact:
+            return exact, tried
+    return [], tried
+
 
 def default_map_budget(n_files: int) -> int:
     """Map token budget for a repo of n_files when no explicit budget given.
