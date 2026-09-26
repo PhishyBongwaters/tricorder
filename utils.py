@@ -964,9 +964,13 @@ CODE_EXTENSIONS = {
     ".vue": "javascript", ".svelte": "javascript",
 }
 
-_CODE_IGNORE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv",
-                     "target", "build", "dist", ".next", ".nuxt",
-                     "vendor", "third_party", ".tricorder"}
+# Probe's directory skips: discovery's builtin set plus build-output and
+# cache dirs a probe must never count. Single-sourced from
+# _BUILTIN_SKIP_DIRS so discovery rule changes propagate automatically.
+_CODE_IGNORE_DIRS = _BUILTIN_SKIP_DIRS | {
+    ".git", ".venv", "target", ".next", ".nuxt",
+    "third_party", ".tricorder", "vendor",
+}
 
 
 def probe_project(project_root: str, exclude_globs: Optional[List[str]] = None) -> dict:
@@ -996,6 +1000,18 @@ def probe_project(project_root: str, exclude_globs: Optional[List[str]] = None) 
                 continue
             if any(fnmatch.fnmatch(rel, g) for g in globs):
                 continue
+            # Same file rules as discovery (discover_src_files): dotfiles
+            # and skip extensions (minified, archives incl. .db, media,
+            # data) are never code files. Shared constants, so discovery
+            # rule changes propagate automatically. Residual drift vs
+            # discovery: gitignore trees, oversize files, TC-002 envelopes
+            # (the probe is uncapped by design) — errs toward detect-first,
+            # the conservative side on burn.
+            if fname.startswith("."):
+                continue
+            low = fname.lower()
+            if any(low.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS | _ARCHIVE_EXTS | _DATA_EXTS | _MINIFIED_SUFFIXES):
+                continue
             ext = os.path.splitext(fname)[1].lower()
             lang = CODE_EXTENSIONS.get(ext)
             if not lang:
@@ -1019,7 +1035,9 @@ def format_probe_digest(probe: dict, project_root: str) -> str:
 
     Single source of truth: CLI --probe-digest, the Hermes plugin, and the DSH
     plugin all emit this exact string so turn-0 content is identical everywhere.
-    Navigation-only — points at MCP tools for depth, never triggers a scan.
+    Scale only — file/language/line counts, no tool pointers, no turn language.
+    Navigation belongs to the caller (directive ladder, plugin scaffolding):
+    a shared digest must not name tools that exist in only one harness.
     """
     total = probe.get("total_files", 0)
     if not total:
@@ -1029,12 +1047,7 @@ def format_probe_digest(probe: dict, project_root: str) -> str:
     top3 = sorted(lang_counts.items(), key=lambda x: -x[1])[:3]
     lang_str = ", ".join(f"{n} {lang}" for lang, n in top3)
     lines_str = f"~{est_lines // 1000}K lines" if est_lines >= 1000 else f"~{est_lines} lines"
-    return (
-        f"{total} code files ({lang_str}), {lines_str}. "
-        "Use the MCP tools (mcp_tricorder_detect/symbols/detail) for targeted "
-        "probes, or /tricorder scan / the CLI to build a map on demand. "
-        "Do not deep-scan this turn."
-    )
+    return f"{total} code files ({lang_str}), {lines_str}."
 
 
 # =============================================================================
