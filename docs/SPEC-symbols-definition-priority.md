@@ -1,6 +1,8 @@
 # SPEC T3 — symbols definition-site priority over test classes
 
-Status: SPEC ONLY (unbuilt). Ordered 2026-09-25 from r03 leg-5 log evidence.
+Status: BUILT 2026-09-26 (commit on main; mechanism 3: boundary rank
++ test-path demotion in search_symbols). Ordered 2026-09-25 from r03
+leg-5 log evidence.
 
 ## Problem
 

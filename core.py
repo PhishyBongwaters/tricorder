@@ -12,7 +12,7 @@ from pathlib import Path
 # Pin project dir ahead of sys.path (mirror tricorder.py) so utils/scm resolve to THIS repo.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Optional, Tuple, Callable, Any
-from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, query_variants, tokenize_identifier, levenshtein, stat_fingerprint, canonical_token, NL_QUERY_STOPWORDS, rescue_query_tokens, _INFLECTION_EXCEPTIONS
+from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, query_variants, tokenize_identifier, levenshtein, stat_fingerprint, canonical_token, NL_QUERY_STOPWORDS, rescue_query_tokens, _INFLECTION_EXCEPTIONS, is_test_file, symbol_boundary_rank
 from cache import TagsCacheMixin, CACHE_VERSION
 from parser import ParserMixin
 from graph import GraphMixin
@@ -887,10 +887,21 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
 
             results.append(sym.to_dict())
 
-        # Sort: definitions first, then by name. File+line tie-break keeps
-        # the order independent of file-discovery sequence (filesystems
-        # traverse in different orders per machine).
-        results.sort(key=lambda x: (x["type"], x["name"].lower(), x["file"], x["line"]))
+        # Sort: word-boundary rank first (T3: full-name equality, then
+        # separator-segment match, then pure superstring), test-path
+        # demotion second (test hits sink but stay reachable — never
+        # excluded), then the historical order (definitions first, then
+        # by name). File+line tie-break keeps the order independent of
+        # file-discovery sequence (filesystems traverse in different
+        # orders per machine). Boundary/test keys are additive ranks —
+        # no hit is ever filtered here.
+        if query:
+            results.sort(key=lambda x: (
+                symbol_boundary_rank(x["name"], query_lower),
+                is_test_file(x["file"]),
+                x["type"], x["name"].lower(), x["file"], x["line"]))
+        else:
+            results.sort(key=lambda x: (x["type"], x["name"].lower(), x["file"], x["line"]))
 
         # Retrieve-0 rescue (mirror search_identifiers): retry over orthographic
         # variants when the plain substring query matched nothing, so

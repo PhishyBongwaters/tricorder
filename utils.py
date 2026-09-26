@@ -1279,6 +1279,29 @@ def is_test_file(path: str) -> bool:
     )
 
 
+_SYMBOL_SEGMENT_SPLIT = re.compile(r'::|\.|_|-|/|\s|#')
+
+
+def symbol_boundary_rank(name: str, query_lower: str) -> int:
+    """Word-boundary rank of a symbol name against a symbols query (T3,
+    SPEC-symbols-definition-priority).
+
+    0 = full-name equality (the definition site itself); 1 = the query
+    equals a separator-delimited segment (`HasMany` in
+    `Builder::HasMany`); 2 = pure superstring match
+    (`...HasMany...Test`). Deterministic, stdlib-only, language-agnostic.
+    Shared by search_symbols ranking; the test-path demotion key lives
+    at the call site (is_test_file) so each rule stays single-sourced.
+    """
+    nl = name.lower()
+    if nl == query_lower:
+        return 0
+    for seg in _SYMBOL_SEGMENT_SPLIT.split(name):
+        if seg and seg.lower() == query_lower:
+            return 1
+    return 2
+
+
 _WORD_SPLIT = re.compile(r"[_\-\s\./]+")
 
 
