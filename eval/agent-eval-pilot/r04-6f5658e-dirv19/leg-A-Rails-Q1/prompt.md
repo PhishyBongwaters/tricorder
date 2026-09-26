@@ -8,7 +8,7 @@
   at 10 calls** (see ladder rules).
 - Target repo: `D:\Projects\Tricorder-Testing-Repos\rails`
   (~3,500 source files).
-- Tricorder code: `main` @ `81229f8`. Warm canonical DB (settled).
+- Tricorder code: `main` @ `6f5658e`. Warm canonical DB (settled).
 - On EVERY tricorder call pass BOTH
   `--root D:\Projects\Tricorder-Testing-Repos\rails` AND
   `--db-path D:\Projects\tricorder\.tricorder\db\rails.db` — no
