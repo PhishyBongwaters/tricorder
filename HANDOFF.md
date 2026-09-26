@@ -6,10 +6,12 @@
   remote (`git@github.com:PhishyBongwaters/tricorder.git` — source of
   truth, `git push github main` per step). `origin` = gitea via
   hermes-agent (unreachable from here) — never fetch/push it.
-- Suite green: **529 passed, 4 skipped, 98 subtests**
+- Suite green: **534 passed, 4 skipped, 98 subtests**
   (`python -m pytest tests/ -q -p no:cacheprovider`, repo `.venv`).
-  Was 508 at session start; +21 = T1 (2) + T1-mechanism-2 (2) + T2 (11:
-  6 candidates + 3 probe-loop + 2 MCP) + T3 (6) new tests.
+  Was 508 at session start; +26 = T1 (2) + T1-mechanism-2 (2) + T2 (11:
+  6 candidates + 3 probe-loop + 2 MCP + 2 CLI-text) + T3 (6) + T4 (3)
+  new tests. (The 2 CLI-text tests + text-mode fix arrived via the
+  concurrent session, verified green here before commit.)
 - Shell is PowerShell: NO `head/tail/grep/sed/&&` — use
   `Select-Object -First N`, `Select-String`, `;` separators.
   `>` redirect writes UTF-16 (matters for token metering; use
@@ -78,6 +80,20 @@ Product (all landed, suite-green, byte-identical outputs where claimed):
   Spot-checks: VW identical membership (reorder only); Go displaced
   only test-path hits. CLI `--symbols` + MCP `tricorder_symbols`
   share the path (verified by grep).
+- **T4 BUILT (operator-ordered tweak)**: symbols rescue-hit ranking
+  (`core.search_symbols` rescue tiers only): deterministic
+  specific-first variant order (query forms, then longest, alpha —
+  the variant set's iteration order varied per process and the old
+  `limit*2` early break let one variant saturate the pool before
+  better variants ran, so definitions were never collected); rescue
+  re-sort prepends the T3 keys (boundary, test-demotion) before
+  distance; early break removed (pool is a superset now, trimmed to
+  cap at the end). Test `tests/test_t4_symbols_rescue.py`. Live leg-A
+  call (`symbols Builder::HasMany`): old fuzzy head
+  `AsyncHasManyAssociationsTest` → new head `HasMany`
+  (builder/has_many.rb), zero test files in top-5. Spot-checks: VW
+  rescue query byte-identical top-10; Go displaced only test-path
+  hits. `search_identifiers` rescue untouched (rung-2 contract).
 - Eval analysis tools (tracked): `eval/agent-eval-pilot/tools/`
   (`ocdb/ocmsg/ocmap/occtx/octools/ocover/ocpeak/oploop/ocleg/ocassess/ocdiverge`
   = session-DB forensics; `audit_legs.py`; `backfill_ranks.py`;

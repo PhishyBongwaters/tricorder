@@ -910,7 +910,16 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
         rescue = False
         if query and not results:
             seen = set()
-            for cand in query_variants(query):
+            # T4: deterministic, specific-first variant order (the helper
+            # returns a set, whose iteration order varies per process —
+            # the capped pool below would then hold different hits per
+            # run). Query forms first, then longest (most specific),
+            # alphabetical tiebreak.
+            ordered_variants = sorted(
+                query_variants(query),
+                key=lambda v: (v.lower() != query_lower, -len(v),
+                               v.lower()))
+            for cand in ordered_variants:
                 if len(cand) < 2:
                     continue
                 cand_l = cand.lower()
@@ -922,8 +931,13 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                     if cand_l in sym.name.lower():
                         results.append(sym.to_dict())
                         seen.add(id(sym))
-                if len(results) >= limit * 2:
-                    break
+                # T4: NO early break here (the old `limit * 2` cap let the
+                # first matching variant saturate the pool — e.g. len-8
+                # "has_many" filled it before len-7 "hasmany" ran, so the
+                # definition was never even collected). The pool is ranked
+                # below by the T3 keys and trimmed to the caller cap at
+                # the end; variant scans already dominate the cost, and
+                # rescue fires only on main-path misses.
             if not results:
                 # Edit-distance + token-overlap pass (mirror search_identifiers).
                 # Language keywords ("func", ...) are syntax, not signal:
@@ -953,7 +967,16 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 def _sdist(r_):
                     return min(levenshtein(qcore, r_["name"].lower()),
                                levenshtein(qcore, "".join(tokenize_identifier(r_["name"]))))
-                results.sort(key=lambda r_: (_sdist(r_), r_["type"], r_["name"].lower(), r_["file"], r_["line"]))
+                # T4: rescue hits rank definition-first like the main path
+                # (boundary rank, then test-path demotion — never
+                # exclusion), distance only after. A qualified query on an
+                # unqualified store (Builder::HasMany) otherwise crowns a
+                # test class that merely spells close.
+                results.sort(key=lambda r_: (
+                    symbol_boundary_rank(r_["name"], query_lower),
+                    is_test_file(r_["file"]),
+                    _sdist(r_), r_["type"], r_["name"].lower(),
+                    r_["file"], r_["line"]))
 
         # Apply limit
         results = results[:limit]
