@@ -383,6 +383,42 @@ def _is_fixture_or_hash_asset(rel_posix: str, basename_lower: str) -> bool:
         if seg.lower() in _FIXTURE_SKIP_DIRS:
             return True
     return _HASH_ASSET_RE.search(basename_lower) is not None
+
+
+# T1 mechanism 2 (SPEC-minified-fixture-exclusion): minified-blob content
+# sniff. Name rules (mechanisms 1+3) cannot catch a minified lib living
+# at a normal path (Rails guides/assets/.../clipboard.js headed the MAP
+# after the fixture purge). Measured on the Rails tree (64 .js/.css):
+# the blob's longest line is 10,361 chars at mean 1,307; real shipped
+# bundles peak at longest 1,473 / mean 48. BOTH signals must fire, so a
+# real file with one long line but low mean (activestorage.js shape)
+# survives. .js/.css only (minified blobs live there); bounded 64KB
+# head read; unreadable files are kept (fail-open: exclusion needs
+# positive evidence).
+_SNIFF_BYTES = 65536
+_SNIFF_MIN_LONGEST_LINE = 2000
+_SNIFF_MIN_MEAN_LINE = 500
+_SNIFF_EXTS = {'.js', '.css'}
+
+
+def _is_minified_blob(full_path: str, basename_lower: str) -> bool:
+    """T1 discovery-time decision: minified blob by content shape."""
+    if not any(basename_lower.endswith(ext) for ext in _SNIFF_EXTS):
+        return False
+    try:
+        if os.path.getsize(full_path) <= _SNIFF_MIN_LONGEST_LINE:
+            return False
+        with open(full_path, 'rb') as f:
+            head = f.read(_SNIFF_BYTES)
+    except OSError:
+        return False
+    text = head.decode('utf-8', errors='replace')
+    lines = text.split('\n')
+    if not lines:
+        return False
+    if max(len(L) for L in lines) <= _SNIFF_MIN_LONGEST_LINE:
+        return False
+    return (len(text) / len(lines)) > _SNIFF_MIN_MEAN_LINE
 # Skip files larger than this (bytes) — likely generated/binary/not source.
 # Overridable via env TRICORDER_MAX_SOURCE_FILE_SIZE (bytes). Read at call time
 # (see _env_int/_env_float) so tests and runtime tuning don't require re-import.
@@ -497,6 +533,9 @@ def _discover_src_files_threaded(directory, skip_dirs, exclude_globs, report,
             if sz > max_source_file_size:
                 with lock:
                     st["oversized"] += 1
+                continue
+            # T1 mechanism 2: minified-blob content sniff (.js/.css only).
+            if _is_minified_blob(e.path, low):
                 continue
             if exclude_globs:
                 try:
@@ -679,6 +718,9 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
                 sz = 0
             if sz > max_source_file_size:
                 oversized_skipped += 1
+                continue
+            # T1 mechanism 2: minified-blob content sniff (.js/.css only).
+            if _is_minified_blob(full, low):
                 continue
             if exclude_globs:
                 try:
@@ -1172,6 +1214,10 @@ def probe_project(project_root: str, exclude_globs: Optional[List[str]] = None) 
             # T1: same fixture/hash-asset rule as discovery (shared
             # helper, so rule changes propagate automatically).
             if _is_fixture_or_hash_asset(rel.replace(os.sep, "/"), low):
+                continue
+            # T1 mechanism 2: same minified-blob sniff as discovery
+            # (.js/.css only, bounded head read — probe stays cheap).
+            if _is_minified_blob(os.path.join(dirpath, fname), low):
                 continue
             ext = os.path.splitext(fname)[1].lower()
             lang = CODE_EXTENSIONS.get(ext)

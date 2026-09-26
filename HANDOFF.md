@@ -6,10 +6,10 @@
   remote (`git@github.com:PhishyBongwaters/tricorder.git` — source of
   truth, `git push github main` per step). `origin` = gitea via
   hermes-agent (unreachable from here) — never fetch/push it.
-- Suite green: **527 passed, 4 skipped, 98 subtests**
+- Suite green: **529 passed, 4 skipped, 98 subtests**
   (`python -m pytest tests/ -q -p no:cacheprovider`, repo `.venv`).
-  Was 508 at session start; +19 = T1 (2) + T2 (11: 6 candidates +
-  3 probe-loop + 2 MCP) + T3 (6) new tests.
+  Was 508 at session start; +21 = T1 (2) + T1-mechanism-2 (2) + T2 (11:
+  6 candidates + 3 probe-loop + 2 MCP) + T3 (6) new tests.
 - Shell is PowerShell: NO `head/tail/grep/sed/&&` — use
   `Select-Object -First N`, `Select-String`, `;` separators.
   `>` redirect writes UTF-16 (matters for token metering; use
@@ -28,7 +28,8 @@
   ignores `--db-path` (always writes canonical) — check for stray
   `.tricorder/db/<name>.db` after scratch scans and delete.
 
-## Where the project stands (main @ `47e57a8` + verify_backfill rescale)
+## Where the project stands (main @ `47e57a8` + verify_backfill rescale
++ T1-mechanism-2 — see commits below)
 
 Product (all landed, suite-green, byte-identical outputs where claimed):
 - `--smart-map` / MCP `smart_map` (v1.6–v1.7, threshold
@@ -94,6 +95,13 @@ Canonical DBs (rebuilt 2026-09-26 evening, operator-ordered):
   design — see T1 note); gzip bomb 0 tags/0 files; hash-assets 0.
   `meta` 1 row, extractor v3. `verify_backfill.py` rails want
   rescaled 3490 → 3456 (committed with this handoff).
+- **Rails REBUILT AGAIN (mechanism-2, same evening)**: `_is_minified_blob`
+  drops `guides/assets/.../clipboard.js` → file_state 3932 → 3931,
+  file_ranks 3456 → 3455, fresh=True. Backup of post-T1 DB at temp
+  `rails-post-t1-backup.db`. Rebuilt MAP head (2048 budget) is
+  `ActionDispatch::Routing::Mapper` — zero single-char defs. The
+  clipboard.js OPEN FINDING below is CLOSED. `verify_backfill.py`
+  rails want rescaled 3456 → 3455.
 - Go/VW/Vue/Elixir/Swift DBs UNTOUCHED (T1–T3 proved byte-identical
   MAPs there; no rebuild needed). Go `verify_backfill` shows
   ranks=10766 vs want 10736 — pre-existing repo drift, not ours.
@@ -102,10 +110,9 @@ Canonical DBs (rebuilt 2026-09-26 evening, operator-ordered):
   single-char defs (`a`,`b`,`c`…) at file-rank 0.027, top of MAP.
   T1 acceptance was fixture-paths-only so T1 stands, but this is the
   SPEC's deferred mechanism-2 trigger ("content sniffing … only if
-  measured MAP-head pollution persists"). Fix needs operator call:
-  (a) content-sniff exclusion (SPEC mechanism 2), or (b) name-based
-  `guides/assets` (or `assets/`) rule, or (c) leave for legs to route
-  around via T2 skip. New legs will hit this on any rung-1 MAP.
+  measured MAP-head pollution persists"). CLOSED 2026-09-26 evening:
+  mechanism 2 built, clipboard.js excluded, MAP head verified real
+  source (see Rails REBUILT AGAIN above). Fix needs no further call.
 
 Eval state:
 - Regime docs: `eval/agent-eval-pilot/DIRECTIVE.md` (v1.8 current:

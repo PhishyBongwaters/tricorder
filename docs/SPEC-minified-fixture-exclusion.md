@@ -1,6 +1,7 @@
 # SPEC T1 — minified / fixture exclusion from tagging
 
 Status: BUILT 2026-09-26 (commit on main; mechanisms 1+3).
+Mechanism 2 (content sniff) BUILT 2026-09-26 evening — see below.
 Ordered 2026-09-25 from r03 leg-5 log evidence.
 
 ## Problem
@@ -38,6 +39,19 @@ names, not `application-<hash>.js` fixture blobs.
 
 Recommendation: 1 + 3 (both name-based, no content heuristics), with 2
 only if measured MAP-head pollution persists after.
+
+Mechanism 2 status (built 2026-09-26 evening, operator-ordered):
+pollution DID persist (guides/assets/.../clipboard.js headed the
+rebuilt Rails MAP at file-rank 0.027). Implemented as
+`_is_minified_blob` in `utils.py`: .js/.css only, bounded 64KB head
+read, skip iff longest line > 2000 chars AND mean line length > 500
+(measured Rails separation: blob 10,361/1,307 vs real bundles
+<= 1,473/48 — both signals required so activestorage.js-shape files
+survive). Wired into serial + threaded discovery and probe_project
+(parity). Fail-open on unreadable files. Test
+`tests/test_t1b_minified_sniff.py`. Live: discovery 3932 -> 3931
+files (exactly clipboard.js dropped); rebuilt Rails MAP head is
+`ActionDispatch::Routing::Mapper`, zero single-char defs.
 
 ## Acceptance (red-first)
 
