@@ -357,6 +357,32 @@ _DATA_EXTS = {
 _MINIFIED_SUFFIXES = {
     '.min.js', '.min.css', '.slim.js', '.bundle.js',
 }
+# T1 (SPEC-minified-fixture-exclusion): fixture/testdata subtrees hold
+# minified blobs and gzipped fixtures (e.g. Rails
+# actionpack/test/fixtures/public/gzip/application-<hash>.js) that parse
+# into hundreds of fake cross-referencing symbols — a PageRank bomb. Skip
+# at discovery so they never enter tags/refs/ranks/MAP. Deprioritize,
+# never exclude, is NOT the rule here: these are never real source.
+# Additive to _MINIFIED_SUFFIXES (whose semantics are unchanged).
+_FIXTURE_SKIP_DIRS = {'fixtures', '__fixtures__', 'testdata'}
+# Rails asset fingerprinting / webpack contenthash: <name>-<hexhash>.js/css
+# (e.g. application-a71b3024f80aea3181c09774ca17e712.js). Lowercase-hex,
+# 8-64 chars so short suffixes (my-app-v2.js) never match. Matched against
+# the lowercased basename.
+_HASH_ASSET_RE = re.compile(r'-[0-9a-f]{8,64}\.(js|css)$')
+
+
+def _is_fixture_or_hash_asset(rel_posix: str, basename_lower: str) -> bool:
+    """T1 discovery-time decision: fixture subtree or fingerprinted asset.
+
+    rel_posix: path relative to scan root, POSIX-normalized. Any path
+    segment in _FIXTURE_SKIP_DIRS → skip. Otherwise the basename is
+    tested against _HASH_ASSET_RE. Deterministic, stdlib-only.
+    """
+    for seg in rel_posix.split('/'):
+        if seg.lower() in _FIXTURE_SKIP_DIRS:
+            return True
+    return _HASH_ASSET_RE.search(basename_lower) is not None
 # Skip files larger than this (bytes) — likely generated/binary/not source.
 # Overridable via env TRICORDER_MAX_SOURCE_FILE_SIZE (bytes). Read at call time
 # (see _env_int/_env_float) so tests and runtime tuning don't require re-import.
@@ -454,6 +480,15 @@ def _discover_src_files_threaded(directory, skip_dirs, exclude_globs, report,
                 continue
             low = e.name.lower()
             if any(low.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS | _ARCHIVE_EXTS | _DATA_EXTS | _MINIFIED_SUFFIXES):
+                continue
+            # T1: fixture subtree remnants (rel-path belt-and-braces;
+            # dir pruning via skip_dirs handles the common case) and
+            # fingerprinted asset blobs never enter the map.
+            try:
+                _rel = os.path.relpath(e.path, directory).replace(os.sep, '/')
+            except ValueError:
+                continue
+            if _is_fixture_or_hash_asset(_rel, low):
                 continue
             try:
                 sz = e.stat(follow_symlinks=False).st_size
@@ -580,7 +615,7 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
                 break
             p = p.parent
         gitignore_dirs = parse_gitignore(git_root or directory)
-    skip_dirs = gitignore_dirs | _BUILTIN_SKIP_DIRS | {'vendor'}
+    skip_dirs = gitignore_dirs | _BUILTIN_SKIP_DIRS | {'vendor'} | _FIXTURE_SKIP_DIRS
     # TC-002: read envelope budgets at call time so env overrides (incl. tests) work.
     max_scan_depth = _env_int("TRICORDER_MAX_SCAN_DEPTH", _MAX_SCAN_DEPTH)
     max_total_bytes = _env_int("TRICORDER_MAX_TOTAL_BYTES", _MAX_TOTAL_BYTES)
@@ -626,6 +661,15 @@ def discover_src_files(directory: str, use_gitignore: bool = True, exclude_globs
             # Case-insensitive ext check: .Jpg slides past .jpg otherwise.
             low = f.lower()
             if any(low.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS | _ARCHIVE_EXTS | _DATA_EXTS | _MINIFIED_SUFFIXES):
+                continue
+            # T1: fingerprinted asset blob check (fixture subtrees are
+            # pruned via skip_dirs above; the rel-segment check covers
+            # the rest, e.g. a root itself named fixtures/).
+            try:
+                _rel = os.path.relpath(os.path.join(r, f), directory).replace(os.sep, '/')
+            except ValueError:
+                continue
+            if _is_fixture_or_hash_asset(_rel, low):
                 continue
             full = os.path.join(r, f)
             # Skip large files (likely generated/binary/not source)
@@ -967,7 +1011,8 @@ CODE_EXTENSIONS = {
 # Probe's directory skips: discovery's builtin set plus build-output and
 # cache dirs a probe must never count. Single-sourced from
 # _BUILTIN_SKIP_DIRS so discovery rule changes propagate automatically.
-_CODE_IGNORE_DIRS = _BUILTIN_SKIP_DIRS | {
+# T1: fixture/testdata subtrees pruned here too (probe/discovery parity).
+_CODE_IGNORE_DIRS = _BUILTIN_SKIP_DIRS | _FIXTURE_SKIP_DIRS | {
     ".git", ".venv", "target", ".next", ".nuxt",
     "third_party", ".tricorder", "vendor",
 }
@@ -1011,6 +1056,10 @@ def probe_project(project_root: str, exclude_globs: Optional[List[str]] = None) 
                 continue
             low = fname.lower()
             if any(low.endswith(ext) for ext in _SKIP_EXTS | _BINARY_MEDIA_EXTS | _ARCHIVE_EXTS | _DATA_EXTS | _MINIFIED_SUFFIXES):
+                continue
+            # T1: same fixture/hash-asset rule as discovery (shared
+            # helper, so rule changes propagate automatically).
+            if _is_fixture_or_hash_asset(rel.replace(os.sep, "/"), low):
                 continue
             ext = os.path.splitext(fname)[1].lower()
             lang = CODE_EXTENSIONS.get(ext)

@@ -1,6 +1,7 @@
 # SPEC T1 — minified / fixture exclusion from tagging
 
-Status: SPEC ONLY (unbuilt). Ordered 2026-09-25 from r03 leg-5 log evidence.
+Status: BUILT 2026-09-26 (commit on main; mechanisms 1+3).
+Ordered 2026-09-25 from r03 leg-5 log evidence.
 
 ## Problem
 

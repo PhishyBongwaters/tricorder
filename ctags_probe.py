@@ -309,10 +309,14 @@ def _count_source_files(project_root: str, exclude_globs: Optional[List[str]] = 
 
 def _run_ctags(project_root: str, tags_file: Path) -> bool:
     # Exclude patterns matching the ctags command below (converted from ctags --exclude format)
+    # T1: fixture/testdata subtrees excluded here too (ctags --exclude
+    # globs can't express the hex-hash asset pattern, so fingerprinted
+    # blobs are still filtered on the discovery side).
     ctags_excludes = [
         "*.min.js", "*.min.css", "vendor/**", "third_party/**",
         ".git/**", "build/**", "dist/**", "node_modules/**",
         "__pycache__/**", "*.pyc",
+        "*/fixtures/**", "*/__fixtures__/**", "*/testdata/**",
     ]
     if _count_source_files(project_root, exclude_globs=ctags_excludes) > CTAGS_MAX_SOURCE_FILES:
         print(f"[ctags_probe] SKIP index: >{CTAGS_MAX_SOURCE_FILES} source files in {project_root} (rg fallback only)", file=sys.stderr)
@@ -338,10 +342,12 @@ def ensure_ctags_index(project_root: str, max_age_days: int = 7) -> Optional[Pat
     meta_file = _get_meta_cache_path(project_root)
     
     # Exclude patterns matching the ctags command
+    # T1: fixture/testdata subtrees (see _run_ctags comment).
     ctags_excludes = [
         "*.min.js", "*.min.css", "vendor/**", "third_party/**",
         ".git/**", "build/**", "dist/**", "node_modules/**",
         "__pycache__/**", "*.pyc",
+        "*/fixtures/**", "*/__fixtures__/**", "*/testdata/**",
     ]
     
     # Check if existing index is valid using metadata
