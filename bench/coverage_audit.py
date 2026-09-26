@@ -53,14 +53,31 @@ def disk_files(root):
     return out, "warning" in report
 
 
+def _user_cache_db_dir():
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    return (Path(xdg) if xdg else Path.home() / ".cache") / "tricorder" / "db"
+
+
 def serving_db(repo, root):
-    # Same precedence as the server (_canonical_db_for): testbed-local
-    # <root>/.tricorder/db/<name>.db first, central cache fallback.
-    # The audit must check the DB that actually serves queries.
-    local = Path(root) / ".tricorder" / "db" / f"{repo}.db"
+    # Same precedence as the server (_canonical_db_for): TRICORDER_CACHE_HOME
+    # cache root, else the user-level default (~/.cache/tricorder), else the
+    # legacy in-repo <root>/.tricorder/db/<name>.db (ignored by the server
+    # since the no-repo-writes move, kept here so old audits still resolve),
+    # else the central DBDIR. The audit must check the DB that actually
+    # serves queries.
+    name = f"{repo}.db"
+    env = os.environ.get("TRICORDER_CACHE_HOME")
+    if env:
+        cand = Path(env) / "db" / name
+        if cand.exists():
+            return cand, "cache"
+    cand = _user_cache_db_dir() / name
+    if cand.exists():
+        return cand, "cache"
+    local = Path(root) / ".tricorder" / "db" / name
     if local.exists():
-        return local, "local"
-    return DBDIR / f"{repo}.db", "central"
+        return local, "legacy-local"
+    return DBDIR / name, "central"
 
 
 def audit(repo, root):
@@ -169,8 +186,8 @@ def main():
             flags.append(f"UNSCANNED{r['unscanned_total']}")
         if r["refs"] == 0:
             flags.append("NO-REFS")
-        if r["which"] == "local":
-            flags.append("LOCAL")
+        if r["which"] == "legacy-local":
+            flags.append("LEGACY-LOCAL")
         cov_s = f"{cov:>5.1f}%" if cov is not None else "   n/a"
         print(f"{repo:12} {r['meta_rows']:>4} {r['tags']:>9,} "
               f"{r['refs']:>10,} {r['scanned_files']:>7,} "

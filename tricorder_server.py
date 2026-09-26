@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fastmcp import FastMCP, settings
 from core import Tricorder
 from database import drop_mapped_files
-from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write, db_root_matches, _db_writable, resolve_or_none, enforce_search_budget
+from utils import count_tokens, read_text, parse_gitignore, discover_src_files, SymbolRecord, repo_budget, parse_query_dsl, ParsedQuery, get_cache_root, safe_write, db_root_matches, _db_writable, resolve_or_none, enforce_search_budget, legacy_in_repo_db
 from scm import get_scm_fname
 from importance import filter_important_files
 from ctags_probe import probe_and_narrow
@@ -109,7 +109,8 @@ def _canonical_db_for(project_root: str) -> Optional[str]:
     """Index DB for project_root: <cache>/db/<name>.db (canonical).
 
     State is never kept inside the scanned repo — the canonical DB always
-    lives in the tricorder workspace cache root. None if not yet mapped.
+    lives in the user-level cache root (TRICORDER_CACHE_HOME, else
+    $XDG_CACHE_HOME/tricorder or ~/.cache/tricorder). None if not yet mapped.
 
     The lookup is by directory basename, so a same-named repo elsewhere can
     leave a colliding DB in the shared cache; db_root_matches rejects those
@@ -136,6 +137,28 @@ def _canonical_db_for(project_root: str) -> Optional[str]:
 _tricorder_cache: "OrderedDict[str, tuple]" = OrderedDict()
 _tricorder_cache_lock = threading.Lock()
 _TRICORDER_CACHE_MAX = 32
+
+# Roots already warned about an ignored legacy in-repo DB (pre-cache-root
+# <root>/.tricorder/db/<name>.db). One log line per root per server
+# lifetime; capped so a pathological root churn can't leak memory.
+_legacy_db_warned: set = set()
+
+
+def _warn_legacy_in_repo_db_once(project_root: str) -> None:
+    """Log once per root when a legacy in-repo DB is being ignored."""
+    if project_root in _legacy_db_warned:
+        return
+    _legacy_db_warned.add(project_root)
+    if len(_legacy_db_warned) > 256:
+        _legacy_db_warned.clear()
+    try:
+        legacy = legacy_in_repo_db(project_root)
+    except Exception:
+        legacy = None
+    if legacy:
+        log.warning(f"Ignoring legacy in-repo DB {legacy} (pre-cache-root); "
+                    f"canonical state lives under {PRE_SCAN_DB_DIR}. "
+                    f"Re-run tricorder --init to reindex.")
 
 
 def _db_file_ident(db_path: Optional[str]) -> Optional[tuple]:
@@ -186,8 +209,8 @@ def _get_tricorder(project_root: str) -> "Tricorder":
     untagged/bloat files (per user: bloat -> exclude always).
     ponytail: single key (root), bounded LRU.
     """
-    # Check for pre-scan DB (in-repo canonical first, cache fallback).
-    # Same unwritable-canonical guard as the CLI map path: an existing
+    # Check for pre-scan DB (cache-root canonical). Same
+    # unwritable-canonical guard as the CLI map path: an existing
     # but read-only DB can't back a scan (the extractor gate DELETEs on
     # first use), so degrade to in-memory instead of crashing.
     db_path = _canonical_db_for(project_root)
@@ -195,6 +218,8 @@ def _get_tricorder(project_root: str) -> "Tricorder":
         log.warning(f"Canonical DB {db_path} is not writable; "
                     "this MCP scan runs in-memory (no resumption).")
         db_path = None
+    if db_path is None:
+        _warn_legacy_in_repo_db_once(project_root)
     ident = _db_file_ident(db_path)
 
     with _tricorder_cache_lock:
@@ -967,10 +992,9 @@ async def tricorder_scan(
 
     # 4. Instantiate and run Tricorder
     # Unified DB resolution: the scan path uses the same canonical lookup
-    # as the other tools (in-repo <root>/.tricorder/db/<name>.db first,
-    # shared-cache fallback) so a repo indexed by --init is never silently
-    # scanned without its index. Previously _prescan_db_for saw only the
-    # shared cache and missed in-repo DBs.
+    # as the other tools (cache-root <cache>/db/<name>.db) so a repo indexed
+    # by --init is never silently scanned without its index. Previously
+    # _prescan_db_for saw only the shared cache and missed in-repo DBs.
     db_path2 = _canonical_db_for(project_root)
     # Same unwritable-canonical guard as _get_tricorder: the scan path
     # below constructs its own Tricorder (not via _get_tricorder), so

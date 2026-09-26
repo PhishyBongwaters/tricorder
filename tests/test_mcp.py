@@ -143,8 +143,10 @@ class TestMCPOutputFile(unittest.TestCase):
         self.tmpdir = tempfile.mkdtemp(prefix="tricorder_test_")
         import shutil
         self.addCleanup(shutil.rmtree, self.tmpdir, True)
-        # TC-008: clean up contained output dir created by output_file writes
-        self.output_dir = Path(__file__).resolve().parent.parent / ".tricorder" / "output"
+        # TC-008: clean up contained output dir created by output_file writes.
+        # The output dir lives under the per-test hermetic cache root
+        # (tests/conftest.py scopes TRICORDER_CACHE_HOME), never the repo.
+        self.output_dir = Path(os.environ["TRICORDER_CACHE_HOME"]) / "output"
         self.addCleanup(shutil.rmtree, str(self.output_dir), True)
 
     def test_output_file_writes_map_and_returns_metadata(self):
@@ -164,8 +166,8 @@ class TestMCPOutputFile(unittest.TestCase):
         self.assertNotIn("map", result, "Response should NOT contain 'map' key when output_file is set")
         self.assertIn("map_file", result)
         self.assertIn("token_estimate", result)
-        # TC-008: output_file is contained to .tricorder/output/ — basename preserved, dir contained
-        expected_dir = Path(__file__).resolve().parent.parent / ".tricorder" / "output"
+        # TC-008: output_file is contained to <cache-root>/output/ — basename preserved, dir contained
+        expected_dir = Path(os.environ["TRICORDER_CACHE_HOME"]) / "output"
         expected_path = expected_dir / Path(out_file).name
         self.assertEqual(result["map_file"], str(expected_path))
         self.assertTrue(Path(expected_path).exists(), "Map file should exist in contained output dir")

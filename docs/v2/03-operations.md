@@ -40,10 +40,15 @@
 
 ## Layout
 
-- `<repo>/.tricorder/db/<repo>.db` — per-repo sqlite (canonical).
-- `<repo>.map` beside it — rendered output. Both gitignored
-  (`.tricorder/`).
-- `<cache root>/cache/<sha1(repo|version|config)[:16]>/` — per-file parse
+- `<cache>/db/<repo>.db` — per-repo sqlite (canonical), where `<cache>` is
+  `TRICORDER_CACHE_HOME`, else `$XDG_CACHE_HOME/tricorder` (else
+  `~/.cache/tricorder`). Never inside the scanned repo.
+- `<cache>/output/` — rendered map output files (MCP `output_file`).
+- `<cache>/cache/<sha1(repo|version|config)[:16]>/` — per-file parse
   cache, mtime-keyed (see `cache.py:_cache_dir`).
 - `TRICORDER_CACHE_HOME` relocates the shared cache root.
+
+Legacy: pre-cache-root `<repo>/.tricorder/db/<repo>.db` files are ignored
+(the CLI warns and `--db-coverage` reports unmapped); re-run `--init` to
+reindex into the cache root.
 - Full suite: `pytest tests/` from repo root (repo `.venv`).

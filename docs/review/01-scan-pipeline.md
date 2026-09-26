@@ -96,8 +96,9 @@ Mechanics:
   render cache; it does not reparse.
 
 Canonical home: `<cache>/db/<name>.db` (`--init --root`
-prints it), where `<cache>` is `TRICORDER_CACHE_HOME` or
-`<workspace>/.tricorder` — never inside the scanned repo. The MCP
+prints it), where `<cache>` is `TRICORDER_CACHE_HOME`, else
+`$XDG_CACHE_HOME/tricorder` (else `~/.cache/tricorder`)
+— never inside the scanned repo. The MCP
 server uses the same canonical path
 (`tricorder_server._canonical_db_for`).
 

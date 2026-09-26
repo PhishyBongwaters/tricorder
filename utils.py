@@ -35,32 +35,80 @@ Tag = namedtuple("Tag", "rel_fname fname line name kind".split())
 # a warning is emitted once per process.  There is NO silent in-memory
 # fallback -- a silent fallback hides cache corruption and makes it
 # impossible to tell whether the feature is working.
+#
+# The default is user-level ($XDG_CACHE_HOME/tricorder, else
+# ~/.cache/tricorder) so state can never land inside a repository checkout
+# — including tricorder's own when self-hosting from a source checkout.
 # ---------------------------------------------------------------------------
 
+_INSTALL_DIR = Path(__file__).resolve().parent
+
 _CACHE_ROOT: Optional[Path] = None
+
+
+def _default_cache_root() -> Path:
+    """User-level default cache root, outside any repository checkout."""
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".cache"
+    return base / "tricorder"
+
+
+def _legacy_install_cache_notice(new_root: Path) -> Optional[str]:
+    """Notice text when a pre-user-level cache exists at the old default.
+
+    Returns the message, or None when there is nothing to say. Kept separate
+    from get_cache_root so tests can assert the text with a monkeypatched
+    _INSTALL_DIR instead of touching the real install dir.
+    """
+    legacy = _INSTALL_DIR / ".tricorder"
+    try:
+        if legacy.is_dir() and any(legacy.iterdir()):
+            return (
+                f"[tricorder] cache root is now {new_root} "
+                f"(override with TRICORDER_CACHE_HOME); legacy state at "
+                f"{legacy} is ignored."
+            )
+    except OSError:
+        pass
+    return None
 
 
 def get_cache_root() -> Path:
     """Return the canonical Tricorder cache root.
 
-    The root is under the tricorder workspace by default so it is always
-    writable from tests and CLI runs.  Override with TRICORDER_CACHE_HOME.
+    User-level by default ($XDG_CACHE_HOME/tricorder, else
+    ~/.cache/tricorder) so state can never land inside a repository
+    checkout. Override with TRICORDER_CACHE_HOME.
     """
     global _CACHE_ROOT
 
     if _CACHE_ROOT is not None:
         return _CACHE_ROOT
 
-    base = Path(
-        os.environ.get(
-            "TRICORDER_CACHE_HOME",
-            str(Path(__file__).resolve().parent / ".tricorder"),
-        )
-    ).resolve()
+    if "TRICORDER_CACHE_HOME" in os.environ:
+        base = Path(os.environ["TRICORDER_CACHE_HOME"]).resolve()
+    else:
+        base = _default_cache_root().resolve()
+        notice = _legacy_install_cache_notice(base)
+        if notice:
+            print(notice, file=sys.stderr)
 
     base.mkdir(parents=True, exist_ok=True)
     _CACHE_ROOT = base
     return base
+
+
+def legacy_in_repo_db(root: str) -> Optional[Path]:
+    """Pre-cache-root in-repo DB (<root>/.tricorder/db/<name>.db), if present.
+
+    Ignored since the no-repo-writes move — returned so callers can warn
+    instead of silently rescanning. None when absent.
+    """
+    p = Path(root) / ".tricorder" / "db" / f"{Path(root).name}.db"
+    try:
+        return p if p.is_file() else None
+    except OSError:
+        return None
 
 
 def resolve_or_none(path: str) -> Optional[str]:
@@ -169,7 +217,7 @@ def safe_write(path, text, *, allow_escape=False, encoding="utf-8") -> Path:
     never-write-to-scanned-repo invariant (TC-006/TC-008).
 
     By default the resolved target must stay inside get_cache_root()
-    (.tricorder workspace); an escape raises ValueError loud. The --output
+    (the user-level cache); an escape raises ValueError loud. The --output
     escape hatch passes allow_escape=True. I/O failures raise OSError so
     best-effort caches (budget/tags) can swallow only disk errors, not escapes.
     """

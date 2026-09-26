@@ -97,7 +97,7 @@ being held in RAM. See [Architecture](architecture.md#scan-pipeline).
 |---|---|
 | `--db-path PATH` | Persist per-file tags/refs to this sqlite file instead of in-memory sqlite. |
 | `--no-db` | Opt out: use the legacy in-memory `nx.MultiDiGraph` path. Escape hatch for parity/debugging. Mutually exclusive with `--db-path`. |
-| `--init` | Create/open the canonical DB at `<root>/.tricorder/db/<name>.db`, print its path, exit. Idempotent; never wipes without `--wipe`. |
+| `--init` | Create/open the canonical DB at `<cache>/db/<name>.db` (`<cache>` = user-level cache root; never inside the scanned repo), print its path, exit. Idempotent; never wipes without `--wipe`. |
 | `--wipe` | With `--init` only: delete the existing canonical DB first. (`--wipe` requires `--init`.) Stop the MCP server first if it is running against this DB — wiping under a held-open DB fails cleanly on Windows, and on POSIX the server detects the replacement and rebuilds. |
 | `--db-coverage` | Print one-line mapped-DB coverage for `--root` (`mapped: N files, M tags, db sig X`) and exit. Prints nothing when unmapped. |
 

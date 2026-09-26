@@ -1,9 +1,10 @@
 """No-repo-writes: nothing tricorder does may write state into the scanned repo.
 
-User requirement: state lives in the tricorder workspace cache root
-(TRICORDER_CACHE_HOME or <workspace>/.tricorder/), never in the scanned
-repo. `tricorder --init` used to create <repo>/.tricorder/db/<name>.db
-inside the target; it must create the canonical DB in the cache root.
+User requirement: state lives in the user-level cache root
+(TRICORDER_CACHE_HOME, else $XDG_CACHE_HOME/tricorder or
+~/.cache/tricorder), never in the scanned repo. `tricorder --init` used to
+create <repo>/.tricorder/db/<name>.db inside the target; it must create
+the canonical DB in the cache root.
 """
 import subprocess as _sp
 import sys
@@ -40,6 +41,33 @@ def test_init_writes_nothing_into_scanned_repo(tmp_path, monkeypatch):
     db = cache / "db" / "proj.db"
     assert db.exists(), \
         f"--init must create the canonical DB in the cache root, stdout={r.stdout!r}"
+
+
+def test_init_default_cache_path_writes_nothing_into_scanned_repo(tmp_path, monkeypatch):
+    """The default (non-TRICORDER_CACHE_HOME) resolution must also keep state
+    out of the scanned repo — the old install-dir default wrote state into
+    the tricorder checkout itself when self-hosting from source."""
+    import utils
+    root = tmp_path / "proj"
+    root.mkdir()
+    (root / "a.py").write_text("def alpha():\n    pass\n", encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+    # Take the real default path: no env override, HOME relocated so the
+    # user-level default lands in tmp instead of the real ~/.cache.
+    monkeypatch.setattr(utils, "_CACHE_ROOT", None)
+    monkeypatch.delenv("TRICORDER_CACHE_HOME", raising=False)
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() on Windows
+
+    r = _cli_run(root, "--init")
+    assert r.returncode == 0, r.stderr[-500:]
+    assert not (root / ".tricorder").exists(), \
+        "--init must not create .tricorder inside the scanned repo"
+    db = home / ".cache" / "tricorder" / "db" / "proj.db"
+    assert db.exists(), \
+        f"--init must create the canonical DB under the user-level default, stdout={r.stdout!r}"
 
 
 def test_init_then_scan_resumes_from_cache_db(tmp_path, monkeypatch):

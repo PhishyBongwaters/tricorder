@@ -19,7 +19,7 @@ from typing import List, Optional
 # venv/site-packages (e.g. the Hermes agent's own utils.py when tricorder is
 # launched through an editable install that shares a process's sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES, safe_write, get_cache_root, db_root_matches, _db_writable, read_only_connect, resolve_or_none, stat_fingerprint
+from utils import count_tokens, read_text, Tag, parse_gitignore, discover_src_files, repo_budget, probe_project, format_probe_digest, INJECT_MIN_FILES, safe_write, get_cache_root, db_root_matches, _db_writable, read_only_connect, resolve_or_none, stat_fingerprint, legacy_in_repo_db
 from scm import get_scm_fname
 from importance import filter_important_files
 from core import Tricorder
@@ -41,8 +41,9 @@ def _canonical_db_for(root: str) -> Optional[str]:
     """Index DB for root: <cache>/db/<name>.db, keyed by directory basename.
 
     State is never kept inside the scanned repo — the canonical DB always
-    lives in the tricorder workspace cache root (TRICORDER_CACHE_HOME or
-    <workspace>/.tricorder/). Mirrors tricorder_server._canonical_db_for so
+    lives in the user-level cache root (TRICORDER_CACHE_HOME, else
+    $XDG_CACHE_HOME/tricorder or ~/.cache/tricorder). Mirrors
+    tricorder_server._canonical_db_for so
     the CLI --diff mode sees the same index the MCP server uses. None if
     no DB exists yet.
 
@@ -130,6 +131,20 @@ def _unwritable_canonical_warning(args, root_path, scan_db_path) -> Optional[str
             and scan_db_path is None and _canonical_db_for(str(root_path))):
         return ("Canonical DB exists but is not writable; this run scans "
                 "in-memory (no resumption).")
+    return None
+
+
+def _legacy_in_repo_db_warning(args, root_path, scan_db_path) -> Optional[str]:
+    """Warning text when a pre-cache-root in-repo DB is being ignored.
+
+    Fires only when no canonical/--db-path DB is in play — otherwise the
+    legacy DB is irrelevant, not confusing."""
+    if not args.no_db and not args.db_path and scan_db_path is None:
+        legacy = legacy_in_repo_db(str(root_path))
+        if legacy:
+            return (f"Ignoring legacy in-repo DB {legacy} (pre-cache-root); "
+                    f"canonical state lives under {get_cache_root() / 'db'}. "
+                    f"Re-run --init to reindex.")
     return None
 
 
@@ -430,7 +445,8 @@ Examples:
         "--init",
         action="store_true",
         help="Create/open the canonical DB at <cache>/db/<name>.db "
-             "(TRICORDER_CACHE_HOME or <workspace>/.tricorder; never inside "
+             "(TRICORDER_CACHE_HOME, else $XDG_CACHE_HOME/tricorder or "
+             "~/.cache/tricorder; never inside "
              "the scanned repo), print its path and exit. Idempotent; "
              "never wipes without --wipe."
     )
@@ -547,6 +563,10 @@ Examples:
         finally:
             if _init_store is not None:
                 _init_store.close()
+        _legacy = legacy_in_repo_db(str(init_root))
+        if _legacy:
+            tool_warning(f"Ignoring legacy in-repo DB {_legacy} "
+                         f"(pre-cache-root); the canonical DB is {init_db}.")
         print(str(init_db))
         sys.exit(0)
 
@@ -565,6 +585,7 @@ Examples:
             _cov_cands.append((get_cache_root() / "db" / _cov_name, False))
         except Exception:
             pass
+        _mapped = False
         for _cand, _cov_local in _cov_cands:
             try:
                 if not _cand.exists():
@@ -593,11 +614,18 @@ Examples:
                             "Retrieve, don't rescan: mcp_tricorder_detect to locate, "
                             "mcp_tricorder_symbols for shape, mcp_tricorder_detail for "
                             "body+callers, mcp_tricorder_query to traverse.")
+                        _mapped = True
                         break
                 finally:
                     _con.close()
             except Exception:
                 continue
+        if not _mapped:
+            _legacy = legacy_in_repo_db(str(_cov_root))
+            if _legacy:
+                tool_warning(f"Ignoring legacy in-repo DB {_legacy} "
+                             f"(pre-cache-root); reporting unmapped. Re-run "
+                             f"--init to reindex.")
         sys.exit(0)
 
     # --signature-only: stat-hash, no map build. Early exit.
@@ -778,6 +806,9 @@ Examples:
     _warn = _unwritable_canonical_warning(args, root_path, scan_db_path)
     if _warn:
         output_handlers['warning'](_warn)
+    _legacy_warn = _legacy_in_repo_db_warning(args, root_path, scan_db_path)
+    if _legacy_warn:
+        output_handlers['warning'](_legacy_warn)
 
     # --db-path must point at a file, on every path: a directory would die
     # with a raw sqlite3 traceback from DBStore.__init__ (the scan path

@@ -97,9 +97,10 @@ Tier tokens (rough rules of thumb, not measurements): T0 ≈ 14 tokens/tag (defi
 
 ## DB backend — where state lives
 
-Scans populate a sqlite DB (tags/refs/meta tables) under the tricorder
-workspace: `<workspace>/.tricorder/` (`db/`, `cache/`, `indexes/`, `output/`),
-gitignored. `detect`/`symbols`/`detail`/`query` read that DB (PageRank-ranked);
+Scans populate a sqlite DB (tags/refs/meta tables) under the user-level
+cache: `TRICORDER_CACHE_HOME`, else `$XDG_CACHE_HOME/tricorder` (else
+`~/.cache/tricorder`), holding `db/`, `cache/`, `indexes/`, `output/`.
+`detect`/`symbols`/`detail`/`query` read that DB (PageRank-ranked);
 `scan` builds or refreshes it. Tiers apply to `scan` output only — the DB
 lookups have no tiers. Nothing is ever written into the scanned repo
 (`utils.safe_write` raises unless the target resolves inside the cache root;
@@ -124,7 +125,7 @@ override the root via `TRICORDER_CACHE_HOME`).
 ## Pitfalls
 
 - **Stale DB → empty/odd maps**: after installing new tree-sitter parsers or an upgrade, maps can look wrong from a cached parse. Run `--force-refresh` (MCP: `force_refresh: true`) to rebuild the DB.
-- **State lives in the tricorder workspace** (`<workspace>/.tricorder/`), never in the scanned repo — don't ship or commit it, and never expect it inside the target project.
+- **State lives in the user-level cache** (`TRICORDER_CACHE_HOME`, else `$XDG_CACHE_HOME/tricorder` or `~/.cache/tricorder`), never in the scanned repo — don't ship or commit it, and never expect it inside the target project.
 - `project_root` must be absolute; relative paths are not trusted.
 - `tricorder_detect` is case-insensitive and token-cheap — prefer it over a full scan to find an identifier.
 - **Detect/symbols auto-rescue**: when a query matches nothing, both tools deterministically retry orthographic variants (strips template args/parens/namespace, camel/snake/kebab/case forms) so decorated lookups like `PCM::AddToBuffer<128,128>` still resolve. Rescue hits are tagged `quality: "fuzzy"` — verify them against source before asserting behavior; `"exact"` hits matched the literal query.

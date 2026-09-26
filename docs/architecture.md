@@ -27,7 +27,9 @@ discover → parse → qualify → store → rank → render
    [deep dive](class-context-qualification.md).
 4. **Store** (`database.DBStore`): tags/refs stream into sqlite — in-memory by
    default, `--db-path` for a file, `--init` for the canonical
-   `<root>/.tricorder/db/<name>.db`. Stamped with `EXTRACTOR_VERSION`.
+   `<cache>/db/<name>.db` (`<cache>` = `TRICORDER_CACHE_HOME`, else
+   `$XDG_CACHE_HOME/tricorder` or `~/.cache/tricorder`; never inside the
+   scanned repo). Stamped with `EXTRACTOR_VERSION`.
 5. **Rank** (`ranking.RankingMixin`): PageRank over the reference graph, plus
    boosts for chat/mentioned files and identifiers. Binary search fits the
    top-ranked tags to `--map-tokens`.
@@ -94,14 +96,13 @@ Three layers (TC-003 — a repo never controls cache state; automatic caches
 stay outside the scanned repo):
 
 1. **Tags diskcache** (`cache.TagsCacheMixin`): per-file tag bundles keyed by
-   content signature, under `<tricorder workspace>/.tricorder/cache/`.
-   Override the root with `TRICORDER_CACHE_HOME`.
+   content signature, under `<cache>/cache/` (`<cache>` = the user-level
+   cache root). Override the root with `TRICORDER_CACHE_HOME`.
 2. **Cross-ref index bundle**: described above.
 3. **Tag DB**: `:memory:` sqlite per scan; the pre-scan default persists to
    `<cache>/db/<name>.db` (outside the repo). Explicit `--init` instead
-   creates the canonical DB at `<root>/.tricorder/db/<name>.db` — inside the
-   project, like `.git`, so it travels with the checkout. Because it lives in
-   the repo, `--init` is opt-in; nothing writes there implicitly.
+   creates the canonical DB at `<cache>/db/<name>.db` in the user-level
+   cache root — never inside the scanned repo.
 
 Invalidation is stat-based (`{path}:{size}:{mtime}` sha256), not TTL.
 `--signature-only` prints the 16-char signature the lifecycle plugin compares;
@@ -115,7 +116,7 @@ Repository content is **untrusted input**. Controls:
 |---|---|---|
 | TC-001 | Content boundary | Raw maps wrapped in `BEGIN/END UNTRUSTED REPOSITORY CONTEXT`. |
 | TC-002 | Resource envelope | depth 25, 1MB/file by default; file count, total bytes, scan time unlimited unless capped via `TRICORDER_MAX_*` → partial result + warning. |
-| TC-003 | Cache isolation | Automatic caches outside the repo; the opt-in `--init` DB lives at `<root>/.tricorder/db/` by design. |
+| TC-003 | Cache isolation | All state — automatic caches and the opt-in `--init` DB — lives under the user-level cache root, never inside the scanned repo. |
 | TC-004 | Parser timeout | 5s hard timeout per file (`TRICORDER_PARSER_TIMEOUT_S`); hangs are skipped. |
 | TC-005 | Trust metadata | Every MCP response stamped `source: scanned_repository`, `trust: untrusted_repository_content`. |
 | TC-006 | Path containment | `chat_files`/`detail` file params rejected outside `project_root`. |

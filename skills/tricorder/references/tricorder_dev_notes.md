@@ -2,7 +2,7 @@
 
 ## The write-invariant (never write to scanned repos)
 All in-process writes route through `utils.safe_write(path, text, *, allow_escape=False)`.
-- Default: target must resolve inside `get_cache_root()` (== `<tricorder workspace>/.tricorder`, overridable via `TRICORDER_CACHE_HOME`). A target outside raises `ValueError` — loud, not swallowed.
+- Default: target must resolve inside `get_cache_root()` (== the user-level cache root, overridable via `TRICORDER_CACHE_HOME`). A target outside raises `ValueError` — loud, not swallowed.
 - `--output` passes `allow_escape=True` (sanctioned user path); still wrapped in `except OSError` with stdout fallback so the map is never lost.
 - I/O errors raise `OSError` so best-effort caches (budget/tags) swallow only disk failures via `except OSError: pass`; escapes raise `ValueError` (NOT swallowed).
 - Wired sites: `utils.py` budget cache, `ctags_probe.py` tags meta, `tricorder_server.py` output (`get_cache_root()/"output"`), `tricorder.py --output`.

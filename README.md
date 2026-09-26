@@ -2,7 +2,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-508%20passed%2C%204%20skipped-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-545%20passed%2C%201%20skipped-brightgreen.svg)](tests/)
 
 **Turn any codebase into a token-efficient map an LLM agent can actually navigate.**
 

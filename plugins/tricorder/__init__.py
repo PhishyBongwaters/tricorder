@@ -477,7 +477,9 @@ def _tricorder_db_for(root: str) -> Optional[str]:
 
     Same convention as pre_scan.py: <cache_root>/db/<basename>.db.
     Cache root resolved without hardcoding: TRICORDER_CACHE_HOME env,
-    else <cli-venv>/../.tricorder (derived from the discovered CLI path).
+    else the user-level default ($XDG_CACHE_HOME/tricorder, else
+    ~/.cache/tricorder), else the legacy install-dir default derived
+    from the discovered CLI path.
     Read-only use — never creates or writes.
 
     The shared-cache lookup is by directory basename, so a same-named repo
@@ -492,6 +494,9 @@ def _tricorder_db_for(root: str) -> Optional[str]:
     env = os.environ.get("TRICORDER_CACHE_HOME")
     if env:
         candidates.append(Path(env) / "db" / name)
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    candidates.append(
+        ((Path(xdg) if xdg else Path.home() / ".cache") / "tricorder" / "db" / name))
     cli = _get_tricorder_cli()
     if cli:
         candidates.append(Path(cli).resolve().parent.parent / ".tricorder" / "db" / name)

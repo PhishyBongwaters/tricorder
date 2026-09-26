@@ -39,6 +39,17 @@ def pytest_configure(config):
     tempfile.tempdir = str(_WORKSPACE_TMP)
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_cache_home(tmp_path, monkeypatch):
+    """Scope TRICORDER_CACHE_HOME per test so no test ever touches the real
+    user-level default cache root (~/.cache/tricorder). Tests that exercise
+    the default path explicitly (tests/test_cache_root_default.py) delenv
+    the variable themselves."""
+    monkeypatch.setenv("TRICORDER_CACHE_HOME", str(tmp_path / "tcache"))
+    import utils
+    monkeypatch.setattr(utils, "_CACHE_ROOT", None)
+
+
 def pytest_sessionfinish(session, exitstatus):
     """Clean up the workspace temp dir after the full test session."""
     if _WORKSPACE_TMP.exists():

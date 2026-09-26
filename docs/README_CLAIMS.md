@@ -282,7 +282,7 @@ validation status starts as `pending` and is updated as checks run.
 - [pending] `TRICORDER_MAX_SCAN_TIME_S=0.0` (0 = unlimited; the former 300 default was relaxed when `--full` was added)
 - [pending] `TRICORDER_MAX_SOURCE_FILE_SIZE=1048576`
 - [pending] `TRICORDER_PARSER_TIMEOUT_S=5`
-- [pending] `TRICORDER_CACHE_HOME=<tricorder workspace>/.tricorder` (default; controls cache + output root)
+- [pending] `TRICORDER_CACHE_HOME=$XDG_CACHE_HOME/tricorder` (else `~/.cache/tricorder`) (default; controls cache + output root)
 
 ## 25. Supported Languages
 
@@ -299,7 +299,7 @@ validation status starts as `pending` and is updated as checks run.
 
 ## 26. Caching
 
-- [pending] Cache location: `<tricorder workspace>/.tricorder/cache/<sha1(repo_path|version|config)>/`
+- [pending] Cache location: `<cache>/cache/<sha1(repo_path|version|config)>/` (`<cache>` = user-level default)
 - [pending] Cache is outside the repository (TC-003)
 - [pending] Repo never controls cache state
 - [pending] Default cache root is tricorder workspace `.tricorder` dir (always writable)

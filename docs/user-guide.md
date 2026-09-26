@@ -226,7 +226,7 @@ against the stored signature and rebuilds on mismatch.
 ## Caching: how it works
 
 All caches live **outside the scanned repo** (default
-`<tricorder workspace>/.tricorder/`; override with `TRICORDER_CACHE_HOME`).
+`$XDG_CACHE_HOME/tricorder`, else `~/.cache/tricorder`; override with `TRICORDER_CACHE_HOME`).
 A repo can never control cache state.
 
 | Layer | What | Invalidation |
@@ -261,7 +261,7 @@ All optional env vars:
 
 | Var | Default | Purpose |
 |---|---|---|
-| `TRICORDER_CACHE_HOME` | `<workspace>/.tricorder` | Cache + output root |
+| `TRICORDER_CACHE_HOME` | `$XDG_CACHE_HOME/tricorder` (else `~/.cache/tricorder`) | Cache + output root |
 | `TRICORDER_MAX_SCAN_FILES` | `0` (unlimited) | Max files per scan; set to cap |
 | `TRICORDER_MAX_TOTAL_BYTES` | `0` (unlimited) | Max total bytes; set to cap (e.g. `524288000` for 500MB) |
 | `TRICORDER_MAX_SCAN_DEPTH` | `25` | Max walk depth |

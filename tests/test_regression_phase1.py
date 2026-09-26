@@ -62,11 +62,12 @@ class TestFullRepoEstimateAccuracy(unittest.TestCase):
         self.assertEqual(r1["full_repo_estimate"], r2["full_repo_estimate"])
 
     def test_budget_cache_location(self):
-        """Budget cache lives under .tricorder/cache/ in the project root."""
+        """Budget cache lives under the cache root, never inside the repo."""
+        from utils import get_cache_root
         _ = repo_budget(self.project_root, 1000)
         self.assertTrue(
-            (Path(self.project_root) / ".tricorder" / "cache").exists(),
-            "Budget cache should be under project/.tricorder/cache/",
+            (Path(get_cache_root()) / "cache").exists(),
+            "Budget cache should live under the cache root",
         )
 
 

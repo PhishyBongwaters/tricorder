@@ -48,7 +48,6 @@ def grep_glob(subdir, glob, pattern):
             if re.search(pattern, ln):
                 out.append(f"{p.name}:{i}:{ln}")
     return "\n".join(out)
-    return "\n".join(sorted(p.name for p in (GO / rel).iterdir()))
 
 
 def cli(db, *args):
