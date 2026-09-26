@@ -5,9 +5,10 @@ Turn-0 **probe-digest** injection for DeepSeek Harness (dsh).
 ## What it does
 
 When a new session is created, this plugin runs the shared tricorder
-`--probe-digest` CLI flag and injects a short, cheap **navigation digest**
-(language tally + rough line count + pointer to the MCP tools) as a
-plugin-sourced `user/message` **before the first turn starts**.
+`--probe-digest` CLI flag and injects a short, cheap scale digest
+(language tally + rough line count) as a
+plugin-sourced `user/message` **before the first turn starts** (navigation
+in plugin context comes from the harness's own MCP tools, not the string).
 
 This is a *navigation item*, not a deep dive. On any repo — including
 kernel-scale trees with tens of thousands of files — turn 0 runs a fast

@@ -465,8 +465,8 @@ Examples:
     parser.add_argument(
         "--probe-digest",
         action="store_true",
-        help="Print the turn-0 probe digest (language tally + sizes + navigation "
-             "hint) for --root and exit. No map build, no token budget -- cheap "
+        help="Print the turn-0 probe digest (language tally + sizes) "
+             "for --root and exit. No map build, no token budget -- cheap "
              "even on huge repos. Emits the same text the Hermes/DSH plugins "
              "inject at turn 0."
     )
