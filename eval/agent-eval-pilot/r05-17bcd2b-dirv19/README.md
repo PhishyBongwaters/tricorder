@@ -27,7 +27,7 @@
 
 | # | Leg | Question | Session | Status |
 |---|---|---|---|---|
-| 1 | A-Rails-Q1 | `has_many` | — | pending |
+| 1 | A-Rails-Q1 | `has_many` | `ses_f22250609ffeM1mr4xrpMX0MFx` | PASS 10 calls, 29,909 (grade.md) |
 | 2 | B-Rails-Q1 | `has_many` (grep only) | — | pending |
 
 Scope rationale: re-run the Rails pair on the T4 build. The A-arm is
