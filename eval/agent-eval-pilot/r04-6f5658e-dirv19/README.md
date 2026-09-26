@@ -2,11 +2,12 @@
 
 ## Build (frozen)
 
-- **Code**: `81229f8` (T1 mechanism-2: minified-blob content sniff) — the
-  last commit that touches product code. Docs-only `4975b8d` sits on top
-  (HANDOFF pointer); working tree clean apart from another session's
-  untracked scratch. T1 `bba4a58` / T2 `144aa54` / T3 `47e57a8` are all
-  in this build.
+- **Code**: `6f5658e` (text-mode `--smart-map` skip KeyError fix on top
+  of `81229f8` T1 mechanism-2 — operator-ratified amendment: the
+  non-JSON skip branch read `s["type"]` (symbols field) on detect-family
+  hits and crashed every identifier skip; JSON/MCP unaffected. Suite
+  531 green on the frozen content). T1 `bba4a58` / T2 `144aa54` / T3
+  `47e57a8` are all in this build.
 - **Directive**: v1.9, frozen at `DIRECTIVE.frozen.md` (copy of
   `../DIRECTIVE.md` at freeze time). v1.9 = identifier-input rung 1,
   rung 4 named by mechanism, doc-walk ban, 10-call answer checkpoint.
