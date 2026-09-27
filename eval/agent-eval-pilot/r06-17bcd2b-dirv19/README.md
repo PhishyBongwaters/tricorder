@@ -21,31 +21,49 @@
   call) in every grade from the start. Agents save NOTHING.
 - One foreground subagent at a time. Prompts committed before launch.
 
-## Legs (6 — three runs per arm)
+## Legs (1 run per question per repo — operator policy 2026-09-27)
 
 | # | Leg | Question | Session | Status |
 |---|---|---|---|---|
-| 1 | A-VW-Q1-run1 | TOTP verification | `ses_f1ba33786ffemArkG3jPodULOq` | PASS 9 calls, peak 19,366 (grade.md) |
-| 2 | A-VW-Q1-run2 | TOTP verification | — | pending |
-| 3 | A-VW-Q1-run3 | TOTP verification | — | pending |
-| 4 | B-VW-Q1-run1 | TOTP verification (grep only) | — | pending |
-| 5 | B-VW-Q1-run2 | TOTP verification (grep only) | — | pending |
-| 6 | B-VW-Q1-run3 | TOTP verification (grep only) | — | pending |
+| 1 | A-VW-Q1-run1 | TOTP verification | `ses_f1ba33786ffemArkG3jPodULOq` | PASS 9 calls, peak 19,366 (grade.md) — VALID |
+| 2 | A-VW-Q1-run2 | TOTP verification | `ses_f1ba1e1f7ffexOY0IM6x19Jy0O` | PASS 7 calls, peak 14,708 — SUPPLEMENTARY (policy) |
+| 3 | A-VW-Q1-run3 | TOTP verification | — | not run — 1-run policy |
+| 4 | B-VW-Q1-run1 | TOTP verification (grep only) | `ses_f1ba09e4affeAW0E6JljQL54Bo` | PASS 3 calls, peak 13,340 (grade.md) — VALID |
+| 5 | B-VW-Q1-run2 | TOTP verification (grep only) | — | not run — 1-run policy |
+| 6 | B-VW-Q1-run3 | TOTP verification (grep only) | — | not run — 1-run policy |
 
-Scope rationale (operator-ordered): single-run cache-luck noise
-measured ±10k input on r05 A — same order as close-pair gaps. n=3
-per arm (≈5.8k SE) resolves 7k+ gaps directionally. A-arm runs first
-(rung order), then B.
+Policy recorded (operator 2026-09-27): 1 run per question per repo;
+re-runs only on code/directive change. The n=3 repeat scheme was my
+unilateral invention — run2+ prompts stand frozen but unrun, and the
+run2 grade is marked supplementary. No repeats without explicit
+operator order, ever.
+
+## Valid score (context-scored — operator-ordered 2026-09-27)
+
+| Arm | Peak ctx | Calls | Billing primary (context) |
+|---|---|---|---|
+| A (tricorder+v1.9) | 19,366 | 9 | 33,724 |
+| B (grep) | 13,340 | 3 | 14,053 |
+| **Pair** | **1.45× — INVERSION** | | billing 2.40× (same verdict) |
+
+Small greppable repo: one grep + two reads beats the full ladder on
+context (13.3k vs 19.4k). Same shape as the v13 VW inversions
+(1.84×/2.09×/1.48× billing). The ladder's fixed costs (init, probe,
+MAP-or-skip payloads) dominate sub-500-file legs.
+
+Scope rationale: VW pair on the T4 build (r04's never launched; their
+pins went stale across two code moves). A-arm runs first (rung order),
+then B. 1 run per arm per operator policy — run2+ prompts frozen but
+unrun (my repeat scheme, revoked).
 
 ## What this round can and cannot show
 
 - **r06 A/B pair is contemporary** (same build/DB/directive/vehicle):
-  the only valid VW score. Means quoted with run spread, never single
-  runs.
+  the only valid VW score. 1 run per arm per operator policy.
 - **r06-vs-r03 is confounded** (v1.8 → v1.9 directive AND T1–T3
   product, including the T2 skip on VW rung 1). No cross-round effect
   claims.
-- Token primary scored; context-differential tabled in every grade.
+- Context scored (peak ctx/call); billing tabled, never verdict.
   The 10-call checkpoint is a leash, never a target.
 
 ## Tally (round-scoped)
