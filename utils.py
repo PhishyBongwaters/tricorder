@@ -1328,6 +1328,25 @@ def is_test_file(path: str) -> bool:
 _SYMBOL_SEGMENT_SPLIT = re.compile(r'::|\.|_|-|/|\s|#')
 
 
+def compact_symbol_record(rec: dict) -> dict:
+    """Render diet for symbols LISTING hits (transcript-item 1).
+
+    Drops dead-weight keys (empty signature/docstring/body/callers/
+    callees/stop_note) and folds multi-line signatures to one line.
+    In place, returns rec. Structural keys (name/type/file/line/
+    end_line/language/kind) are never touched. Detail records
+    (get_symbol_details) do NOT go through here — full keys there.
+    """
+    sig = rec.get("signature")
+    if isinstance(sig, str) and sig:
+        rec["signature"] = re.sub(r"\s+", " ", sig).strip()
+    for k in ("signature", "docstring", "body", "callers", "callees",
+              "stop_note"):
+        if k in rec and not rec[k]:
+            del rec[k]
+    return rec
+
+
 def symbol_boundary_rank(name: str, query_lower: str) -> int:
     """Word-boundary rank of a symbol name against a symbols query (T3,
     SPEC-symbols-definition-priority).

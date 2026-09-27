@@ -64,16 +64,23 @@ class TestSearchSymbols(unittest.TestCase):
         self.assertLessEqual(len(result["symbols"]), 200)
 
     def test_all_fields_present(self):
-        """Every symbol record has all 9 required fields."""
+        """Every symbol record has the structural keys; content keys
+        appear only when non-empty (listing render diet: dead keys are
+        dropped at the listing path; the detail path keeps full keys).
+        All in-repo consumers read these dicts via .get()."""
         result = asyncio.run(tricorder_symbols(
             project_root=self.project_root, query="count_tokens"
         ))
         self.assertNotIn("error", result)
         required = {"name", "type", "file", "line", "end_line",
-                     "signature", "docstring", "language", "kind"}
+                    "language", "kind"}
+        self.assertTrue(result["symbols"])
         for s in result["symbols"]:
             missing = required - set(s.keys())
             self.assertFalse(missing, f"Missing: {missing} in {s['name']}")
+            for k, v in s.items():
+                self.assertNotIn(v, ("", None, []),
+                                 f"Dead key {k!r} in {s['name']}")
 
     def test_performance(self):
         """Full scan completes within a sane budget.

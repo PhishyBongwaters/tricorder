@@ -12,7 +12,7 @@ from pathlib import Path
 # Pin project dir ahead of sys.path (mirror tricorder.py) so utils/scm resolve to THIS repo.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from typing import List, Dict, Optional, Tuple, Callable, Any
-from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, query_variants, tokenize_identifier, levenshtein, stat_fingerprint, canonical_token, NL_QUERY_STOPWORDS, rescue_query_tokens, _INFLECTION_EXCEPTIONS, is_test_file, symbol_boundary_rank
+from utils import count_tokens, read_text, Tag, SymbolRecord, discover_src_files, detect_lang, ParsedQuery, repo_budget, query_variants, tokenize_identifier, levenshtein, stat_fingerprint, canonical_token, NL_QUERY_STOPWORDS, rescue_query_tokens, _INFLECTION_EXCEPTIONS, is_test_file, symbol_boundary_rank, compact_symbol_record
 from cache import TagsCacheMixin, CACHE_VERSION
 from parser import ParserMixin
 from graph import GraphMixin
@@ -995,6 +995,9 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                 head = doc[:_LISTING_DOCSTRING_CAP].rsplit(" ", 1)[0]
                 r_["docstring"] = head + "…"
                 r_["docstring_omitted"] = len(doc) - len(head)
+            # Transcript-item 1: drop dead keys + fold signatures (detail
+            # records keep full keys; this is the listing path only).
+            compact_symbol_record(r_)
 
         return results, rescue
     
