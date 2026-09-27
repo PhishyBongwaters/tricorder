@@ -25,7 +25,7 @@
 
 | # | Leg | Question | Session | Status |
 |---|---|---|---|---|
-| 1 | A-VW-Q1-run1 | TOTP verification | — | pending |
+| 1 | A-VW-Q1-run1 | TOTP verification | `ses_f1ba33786ffemArkG3jPodULOq` | PASS 9 calls, peak 19,366 (grade.md) |
 | 2 | A-VW-Q1-run2 | TOTP verification | — | pending |
 | 3 | A-VW-Q1-run3 | TOTP verification | — | pending |
 | 4 | B-VW-Q1-run1 | TOTP verification (grep only) | — | pending |
