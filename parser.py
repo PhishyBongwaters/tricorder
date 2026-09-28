@@ -218,8 +218,15 @@ class ParserMixin:
             query = Query(language, query_text)
             cursor = QueryCursor(query)
             captures = cursor.captures(tree.root_node)
-            
+
             tags = []
+            # DB-dupe scoping: one node can arrive under several capture
+            # names (multi-pattern .scm queries), emitting byte-identical
+            # rows (observed: one HCL variable block -> 4x `DB` def).
+            # Dedupe on (name,line,COLUMN,kind): same column = same
+            # occurrence. Legit same-line repeats (chained calls, nested
+            # dirname) have distinct columns and MUST survive.
+            seen = set()
             # Process captures as a dictionary
             for capture_name, nodes in captures.items():
                 for node in nodes:
@@ -229,11 +236,15 @@ class ParserMixin:
                         kind = "ref"
                     else:
                         # Skip other capture types like 'reference.call' if not needed for tagging
-                        continue 
-                    
+                        continue
+
                     line_num = node.start_point[0] + 1
                     # Handle potential None value
                     name = node.text.decode('utf-8') if node.text else ""
+                    key = (name, line_num, node.start_point[1], kind)
+                    if key in seen:
+                        continue
+                    seen.add(key)
 
                     # Structural class-context qualification (Class::method):
                     # tree-based, so it covers Python and other languages where

@@ -6,12 +6,12 @@
   remote (`git@github.com:PhishyBongwaters/tricorder.git` — source of
   truth, `git push github main` per step). `origin` = gitea via
   hermes-agent (unreachable from here) — never fetch/push it.
-- Suite green: **541 passed, 4 skipped, 98 subtests**
+- Suite green: **543 passed, 4 skipped, 98 subtests**
   (`python -m pytest tests/ -q -p no:cacheprovider`, repo `.venv`).
-  Was 508 at session start; +33 = T1 (2) + T1-mechanism-2 (2) + T2 (11:
+  Was 508 at session start; +35 = T1 (2) + T1-mechanism-2 (2) + T2 (11:
   6 candidates + 3 probe-loop + 2 MCP + 2 CLI-text) + T3 (6) + T4 (3)
   + transcript-1 diet (3) + transcript-3 demotion (2) + transcript-4
-  hygiene (2) new tests, 1 contract test updated (9-field → diet).
+  hygiene (2) + extractor-dedup (2) new tests, 1 contract test updated.
 - Shell is PowerShell: NO `head/tail/grep/sed/&&` — use
   `Select-Object -First N`, `Select-String`, `;` separators.
   `>` redirect writes UTF-16 (matters for token metering; use
@@ -105,8 +105,16 @@ Product (all landed, suite-green, byte-identical outputs where claimed):
   VW `detect totp` heads defs now). #4 BUILT: MAP hygiene
   (`_dedupe_ranked_tags` in both ranking paths; `emit_rank` 4dp at
   both JSON emits; text already :.4f). OPEN root: 855 exact-dup tag
-  rows in VW DB (extractor double-emit suspected) — write-path matter,
-  needs investigation + possible canonical rebuilds, NOT started.
+  rows in VW DB (extractor double-emit suspected) — SCOPED 2026-09-28:
+  single-parse reproduces 4x HCL def (multi-capture, same node) while
+  chained-call/nested-dirname same-line repeats are LEGIT (distinct
+  columns); fix = column-aware dedupe at emission in
+  `parser.get_tags_raw` (Tag schema unchanged, no migration), test
+  `tests/test_extractor_dedup.py` asserts both halves. Existing DB
+  rows persist until a rebuild (DEFERRED by operator order).
+  Adjacent, NOT started: get_symbols on HCL emits garbage records
+  (whole-attribute names, type confusion) — grammar-quality matter,
+  no leg impact (hcl unnavigated).
 - Eval analysis tools (tracked): `eval/agent-eval-pilot/tools/`
   (`ocdb/ocmsg/ocmap/occtx/octools/ocover/ocpeak/oploop/ocleg/ocassess/ocdiverge`
   = session-DB forensics; `audit_legs.py`; `backfill_ranks.py`;
