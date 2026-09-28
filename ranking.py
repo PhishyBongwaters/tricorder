@@ -140,6 +140,26 @@ def _parse_worker(args):
         return []
 
 
+def _dedupe_ranked_tags(ranked_tags):
+    """Transcript-item 4: drop byte-identical (rel,line,name,kind) tag
+    rows, keeping the first (highest-ranked — call on sorted lists).
+
+    The tags table holds exact-duplicate rows (855 on the VW canonical
+    DB; extractor double-emit suspected) that otherwise print twice in
+    the MAP. Sort stays full-precision; DB-level dedup is a separate
+    write-path matter, reported not fixed.
+    """
+    seen = set()
+    out = []
+    for r, t in ranked_tags:
+        key = (t.rel_fname, t.line, t.name, t.kind)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((r, t))
+    return out
+
+
 class RankingMixin:
     def _db_signature(self, included: List[str]) -> str:
         """Stat-based content signature from the walked files (meta.signature).
@@ -646,7 +666,7 @@ class RankingMixin:
             ranked_tags.append((file_rank * boost, Tag(rel, fname, line, name, "def")))
 
         ranked_tags.sort(key=lambda x: (-x[0], self.get_rel_fname(x[1].fname), x[1].line))
-        return ranked_tags, file_report
+        return _dedupe_ranked_tags(ranked_tags), file_report
 
     def get_ranked_tags(
         self,
@@ -807,8 +827,8 @@ class RankingMixin:
         
         # Sort by rank (descending), then filename, line for determinism
         ranked_tags.sort(key=lambda x: (-x[0], self.get_rel_fname(x[1].fname), x[1].line))
-        
-        return ranked_tags, file_report
+
+        return _dedupe_ranked_tags(ranked_tags), file_report
     
     # render_tree and to_tree are delegated to render.py (SPEC_db_map Goal 5a).
     # These thin wrappers keep the public API intact for tricorder.py,

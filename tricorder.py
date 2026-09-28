@@ -133,6 +133,13 @@ def _unwritable_canonical_warning(args, root_path, scan_db_path) -> Optional[str
     return None
 
 
+def emit_rank(rank: float) -> float:
+    """Transcript-item 4: JSON rank precision. The text MAP prints :.4f;
+    JSON printed full float repr (0.11733934746401727 — pure payload).
+    Round to 4dp at serialization; sorting stays full-precision."""
+    return round(float(rank), 4)
+
+
 def fit_json_tags(ranked_tags, budget, token_counter):
     """Longest rank-ordered prefix whose serialized JSON records fit budget.
 
@@ -147,7 +154,7 @@ def fit_json_tags(ranked_tags, budget, token_counter):
     def payload(tags):
         return json.dumps({"tags": [
             {"name": t.name, "file": t.rel_fname, "line": t.line,
-             "kind": t.kind, "rank": r} for r, t in tags]}, indent=2)
+             "kind": t.kind, "rank": emit_rank(r)} for r, t in tags]}, indent=2)
 
     if not ranked_tags:
         return []
@@ -1077,7 +1084,7 @@ Examples:
                                 "file": tag.rel_fname,
                                 "line": tag.line,
                                 "kind": tag.kind,
-                                "rank": rank
+                                "rank": emit_rank(rank)
                             }
                             for rank, tag in fitted
                         ]
