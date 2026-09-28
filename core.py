@@ -456,11 +456,15 @@ class Tricorder(ParserMixin, GraphMixin, RankingMixin, TagsCacheMixin):
                    (tag.kind == "ref" and include_references):
                     matching_tags.append(tag)
 
-        # Sort by relevance (definitions first, then references), then
+        # Sort by relevance: test-path demotion first (transcript-item 3:
+        # rung-2 detect crowds definition sites behind *Test hits exactly
+        # like symbols did pre-T3; demote, never exclude — test-seeking
+        # questions still reach them), then definitions first, then
         # interleave across files so a single file's many same-name hits
         # (e.g. ten parseExpr* declarations in one header) cannot crowd
         # the definition sites in other files out of the capped budget.
-        matching_tags.sort(key=lambda x: (x.kind != "def", x.name.lower().find(query_lower), x.rel_fname, x.line))
+        # T2-safe: the smart-map skip reads quality, never order.
+        matching_tags.sort(key=lambda x: (is_test_file(x.rel_fname), x.kind != "def", x.name.lower().find(query_lower), x.rel_fname, x.line))
 
         # Limit results (interleaved: global top hit stays first).
         matching_tags = _interleave_by_file(matching_tags, lambda t: t.rel_fname, max_results)
