@@ -6,12 +6,12 @@
   remote (`git@github.com:PhishyBongwaters/tricorder.git` — source of
   truth, `git push github main` per step). `origin` = gitea via
   hermes-agent (unreachable from here) — never fetch/push it.
-- Suite green: **534 passed, 4 skipped, 98 subtests**
+- Suite green: **541 passed, 4 skipped, 98 subtests**
   (`python -m pytest tests/ -q -p no:cacheprovider`, repo `.venv`).
-  Was 508 at session start; +26 = T1 (2) + T1-mechanism-2 (2) + T2 (11:
+  Was 508 at session start; +33 = T1 (2) + T1-mechanism-2 (2) + T2 (11:
   6 candidates + 3 probe-loop + 2 MCP + 2 CLI-text) + T3 (6) + T4 (3)
-  new tests. (The 2 CLI-text tests + text-mode fix arrived via the
-  concurrent session, verified green here before commit.)
+  + transcript-1 diet (3) + transcript-3 demotion (2) + transcript-4
+  hygiene (2) new tests, 1 contract test updated (9-field → diet).
 - Shell is PowerShell: NO `head/tail/grep/sed/&&` — use
   `Select-Object -First N`, `Select-String`, `;` separators.
   `>` redirect writes UTF-16 (matters for token metering; use
@@ -94,6 +94,19 @@ Product (all landed, suite-green, byte-identical outputs where claimed):
   (builder/has_many.rb), zero test files in top-5. Spot-checks: VW
   rescue query byte-identical top-10; Go displaced only test-path
   hits. `search_identifiers` rescue untouched (rung-2 contract).
+- **Transcript items (operator-ordered 2026-09-27, from r05/r06 A-leg
+  trails)** — #1 BUILT: symbols listing render diet
+  (`compact_symbol_record`: drop empty keys, fold signatures; -23%
+  bytes live; 9-field contract test updated, all consumers `.get()`).
+  #2 DROPPED after live negative (5x mentioned-boost can't cross
+  16x rank gaps; hard-priority saves zero tokens — report, not build).
+  #3 BUILT: detect test-path demotion (same T3 keys on the
+  `search_identifiers` sort; T2 skip reads quality, unaffected; live
+  VW `detect totp` heads defs now). #4 BUILT: MAP hygiene
+  (`_dedupe_ranked_tags` in both ranking paths; `emit_rank` 4dp at
+  both JSON emits; text already :.4f). OPEN root: 855 exact-dup tag
+  rows in VW DB (extractor double-emit suspected) — write-path matter,
+  needs investigation + possible canonical rebuilds, NOT started.
 - Eval analysis tools (tracked): `eval/agent-eval-pilot/tools/`
   (`ocdb/ocmsg/ocmap/occtx/octools/ocover/ocpeak/oploop/ocleg/ocassess/ocdiverge`
   = session-DB forensics; `audit_legs.py`; `backfill_ranks.py`;
