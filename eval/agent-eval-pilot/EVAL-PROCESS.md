@@ -32,15 +32,23 @@ quote it verbatim). Either one moving starts a new round.
    no ground truth), cap (15 calls; 20 on 10k+ file repos), verbatim
    directive quote, model, repo + DB path.
 4. **Run**: one foreground subagent per leg. Transcript saved.
-5. **Meter**: `v13/meter_leg.py` (agent-visible result-payload tokens,
-   tiktoken cl100k; directive text excluded; wall-clock not scored).
+5. **Meter**: harness session rows (`opencode.db`, always `mode=ro`).
+   Scored = peak context per call (fresh input + cache re-reads —
+   what the window actually holds; the 16GB-VRAM number). Tabled
+   alongside: fresh in, re-reads, output, calls. Billing primary
+   (in+out) recorded as context, never verdict. Directive text
+   excluded; wall-clock not scored. Session DB snapshotted into the
+   round folder tree (`eval/agent-eval-pilot/opencode-YYYY-MM-DD.db`)
+   as legs land so every number is re-derivable from the repo.
    `.txt` extensions only for artifacts (parseable extensions break
    `test_empty_result`).
 6. **Grade**: ground-truth citation (file + line + symbol) from
    `QUESTIONS.md`; ladder-compliance audit; `grade.md` committed with
    tokens table.
-7. **Tally**: per-round README keeps A/B tokens + calls; grand tallies
-   cite the rounds that produced them, never mix across builds.
+7. **Tally**: per-round README keeps A/B peak-ctx + calls (billing
+   primary alongside, never the verdict); grand tallies cite the
+   rounds that produced them, never mix across builds. 1 run per
+   question per repo; re-runs only on code/directive change.
 
 ## Stop-the-line rule
 

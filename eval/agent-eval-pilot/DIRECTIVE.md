@@ -173,3 +173,20 @@ must not be claimed.
   (build rule: directive moved). The harness-side loop breaker stays
   unbuilt — not buildable in this repo; prompts still carry the
   never-repeat-a-call-twice guard.
+
+## v1.10 (flag discipline; skip results are rung-2 results)
+
+- **Never call `--help`.** The only flags you need are on this ladder,
+  quoted verbatim in your prompt. Flag discovery costs a call and dumps
+  thousands of tokens of usage text into your context for nothing.
+  Evidence: the five audited v1.9 A-legs burned 3 of 46 calls on
+  `--help` (one dump 9,376 chars) — pure waste, zero information.
+- **A rung-1 skip IS your rung-2 result for that identifier.** If
+  `--smart-map` returns exact hits, do NOT re-detect the same
+  identifier at rung 2 — those hits are rung-2-shaped already
+  (file/line/name/kind/context); rung 2's exact-first guess applies
+  to the NEXT identifier. Evidence: r05 A-run1 paid the skip payload
+  and an identical redetect (~2.2k chars twice) for the same
+  `has_many` hits.
+- v1.9 legs stand as run. Any leg run under v1.10 starts a new round
+  (build rule: directive moved). No round runs v1.10 yet.
