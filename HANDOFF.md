@@ -1,236 +1,116 @@
-# TRICORDER — FRESH SESSION HANDOFF (2026-09-26, evening)
+# TRICORDER — SESSION HANDOFF (2026-09-28, current)
 
-## Environment (verified, do not re-derive)
+Fresh session? Read this file only — no re-derivation. Confirm you've
+read it and state tree status before doing anything else.
 
-- Worktree: `d:\projects\tricorder`, branch `main`, in sync with github
-  remote (`git@github.com:PhishyBongwaters/tricorder.git` — source of
-  truth, `git push github main` per step). `origin` = gitea via
-  hermes-agent (unreachable from here) — never fetch/push it.
+## Environment (verified)
+
+- Worktree `D:\Projects\tricorder`, branch `main`, github remote
+  (`git@github.com:PhishyBongwaters/tricorder.git`) is source of truth;
+  `git push github main` per step. `origin` = gitea via hermes-agent
+  (unreachable) — never fetch/push it.
 - Suite green: **543 passed, 4 skipped, 98 subtests**
-  (`python -m pytest tests/ -q -p no:cacheprovider`, repo `.venv`).
-  Was 508 at session start; +35 = T1 (2) + T1-mechanism-2 (2) + T2 (11:
-  6 candidates + 3 probe-loop + 2 MCP + 2 CLI-text) + T3 (6) + T4 (3)
-  + transcript-1 diet (3) + transcript-3 demotion (2) + transcript-4
-  hygiene (2) + extractor-dedup (2) new tests, 1 contract test updated.
-- Shell is PowerShell: NO `head/tail/grep/sed/&&` — use
-  `Select-Object -First N`, `Select-String`, `;` separators.
-  `>` redirect writes UTF-16 (matters for token metering; use
-  `--output` flag or explicit utf8 writes for byte-compares).
-- Untracked scratch NOT mine — never touch, never commit:
+  (`.venv/Scripts/python.exe -m pytest tests/ -q -p no:cacheprovider`).
+- PowerShell: no `head/tail/grep/sed/&&`; use `Select-Object -First N`,
+  `Select-String`, `;`. `>` redirect writes UTF-16 — use `--output` or
+  explicit utf8 writes for byte-compares.
+- Untracked scratch NOT ours — never touch, never commit:
   `docs/*.proposed.md`, `docs/SPEC_readme_rewrite.md`,
   `docs/process*.md`, `docs/retrieval.md`, `docs/issue-*.md`, `spikes/`.
-- Local model for eval legs: `llamacpp/Qwen`
-  (`Qwen3.6-35B-A3B-UD-Q4_K_M.gguf`, 16GB VRAM target). Operator model
-  (me/muse-spark) is the disciplined vehicle. Default subagent model =
-  operator model; pass `model="llamacpp/Qwen"` explicitly for Qwen.
-- Live-check scratch pattern (used T1–T3, keeps canonical DBs clean):
-  copy canonical DB to `C:\Users\macdo\AppData\Local\Temp\opencode\`,
-  pass `--db-path <copy>` + `--root <real repo>`; `git stash push
-  <files>` for pre-fix baselines, `git stash pop` after. `--init`
-  ignores `--db-path` (always writes canonical) — check for stray
-  `.tricorder/db/<name>.db` after scratch scans and delete.
+- Models: operator model (muse-spark, disciplined vehicle, default for
+  subagents — never pass `model` unless told); `llamacpp/Qwen` only when
+  explicitly ordered for Qwen legs.
+- **Another agent session works in this tree.** Check `git log` +
+  `git status` for foreign commits/dirty files before acting. NEVER
+  touch, commit, or revert work that isn't yours. Concurrent scans
+  contend on sqlite; parallel subagents rate-limit — one foreground
+  subagent at a time, no background loops.
 
-## Where the project stands (main @ `a31fe08`; T1-mechanism-2 latest)
+## Product (all landed, suite-green; HEAD `c5613d8` + eval commits)
 
-Product (all landed, suite-green, byte-identical outputs where claimed):
-- `--smart-map` / MCP `smart_map` (v1.6–v1.7, threshold
-  `SMART_MAP_MAX_FILES=5000` in `utils.py`); `--mention` flag; Qwen legs.
-- Serve-perf fixes: per-render file-text memo (`core.py`/`render.py`,
-  thread-local, test `test_render_reread.py`); serve gate — warm-clean
-  + fresh ranks skips `populate_refs` (`ranking.py`, tests in
-  `test_file_ranks.py::TestWarmServeSkipsRepopulate`); one-time
-  `file_ranks` backfills on Go/Rails/VW/Vue/Elixir/Swift canonical DBs
-  (additive tables only). Go MAP: timeout → 6s steady; Rails 2s.
-- Rescue keyword strip (`CODE_QUERY_STOPWORDS` + `rescue_query_tokens`,
-  both detect mirrors; test `test_rescue_stopwords.py`) — from the
-  Go-G5 loop autopsy (150× identical `ssa.Main` query).
-- Probe digest neutral tail + counter parity with discovery
-  (`utils.probe_project`/`format_probe_digest`, test
-  `test_probe_digest.py`). NOTE: legs that ran before `fb2ef95` saw the
-  old MCP/slash tail in probe output.
-- **T1 BUILT (`bba4a58`)**: fixture/testdata + fingerprinted-asset
-  exclusion from discovery (`_FIXTURE_SKIP_DIRS`,
-  `_HASH_ASSET_RE`, `_is_fixture_or_hash_asset` in `utils.py`; serial +
-  threaded + probe paths; ctags fixture-dir excludes). Test
-  `tests/test_t1_fixture_exclusion.py`. Live: old MAP head `$`/`q`
-  from Rails fixture bomb → new shows only real defs; VW/Go MAP bytes
-  identical pre/post. Deliberate recall edge: files UNDER exact-named
-  `fixtures/` dirs are dropped (documented miss); `*_fixtures`-named
-  dirs (`autoloading_fixtures/`, `controller_fixtures/`) and the
-  fixtures FRAMEWORK source (`fixtures.rb`, `fixtures_test.rb`) are
-  KEPT (name-contains, not path-segment).
-- **T2 BUILT (`144aa54`)**: smart-map identifier-first
-  (`smart_map_candidates` + `smart_map_exact_hit` in `utils.py`,
-  shared by CLI `--smart-map` and MCP `smart_map`; probes use
-  `search_mode="exact"`, skip bar unchanged at quality==exact, cap 3).
-  Test `tests/test_t2_smartmap_identifiers.py` (unit + MCP skip +
-  fallthrough). Live Rails-Q: pre 6,298-char noise MAP → post
-  2,143-char detect skip headed by `def has_many`
-  (associations.rb:1426); VW-Q1 MAP byte-identical pre/post.
-  DISCLOSED DEVIATION: bare-token filter excludes NL_QUERY_STOPWORDS
-  too (SPEC named CODE only) — otherwise `the`/`and`/`what` become
-  skip probes and a tag literally named `the` would wrongly deny MAP.
-- **T3 BUILT (`47e57a8`)**: symbols definition-site priority
-  (`symbol_boundary_rank` in `utils.py`: 0 full-name, 1 `::`-segment,
-  2 superstring; `is_test_file` demotion as tiebreak; both prepended
-  to the main-path sort in `core.search_symbols`, rescue sorts
-  untouched). Test `tests/test_t3_symbols_priority.py`. Live Rails
-  `symbols HasMany`: old top-5 all test classes → new headed by
-  `builder/has_many.rb`, test classes at #14–15/39 (reachable).
-  Spot-checks: VW identical membership (reorder only); Go displaced
-  only test-path hits. CLI `--symbols` + MCP `tricorder_symbols`
-  share the path (verified by grep).
-- **T4 BUILT (operator-ordered tweak)**: symbols rescue-hit ranking
-  (`core.search_symbols` rescue tiers only): deterministic
-  specific-first variant order (query forms, then longest, alpha —
-  the variant set's iteration order varied per process and the old
-  `limit*2` early break let one variant saturate the pool before
-  better variants ran, so definitions were never collected); rescue
-  re-sort prepends the T3 keys (boundary, test-demotion) before
-  distance; early break removed (pool is a superset now, trimmed to
-  cap at the end). Test `tests/test_t4_symbols_rescue.py`. Live leg-A
-  call (`symbols Builder::HasMany`): old fuzzy head
-  `AsyncHasManyAssociationsTest` → new head `HasMany`
-  (builder/has_many.rb), zero test files in top-5. Spot-checks: VW
-  rescue query byte-identical top-10; Go displaced only test-path
-  hits. `search_identifiers` rescue untouched (rung-2 contract).
-- **Transcript items (operator-ordered 2026-09-27, from r05/r06 A-leg
-  trails)** — #1 BUILT: symbols listing render diet
-  (`compact_symbol_record`: drop empty keys, fold signatures; -23%
-  bytes live; 9-field contract test updated, all consumers `.get()`).
-  #2 DROPPED after live negative (5x mentioned-boost can't cross
-  16x rank gaps; hard-priority saves zero tokens — report, not build).
-  #3 BUILT: detect test-path demotion (same T3 keys on the
-  `search_identifiers` sort; T2 skip reads quality, unaffected; live
-  VW `detect totp` heads defs now). #4 BUILT: MAP hygiene
-  (`_dedupe_ranked_tags` in both ranking paths; `emit_rank` 4dp at
-  both JSON emits; text already :.4f). OPEN root: 855 exact-dup tag
-  rows in VW DB (extractor double-emit suspected) — SCOPED 2026-09-28:
-  single-parse reproduces 4x HCL def (multi-capture, same node) while
-  chained-call/nested-dirname same-line repeats are LEGIT (distinct
-  columns); fix = column-aware dedupe at emission in
-  `parser.get_tags_raw` (Tag schema unchanged, no migration), test
-  `tests/test_extractor_dedup.py` asserts both halves. Existing DB
-  rows persist until a rebuild (DEFERRED by operator order).
-  Adjacent, NOT started: get_symbols on HCL emits garbage records
-  (whole-attribute names, type confusion) — grammar-quality matter,
-  no leg impact (hcl unnavigated).
-- Eval analysis tools (tracked): `eval/agent-eval-pilot/tools/`
-  (`ocdb/ocmsg/ocmap/occtx/octools/ocover/ocpeak/oploop/ocleg/ocassess/ocdiverge`
-  = session-DB forensics; `audit_legs.py`; `backfill_ranks.py`;
-  `*-inv.py`, `go_*.py`, `vw_comp.py`, `dbg_*.py` = trails). README indexes all.
+- `--smart-map`/MCP `smart_map` (threshold `SMART_MAP_MAX_FILES=5000`,
+  `utils.py`); `--mention` (10x idents / 5x files); Qwen legs infra.
+- Serve perf: render memo, warm-clean serve gate skips `populate_refs`,
+  one-time `file_ranks` backfills on canonical DBs. Go MAP ~6s, Rails ~2s.
+- Rescue keyword strip (`CODE_QUERY_STOPWORDS`); neutral probe digest
+  with discovery counter parity.
+- **T1** (`bba4a58` + mechanism-2): fixture/testdata + fingerprinted
+  assets + minified-blob content sniff excluded at discovery (serial +
+  threaded + probe; ctags fixture excludes). Tests
+  `test_t1_fixture_exclusion.py`, `test_t1b_minified_sniff.py`.
+- **T2** (`144aa54`): smart-map identifier-first
+  (`smart_map_candidates` + `smart_map_exact_hit`, exact-mode probes,
+  cap 3, skip bar quality==exact). Bare-token filter uses NL stopwords
+  too (disclosed deviation). Test `test_t2_smartmap_identifiers.py`
+  (+2 CLI-text tests from concurrent session fixing a real KeyError).
+- **T3** (`47e57a8`): symbols boundary rank + test-path demotion.
+  **T4**: rescue-hit ranking (deterministic variants, no early break).
+  Test files `test_t3_symbols_priority.py`, `test_t4_symbols_rescue.py`.
+- **Transcript items** (from r05/r06 A-leg trails): #1 symbols diet
+  (`compact_symbol_record`, -23% bytes; 9-field contract updated);
+  #2 DROPPED (5x boost can't cross 16x rank gaps — live negative);
+  #3 detect test-path demotion; #4 MAP dedup + 4dp ranks.
+- **Extractor dedup** (`c6963ba`): column-aware emission dedup in
+  `parser.get_tags_raw` (HCL 4x collapse; chained-call repeats kept).
+  Test `test_extractor_dedup.py`.
+- Analysis tools: `eval/agent-eval-pilot/tools/` (README indexes all).
 
-Canonical DBs (rebuilt 2026-09-26 evening, operator-ordered):
-- **Rails REBUILT**: `--init --wipe` + `chunk_resume.py` (one chunk,
-  3932/3932) + `backfill_ranks.py` (45s, fresh=True). Backup of pre-T1
-  DB at `C:\Users\macdo\AppData\Local\Temp\opencode\rails-pre-t1-backup.db`
-  (809MB — temp, will age out; re-backup before any further wipe).
-  Before → after: file_state 4470 → 3932; tags 727,607 → 722,111;
-  refs 4,245,851 → 3,863,755; file_ranks 3490 → 3456; fixture tags
-  10,080 → 4,584 (remainder = fixtures FRAMEWORK source, kept by
-  design — see T1 note); gzip bomb 0 tags/0 files; hash-assets 0.
-  `meta` 1 row, extractor v3. `verify_backfill.py` rails want
-  rescaled 3490 → 3456 (committed with this handoff).
-- **Rails REBUILT AGAIN (mechanism-2, same evening)**: `_is_minified_blob`
-  drops `guides/assets/.../clipboard.js` → file_state 3932 → 3931,
-  file_ranks 3456 → 3455, fresh=True. Backup of post-T1 DB at temp
-  `rails-post-t1-backup.db`. Rebuilt MAP head (2048 budget) is
-  `ActionDispatch::Routing::Mapper` — zero single-char defs. The
-  clipboard.js OPEN FINDING below is CLOSED. `verify_backfill.py`
-  rails want rescaled 3456 → 3455.
-- Go/VW/Vue/Elixir/Swift DBs UNTOUCHED (T1–T3 proved byte-identical
-  MAPs there; no rebuild needed). Go `verify_backfill` shows
-  ranks=10766 vs want 10736 — pre-existing repo drift, not ours.
-- **OPEN FINDING (measured, not fixed)**: post-rebuild Rails MAP head
-  is STILL minified noise — `guides/assets/javascripts/clipboard.js`
-  single-char defs (`a`,`b`,`c`…) at file-rank 0.027, top of MAP.
-  T1 acceptance was fixture-paths-only so T1 stands, but this is the
-  SPEC's deferred mechanism-2 trigger ("content sniffing … only if
-  measured MAP-head pollution persists"). CLOSED 2026-09-26 evening:
-  mechanism 2 built, clipboard.js excluded, MAP head verified real
-  source (see Rails REBUILT AGAIN above). Fix needs no further call.
+## Eval method (frozen — do not relitigate)
 
-Eval state:
-- Regime docs: `eval/agent-eval-pilot/DIRECTIVE.md` (v1.8 current:
-  5000+ repos skip rung-1 MAP), `QUESTIONS.md` (canonical six + depth
-  panel + scripted note), `EVAL-PROCESS.md`.
-- `v13/TRUE-TALLY.md` — v13 re-measured from harness truth: paired
-  aggregate **0.74×** (published 0.30× artifact tally stands
-  unedited beside it). Inversions: VW-Q1 + both VW-Q2 (greppable
-  questions lose); big wins Q3 (0.13×) Q4 (0.07×). RUNLOG aggregate
-  line doesn't match its own table (noted, not repaired).
-- r03 (`r03-46d32c1-dirv18/`, operator-model vehicle, v1.8): 5/12 legs
-  scored — Go-G5 0.60×, VW-Q1 0.50×, Rails-Q1 A (25,289, no B yet).
-  **HOLD: no legs past leg 5 without operator approval** (in r03 README).
-  Operator 2026-09-26: new legs start on the post-rebuild commit
-  once handoff + rebuild sorted (this handoff). Rails-Q1 leg-5 ran
-  pre-T1/T2/T3 on the OLD rails.db — its MAP-side costs are stale
-  relative to the new DB + skip behavior; flag before comparing.
-- Ad-hoc (NOT rounds): `map-vs-detect/` (parked — Qwen looped 212
-  tools; 2 aborted sessions recorded excluded), `qwen-b-g5/` (PASS,
-  48,072 truth, 0 repeats — Qwen CAN run clean on baseline).
-- v1.9 ideas (NOT approved, do not build): rung-1 takes identifier
-  input; rung-4 mechanism naming; doc-walk rule; context-ceiling per
-  leg; harness loop breaker (not buildable here — harness-side).
+- Harness truth: `opencode.db` session rows (`mode=ro`). Meter legs
+  from session rows (ID at launch); grade from message contents; agents
+  save NOTHING; self-reports are never metering (agents undercount
+  1–2 calls routinely — 3 of 4 legs).
+- **Scored = peak context/call** (fresh + re-reads; EVAL-PROCESS as of
+  `c5613d8`). Billing primary tabled as context, never verdict.
+  TRUE-TALLY.md stands unedited (historical).
+- **1 run per question per repo; re-runs only on change.** No repeats
+  without explicit operator order, ever. (A unilateral n=3 scheme was
+  revoked 2026-09-27; extras marked supplementary in r05/r06.)
+- Prompts committed BEFORE launch; legs sequential; grade+commit per
+  leg (grade.md + README row, `.txt` artifacts rule inherited);
+  session DB snapshotted to `eval/agent-eval-pilot/opencode-YYYY-MM-DD.db`
+  as legs land (latest: 2026-09-28).
+- NEVER unilaterally: void legs/rounds, re-scope rounds, rewrite
+  history, change the metric, add process gates. Findings to operator;
+  ALL judgment calls are the operator's. Stop-the-line rule: code or
+  directive moves → new round, stale legs never mix.
+- Coverage = `COUNT(*) FROM file_state`; `meta` exactly 1 row;
+  `--max-files` is a PREFIX cap (rising caps only); never hardcode
+  repo paths; never connect a possibly-absent DB; no destructive
+  commands (canonical-DB wipes need backup + explicit order).
 
-## The method (harness truth — this replaces ALL artifact metering)
+## Rounds (valid scores only)
 
-- `opencode.db` (`C:\Users\macdo\.local\share\opencode\opencode.db`,
-  ALWAYS open `mode=ro`): `session_v2` =
-  per-session input/output/reasoning/cache_read/write + model + title +
-  parent link; `session_message` = per-message tokens + full tool
-  contents (commands AND returns; oversized spill to `tool-output/`).
-- Meter legs from session rows (ID recorded at launch). Grade/audit
-  from message contents. Agents save NOTHING (no step files).
-- Behavior now exactly measurable: first-hit vs stop call
-  (over-verification priced — leg-3-style: 8% to answer, 92% after),
-  repeats, ladder order, junk handling.
-- Tokenizer: provider-native units (no tiktoken estimation anymore).
-- Model comparison baseline: Qwen costs ~2–4× operator model same arms;
-  Qwen-matched Go pair ≈0.98× vs operator-matched 0.60×.
+- v13 TRUE-TALLY: paired 0.74×; firm wins Q3 0.13× / Q4 0.07×.
+- r03 (v1.8): HOLD at 5/12 — no legs without operator approval.
+- r04: Rails pair scored (context 0.85× inv); VW legs MOVED to r06.
+- r05 (T4 build, v1.9): Rails valid **0.85× inversion** (A 19,480 /
+  B 22,783 peak ctx). Extras supplementary.
+- r06 (T4 build, v1.9): VW valid **1.45× inversion** (A 19,366 / 9
+  calls vs B 13,340 / 3 calls). Extras supplementary.
+- DIRECTIVE v1.10 committed (flag discipline, skip-is-rung2) — NO
+  ROUND RUNS IT YET. Next legs need a v1.10 round folder.
+- No MCP-surface legs ever (coverage gap). Plugins unported (TBD).
 
-## House rules (violations caused the 2026-09-25 blowup — obey literally)
+## Comms (do without being asked twice)
 
-- Red-first: failing test before every fix; full suite after every
-  product change; commit + push per step to github.
-- Eval: prompts committed BEFORE launch; ONE foreground subagent at a
-  time (parallel launches rate-limit); meter from session rows;
-  transcript+grade+artifacts committed; `.txt` extensions only.
-- NEVER unilaterally: void legs/rounds, add process gates, rewrite
-  history, re-scope rounds, or "fix" the process. Findings to operator;
-  ALL judgment calls (void, re-run, round, stop) are the operator's.
-  Token savings is the only scored metric; counts are context, never
-  verdicts. Cap = leash (termination), not score.
-- No destructive commands without explicit approval. No background loops.
-  Canonical-DB wipes are destructive: backup to approved temp first,
-  operator order required (granted 2026-09-26 for Rails).
-- Coverage = `COUNT(*) FROM file_state`, never tags-distinct.
-  `meta` holds exactly 1 row. `--max-files` is a PREFIX cap (rising
-  caps only). Never hardcode repo paths in app code. Never
-  `sqlite3.connect` a possibly-absent DB.
-- Savings numbers cite the committed run that produced them. No MCP-surface
-  eval legs have ever run (coverage gap). MCP server + turn-0 plugins
-  unported — TBD, no usage claims.
+- Milestones unprompted via `hermes send --to discord:phishybongwaters`
+  AND `--to telegram:phishybongwaters` (leg graded, round changes,
+  suite red/green, blocked/waiting, ready-for-orders).
+- Keep THIS file current — state, commits, open threads.
 
-## Comms (operator preference — do this without being asked twice)
+## Remaining (operator decides, no implied order)
 
-- Proactive Discord/Telegram updates at milestones (leg graded,
-  round state changes, suite red/green on product work, blocked/waiting)
-  so the operator doesn't have to sit at the keyboard. Verified
-  2026-09-26: `hermes send --to discord:phishybongwaters "msg"` and
-  `hermes send --to telegram:phishybongwaters "msg"` (targets listed
-  via `hermes send --list`; bot-token platforms need no running
-  gateway). Use freely.
-- Session continuity: keep HANDOFF.md current (state, commits, open
-  threads) — a fresh session starts by reading it, no re-derivation.
-
-## Likely next steps (operator decides, in no implied order)
-
-1. New legs on post-rebuild commit (operator-ordered; r03 legs 6–12
-   still on hold separately — clarify whether new legs = r04 or
-   r03-continued before launching anything).
-2. clipboard.js MAP-head pollution: mechanism-2 content sniff, narrow
-   name rule, or leave-and-route-around (operator call; red-first +
-   suite + commit if build).
-3. v1.9 directive items if operator wants them (new round required).
-4. Swift canonical DB is settled (13s MAP steady); Elixir/Vue canonical.
+1. **Canonical rebuilds** (deferred by order): purge 855 dupe rows +
+   settle all DBs on current code (backup → wipe → chunk_resume →
+   backfill → verify). Rails/Go/VW minimum. Rescale
+   `tools/verify_backfill.py` wants after.
+2. **v1.10 round**: VW and/or Rails pair under the amended directive
+   (first test of flag discipline + skip-is-rung2).
+3. **Go on current build** (r03's 0.60× is pre-everything); Elixir/Vue/
+   Swift DBs settled, unmeasured recently.
+4. **Parked**: quality-`"exact"` overclaim (moves only with a T2-aware
+   spec); get_symbols/HCL garbage (grammar quality, no leg impact).
+5. r03 legs 6–12 still on hold; r03-vs-new comparisons are confounded
+   (state it every time, never quote cross-build deltas as effects).
